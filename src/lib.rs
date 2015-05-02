@@ -31,7 +31,7 @@ pub struct XxHash {
 }
 
 impl XxCore {
-    fn from_seed(seed: u64) -> XxCore {
+    fn with_seed(seed: u64) -> XxCore {
         XxCore {
             v1: seed.wrapping_add(PRIME_1).wrapping_add(PRIME_2),
             v2: seed.wrapping_add(PRIME_2),
@@ -119,11 +119,11 @@ impl std::fmt::Debug for XxCore {
 }
 
 impl XxHash {
-    pub fn from_seed(seed: u64) -> XxHash {
+    pub fn with_seed(seed: u64) -> XxHash {
         XxHash {
             total_len: 0,
             seed: seed,
-            core: XxCore::from_seed(seed),
+            core: XxCore::with_seed(seed),
             buffer: [0; CHUNK_SIZE],
             buffer_usage: 0,
         }
@@ -243,12 +243,12 @@ mod test {
     fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
         let bytes: Vec<_> = (0..32).map(|_| 0).collect();
 
-        let mut byte_by_byte = XxHash::from_seed(0);
+        let mut byte_by_byte = XxHash::with_seed(0);
         for byte in bytes.chunks(1) {
             byte_by_byte.write(byte);
         }
 
-        let mut one_chunk = XxHash::from_seed(0);
+        let mut one_chunk = XxHash::with_seed(0);
         one_chunk.write(&bytes);
 
         assert_eq!(byte_by_byte.core, one_chunk.core);
@@ -256,21 +256,21 @@ mod test {
 
     #[test]
     fn hash_of_nothing_matches_c_implementation() {
-        let mut hasher = XxHash::from_seed(0);
+        let mut hasher = XxHash::with_seed(0);
         hasher.write(&[]);
         assert_eq!(hasher.finish(), 0xef46db3751d8e999);
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation() {
-        let mut hasher = XxHash::from_seed(0);
+        let mut hasher = XxHash::with_seed(0);
         hasher.write(&[42]);
         assert_eq!(hasher.finish(), 0x0a9edecebeb03ae4);
     }
 
     #[test]
     fn hash_of_multiple_bytes_matches_c_implementation() {
-        let mut hasher = XxHash::from_seed(0);
+        let mut hasher = XxHash::with_seed(0);
         hasher.write(b"Hello, world!\0");
         assert_eq!(hasher.finish(), 0x7b06c531ea43e89f);
     }
@@ -278,14 +278,14 @@ mod test {
     #[test]
     fn hash_of_multiple_chunks_matches_c_implementation() {
         let bytes: Vec<_> = (0..100).collect();
-        let mut hasher = XxHash::from_seed(0);
+        let mut hasher = XxHash::with_seed(0);
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x6ac1e58032166597);
     }
 
     #[test]
     fn hash_with_different_seed_matches_c_implementation() {
-        let mut hasher = XxHash::from_seed(0xae0543311b702d91);
+        let mut hasher = XxHash::with_seed(0xae0543311b702d91);
         hasher.write(&[]);
         assert_eq!(hasher.finish(), 0x4b6a04fcdf7a4672);
     }
@@ -293,7 +293,7 @@ mod test {
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation() {
         let bytes: Vec<_> = (0..100).collect();
-        let mut hasher = XxHash::from_seed(0xae0543311b702d91);
+        let mut hasher = XxHash::with_seed(0xae0543311b702d91);
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x567e355e0682e1f1);
     }
@@ -310,7 +310,7 @@ mod bench {
         let bytes: Vec<_> = (0..100).cycle().take(len).collect();
         b.bytes = bytes.len() as u64;
         b.iter(|| {
-            let mut hasher = XxHash::from_seed(0);
+            let mut hasher = XxHash::with_seed(0);
             hasher.write(&bytes);
             hasher.finish()
         });
