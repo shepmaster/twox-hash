@@ -5,25 +5,23 @@ use std::ptr;
 const U32_BYTES: usize = 4;
 const U64_BYTES: usize = 8;
 
-/// Converts a slice of bytes into an iterator of u32. The data is
-/// always treated as little endian!
-// FIXME: Probably doesn't work on big endian machines.
-struct U32FromBytes<'a> {
-    start: *const u32,
-    end: *const u32,
+macro_rules! number_stream(
+    ($name:ident, $number_type:ty, $bytes_in_type:expr) => (
+struct $name<'a> {
+    start: *const $number_type,
+    end: *const $number_type,
     marker: PhantomData<&'a ()>
 }
 
-impl<'a> U32FromBytes<'a> {
-    /// Returns the iterator and any left-over bytes.
-    fn new(bytes: &'a [u8]) -> (U32FromBytes<'a>, &'a [u8]) {
-        let full_chunks = bytes.len() / U32_BYTES;
-        let (mine, theirs) = bytes.split_at(full_chunks * U32_BYTES);
+impl<'a> $name<'a> {
+    fn new(bytes: &'a [u8]) -> ($name<'a>, &'a [u8]) {
+        let full_chunks = bytes.len() / $bytes_in_type;
+        let (mine, theirs) = bytes.split_at(full_chunks * $bytes_in_type);
 
-        let start = mine.as_ptr() as *const u32;
+        let start = mine.as_ptr() as *const $number_type;
         let end = unsafe { start.offset(full_chunks as isize) };
 
-        let me = U32FromBytes {
+        let me = $name {
             start: start,
             end: end,
             marker: PhantomData,
@@ -33,62 +31,32 @@ impl<'a> U32FromBytes<'a> {
     }
 }
 
-impl<'a> Iterator for U32FromBytes<'a> {
-    type Item = u32;
+impl<'a> Iterator for $name<'a> {
+    type Item = $number_type;
 
-    fn next(&mut self) -> Option<u32> {
+    fn next(&mut self) -> Option<$number_type> {
         if self.start >= self.end { return None }
 
-        let v: u32 = unsafe { ptr::read(self.start) };
+        let v: $number_type = unsafe { ptr::read(self.start) };
 
         self.start = unsafe { self.start.offset(1) };
         Some(v)
     }
 }
+));
 
-/// Converts a slice of bytes into an iterator of u64. The data is
-/// always treated as little endian!
+number_stream!(U32FromBytes, u32, U32_BYTES);
+number_stream!(U64FromBytes, u64, U64_BYTES);
+
+/// Converts a slice of bytes into an iterator of numbers.
+///
+/// The data is always treated as little endian. Only complete ranges
+/// of bytes are parsed as the number, any left-over bytes are returned.
 // FIXME: Probably doesn't work on big endian machines.
-struct U64FromBytes<'a> {
-    start: *const u64,
-    end: *const u64,
-    marker: PhantomData<&'a ()>
-}
-
-impl<'a> U64FromBytes<'a> {
-    /// Returns the iterator and any left-over bytes.
-    fn new(bytes: &'a [u8]) -> (U64FromBytes<'a>, &'a [u8]) {
-        let full_chunks = bytes.len() / U64_BYTES;
-        let (mine, theirs) = bytes.split_at(full_chunks * U64_BYTES);
-
-        let start = mine.as_ptr() as *const u64;
-        let end = unsafe { start.offset(full_chunks as isize) };
-
-        let me = U64FromBytes {
-            start: start,
-            end: end,
-            marker: PhantomData,
-        };
-
-        (me, theirs)
-    }
-}
-
-impl<'a> Iterator for U64FromBytes<'a> {
-    type Item = u64;
-
-    fn next(&mut self) -> Option<u64> {
-        if self.start >= self.end { return None }
-
-        let v: u64 = unsafe { ptr::read(self.start) };
-
-        self.start = unsafe { self.start.offset(1) };
-        Some(v)
-    }
-}
-
 pub trait NumberStreams {
+    /// Reads u32s from the bytes
     fn u32_stream(&self) -> (U32FromBytes, &[u8]);
+    /// Reads u64s from the bytes
     fn u64_stream(&self) -> (U64FromBytes, &[u8]);
 }
 
