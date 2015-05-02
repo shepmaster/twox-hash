@@ -1,13 +1,9 @@
 #![feature(core)]
 #![cfg_attr(test, feature(test))]
 
-extern crate byteorder;
-
 mod number_streams;
 
-use std::io::Cursor;
 use number_streams::NumberStreams;
-use byteorder::{LittleEndian,ReadBytesExt};
 
 const CHUNK_SIZE: usize = 32;
 
@@ -123,12 +119,6 @@ impl XxHash {
     }
 }
 
-#[inline(always)]
-fn split_at_maximum_chunk_size(bytes: &[u8], chunk_size: usize) -> (&[u8], &[u8]) {
-    let full_chunks = bytes.len() / chunk_size;
-    bytes.split_at(full_chunks * chunk_size)
-}
-
 impl XxHash {
     pub fn write(&mut self, bytes: &[u8]) {
         let mut bytes = bytes;
@@ -194,13 +184,9 @@ impl XxHash {
         hash = hash.wrapping_add(self.total_len);
 
         let buffered = &self.buffer[..self.buffer_usage];
-        let (buffered_u64s, buffered) = split_at_maximum_chunk_size(buffered, 8);
+        let (buffered_u64s, buffered) = buffered.u64_stream();
 
-        // TODO: Should we create the cursor out here and just iterate
-        // until not enough?
-        for buffered_u64 in buffered_u64s.chunks(8) {
-            let mut rdr = Cursor::new(buffered_u64);
-            let mut k1 = rdr.read_u64::<LittleEndian>().unwrap();
+        for mut k1 in buffered_u64s {
             k1 = k1.wrapping_mul(PRIME64_2);
             k1 = k1.rotate_left(31);
             k1 = k1.wrapping_mul(PRIME64_1);
@@ -210,12 +196,10 @@ impl XxHash {
             hash = hash.wrapping_add(PRIME64_4);
         }
 
-        let (buffered_u32s, buffered) = split_at_maximum_chunk_size(buffered, 4);
+        let (buffered_u32s, buffered) = buffered.u32_stream();
 
-        for buffered_u32 in buffered_u32s.chunks(4) {
-            let mut rdr = Cursor::new(buffered_u32);
-            let mut k1 = rdr.read_u32::<LittleEndian>().unwrap() as u64;
-            k1 = k1.wrapping_mul(PRIME64_1);
+        for k1 in buffered_u32s {
+            let k1 = (k1 as u64).wrapping_mul(PRIME64_1);
             hash ^= k1;
             hash = hash.rotate_left(23);
             hash = hash.wrapping_mul(PRIME64_2);
