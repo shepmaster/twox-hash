@@ -1,8 +1,14 @@
 #![feature(core)]
+#![feature(std_misc)]
 #![cfg_attr(test, feature(test))]
+
+extern crate rand;
 
 mod number_streams;
 
+use std::hash::Hasher;
+use std::collections::hash_state::HashState;
+use rand::Rng;
 use number_streams::NumberStreams;
 
 const CHUNK_SIZE: usize = 32;
@@ -130,8 +136,14 @@ impl XxHash {
     }
 }
 
-impl XxHash {
-    pub fn write(&mut self, bytes: &[u8]) {
+impl Default for XxHash {
+    fn default() -> XxHash {
+        XxHash::with_seed(0)
+    }
+}
+
+impl Hasher for XxHash {
+    fn write(&mut self, bytes: &[u8]) {
         let mut bytes = bytes;
 
         self.total_len += bytes.len() as u64;
@@ -182,7 +194,7 @@ impl XxHash {
         }
     }
 
-    pub fn finish(&self) -> u64 {
+    fn finish(&self) -> u64 {
         let mut hash;
 
         // We have processed at least one full chunk
@@ -235,9 +247,30 @@ impl XxHash {
     }
 }
 
+struct RandomXxHashState(u64);
+
+impl RandomXxHashState {
+    fn new() -> RandomXxHashState {
+        RandomXxHashState(rand::thread_rng().gen())
+    }
+}
+
+impl Default for RandomXxHashState {
+    fn default() -> RandomXxHashState { RandomXxHashState::new() }
+}
+
+impl HashState for RandomXxHashState {
+    type Hasher = XxHash;
+
+    fn hasher(&self) -> XxHash { XxHash::with_seed(self.0) }
+}
+
 #[cfg(test)]
 mod test {
-    use super::XxHash;
+    use std::hash::Hasher;
+    use std::collections::HashMap;
+    use std::collections::hash_state::DefaultState;
+    use super::{XxHash,RandomXxHashState};
 
     #[test]
     fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
@@ -297,12 +330,27 @@ mod test {
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x567e355e0682e1f1);
     }
+
+    #[test]
+    fn can_be_used_in_a_hashmap_with_a_default_seed() {
+        let mut hash: HashMap<_, _, DefaultState<XxHash>> = Default::default();
+        hash.insert(42, "the answer");
+        assert_eq!(hash.get(&42), Some(&"the answer"));
+    }
+
+    #[test]
+    fn can_be_used_in_a_hashmap_with_a_random_seed() {
+        let mut hash: HashMap<_, _, RandomXxHashState> = Default::default();
+        hash.insert(42, "the answer");
+        assert_eq!(hash.get(&42), Some(&"the answer"));
+    }
 }
 
 #[cfg(test)]
 mod bench {
     extern crate test;
 
+    use std::hash::Hasher;
     use super::XxHash;
 
     #[inline(always)]
