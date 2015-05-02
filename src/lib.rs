@@ -11,7 +11,7 @@ const PRIME64_3: u64 = 1609587929392839161;
 const PRIME64_4: u64 = 9650029242287828579;
 const PRIME64_5: u64 = 2870177450012600261;
 
-#[derive(Debug,Copy,Clone,PartialEq)]
+#[derive(Copy,Clone,PartialEq)]
 struct XxCore {
     v1: u64,
     v2: u64,
@@ -31,10 +31,10 @@ struct XxHash {
 impl XxCore {
     fn from_seed(seed: u64) -> XxCore {
         XxCore {
-            v1: seed + PRIME64_1 + PRIME64_2,
-            v2: seed + PRIME64_2,
-            v3: seed + 0,
-            v4: seed - PRIME64_1,
+            v1: seed.wrapping_add(PRIME64_1).wrapping_add(PRIME64_2),
+            v2: seed.wrapping_add(PRIME64_2),
+            v3: seed,
+            v4: seed.wrapping_sub(PRIME64_1),
         }
     }
 
@@ -42,25 +42,27 @@ impl XxCore {
     fn ingest_one_chunk(&mut self, bytes: &[u8]) {
         let mut rdr = Cursor::new(bytes);
 
-        let v = rdr.read_u64::<LittleEndian>().unwrap();
-        self.v1 += v * PRIME64_2;
-        self.v1 = self.v1.rotate_left(31);
-        self.v1 *= PRIME64_1;
+        let mut do_one_number = |mut my_v: u64| -> u64 {
+            let v = rdr.read_u64::<LittleEndian>().unwrap();
+            let v = v.wrapping_mul(PRIME64_2);
+            my_v = my_v.wrapping_add(v);
+            my_v = my_v.rotate_left(31);
+            my_v.wrapping_mul(PRIME64_1)
+        };
 
-        let v = rdr.read_u64::<LittleEndian>().unwrap();
-        self.v2 += v * PRIME64_2;
-        self.v2 = self.v2.rotate_left(31);
-        self.v2 *= PRIME64_1;
+        self.v1 = do_one_number(self.v1);
+        self.v2 = do_one_number(self.v2);
+        self.v3 = do_one_number(self.v3);
+        self.v4 = do_one_number(self.v4);
+    }
+}
 
-        let v = rdr.read_u64::<LittleEndian>().unwrap();
-        self.v3 += v * PRIME64_2;
-        self.v3 = self.v3.rotate_left(31);
-        self.v3 *= PRIME64_1;
-
-        let v = rdr.read_u64::<LittleEndian>().unwrap();
-        self.v4 += v * PRIME64_2;
-        self.v4 = self.v4.rotate_left(31);
-        self.v4 *= PRIME64_1;
+impl std::fmt::Debug for XxCore {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        write!(
+            f, "XxCore {{ {:016x} {:016x} {:016x} {:016x} }}",
+            self.v1, self.v2, self.v3, self.v4
+        )
     }
 }
 
@@ -111,12 +113,12 @@ impl XxHash {
         }
 
         // Consume the input data in large chunks
-        if bytes.len() <= CHUNK_SIZE {
+        if bytes.len() >= CHUNK_SIZE {
             // TODO: The original code pulls out local vars for
             // v[1234], presumably for performance
             // reasons. Investigate.
 
-            let full_chunks = bytes.len() % CHUNK_SIZE;
+            let full_chunks = bytes.len() / CHUNK_SIZE;
             let (to_use, leftover) = bytes.split_at(full_chunks * CHUNK_SIZE);
 
             for chunk in to_use.chunks(CHUNK_SIZE) {
@@ -141,15 +143,16 @@ mod test {
     use super::XxHash;
 
     #[test]
-    fn it_works() {
-        let mut byte_by_byte = XxHash::from_seed(0);
-        let mut one_chunk = XxHash::from_seed(0);
+    fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
+        let bytes: Vec<_> = (0..32).map(|_| 0).collect();
 
-        for _ in 0..32 {
-            byte_by_byte.write(&[0]);
+        let mut byte_by_byte = XxHash::from_seed(0);
+        for byte in bytes.chunks(1) {
+            byte_by_byte.write(byte);
         }
 
-        one_chunk.write(&[0; 32]);
+        let mut one_chunk = XxHash::from_seed(0);
+        one_chunk.write(&bytes);
 
         assert_eq!(byte_by_byte.core, one_chunk.core);
     }
