@@ -1,4 +1,5 @@
 #![feature(core)]
+#![cfg_attr(test, feature(test))]
 
 extern crate byteorder;
 
@@ -295,5 +296,73 @@ mod test {
         let mut hasher = XxHash::from_seed(0xae0543311b702d91);
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x567e355e0682e1f1);
+    }
+}
+
+#[cfg(test)]
+mod bench {
+    extern crate test;
+
+    use super::XxHash;
+
+    #[inline(always)]
+    fn straight_line_slice_bench(b: &mut test::Bencher, len: usize) {
+        let bytes: Vec<_> = (0..100).cycle().take(len).collect();
+        b.bytes = bytes.len() as u64;
+        b.iter(|| {
+            let mut hasher = XxHash::from_seed(0);
+            hasher.write(&bytes);
+            hasher.finish()
+        });
+    }
+
+    #[bench]
+    fn straight_line_megabyte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 1024*1024);
+    }
+
+    #[bench]
+    fn straight_line_1024_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 1024);
+    }
+
+    #[bench]
+    fn straight_line_512_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 512);
+    }
+
+    #[bench]
+    fn straight_line_256_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 256);
+    }
+
+    #[bench]
+    fn straight_line_128_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 128);
+    }
+
+    #[bench]
+    fn straight_line_32_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 32);
+    }
+
+    #[bench]
+    fn straight_line_16_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 16);
+    }
+
+    #[bench]
+    fn straight_line_4_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 4);
+    }
+
+    #[bench]
+    fn straight_line_1_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 1);
+    }
+
+    #[bench]
+    fn straight_line_0_byte(b: &mut test::Bencher) {
+        straight_line_slice_bench(b, 0);
     }
 }
