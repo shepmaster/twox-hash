@@ -7,11 +7,11 @@ use number_streams::NumberStreams;
 
 const CHUNK_SIZE: usize = 32;
 
-const PRIME64_1: u64 = 11400714785074694791;
-const PRIME64_2: u64 = 14029467366897019727;
-const PRIME64_3: u64 = 1609587929392839161;
-const PRIME64_4: u64 = 9650029242287828579;
-const PRIME64_5: u64 = 2870177450012600261;
+const PRIME_1: u64 = 11400714785074694791;
+const PRIME_2: u64 = 14029467366897019727;
+const PRIME_3: u64 = 1609587929392839161;
+const PRIME_4: u64 = 9650029242287828579;
+const PRIME_5: u64 = 2870177450012600261;
 
 #[derive(Copy,Clone,PartialEq)]
 struct XxCore {
@@ -33,10 +33,10 @@ pub struct XxHash {
 impl XxCore {
     fn from_seed(seed: u64) -> XxCore {
         XxCore {
-            v1: seed.wrapping_add(PRIME64_1).wrapping_add(PRIME64_2),
-            v2: seed.wrapping_add(PRIME64_2),
+            v1: seed.wrapping_add(PRIME_1).wrapping_add(PRIME_2),
+            v2: seed.wrapping_add(PRIME_2),
             v3: seed,
-            v4: seed.wrapping_sub(PRIME64_1),
+            v4: seed.wrapping_sub(PRIME_1),
         }
     }
 
@@ -46,10 +46,10 @@ impl XxCore {
     {
         #[inline(always)]
         fn ingest_one_number(mut current_value: u64, mut value: u64) -> u64 {
-            value = value.wrapping_mul(PRIME64_2);
+            value = value.wrapping_mul(PRIME_2);
             current_value = current_value.wrapping_add(value);
             current_value = current_value.rotate_left(31);
-            current_value.wrapping_mul(PRIME64_1)
+            current_value.wrapping_mul(PRIME_1)
         };
 
         // By drawing these out, we can avoid going back and forth to
@@ -91,12 +91,12 @@ impl XxCore {
 
         #[inline(always)]
         fn mix_one(mut hash: u64, mut value: u64) -> u64 {
-            value = value.wrapping_mul(PRIME64_2);
+            value = value.wrapping_mul(PRIME_2);
             value = value.rotate_left(31);
-            value = value.wrapping_mul(PRIME64_1);
+            value = value.wrapping_mul(PRIME_1);
             hash ^= value;
-            hash = hash.wrapping_mul(PRIME64_1);
-            hash.wrapping_add(PRIME64_4)
+            hash = hash.wrapping_mul(PRIME_1);
+            hash.wrapping_add(PRIME_4)
         }
 
         hash = mix_one(hash, self.v1);
@@ -188,7 +188,7 @@ impl XxHash {
         if self.total_len >= CHUNK_SIZE as u64 {
             hash = self.core.finish();
         } else {
-            hash = self.seed.wrapping_add(PRIME64_5);
+            hash = self.seed.wrapping_add(PRIME_5);
         }
 
         hash = hash.wrapping_add(self.total_len);
@@ -197,37 +197,37 @@ impl XxHash {
         let (buffered_u64s, buffered) = buffered.u64_stream();
 
         for mut k1 in buffered_u64s {
-            k1 = k1.wrapping_mul(PRIME64_2);
+            k1 = k1.wrapping_mul(PRIME_2);
             k1 = k1.rotate_left(31);
-            k1 = k1.wrapping_mul(PRIME64_1);
+            k1 = k1.wrapping_mul(PRIME_1);
             hash ^= k1;
             hash = hash.rotate_left(27);
-            hash = hash.wrapping_mul(PRIME64_1);
-            hash = hash.wrapping_add(PRIME64_4);
+            hash = hash.wrapping_mul(PRIME_1);
+            hash = hash.wrapping_add(PRIME_4);
         }
 
         let (buffered_u32s, buffered) = buffered.u32_stream();
 
         for k1 in buffered_u32s {
-            let k1 = (k1 as u64).wrapping_mul(PRIME64_1);
+            let k1 = (k1 as u64).wrapping_mul(PRIME_1);
             hash ^= k1;
             hash = hash.rotate_left(23);
-            hash = hash.wrapping_mul(PRIME64_2);
-            hash = hash.wrapping_add(PRIME64_3);
+            hash = hash.wrapping_mul(PRIME_2);
+            hash = hash.wrapping_add(PRIME_3);
         }
 
         for buffered_u8 in buffered {
-            let k1 = (*buffered_u8 as u64).wrapping_mul(PRIME64_5);
+            let k1 = (*buffered_u8 as u64).wrapping_mul(PRIME_5);
             hash ^= k1;
             hash = hash.rotate_left(11);
-            hash = hash.wrapping_mul(PRIME64_1);
+            hash = hash.wrapping_mul(PRIME_1);
         }
 
         // The final intermixing
         hash ^= hash.wrapping_shr(33);
-        hash = hash.wrapping_mul(PRIME64_2);
+        hash = hash.wrapping_mul(PRIME_2);
         hash ^= hash.wrapping_shr(29);
-        hash = hash.wrapping_mul(PRIME64_3);
+        hash = hash.wrapping_mul(PRIME_3);
         hash ^= hash.wrapping_shr(32);
 
         hash
