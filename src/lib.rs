@@ -44,10 +44,6 @@ impl XxCore {
     fn ingest_chunks<I>(&mut self, values: I)
         where I: Iterator<Item=u64>
     {
-        // TODO: The original code pulls out local vars for
-        // v[1234], presumably for performance
-        // reasons. Investigate.
-
         #[inline(always)]
         fn ingest_one_number(mut current_value: u64, mut value: u64) -> u64 {
             value = value.wrapping_mul(PRIME64_2);
@@ -56,14 +52,28 @@ impl XxCore {
             current_value.wrapping_mul(PRIME64_1)
         };
 
+        // By drawing these out, we can avoid going back and forth to
+        // memory. It only really helps for large files, when we need
+        // to iterate multiple times here.
+
+        let mut v1 = self.v1;
+        let mut v2 = self.v2;
+        let mut v3 = self.v3;
+        let mut v4 = self.v4;
+
         let mut values = values.peekable();
 
         while values.peek().is_some() {
-            self.v1 = ingest_one_number(self.v1, values.next().unwrap());
-            self.v2 = ingest_one_number(self.v2, values.next().unwrap());
-            self.v3 = ingest_one_number(self.v3, values.next().unwrap());
-            self.v4 = ingest_one_number(self.v4, values.next().unwrap());
+            v1 = ingest_one_number(v1, values.next().unwrap());
+            v2 = ingest_one_number(v2, values.next().unwrap());
+            v3 = ingest_one_number(v3, values.next().unwrap());
+            v4 = ingest_one_number(v4, values.next().unwrap());
         }
+
+        self.v1 = v1;
+        self.v2 = v2;
+        self.v3 = v3;
+        self.v4 = v4;
     }
 
     #[inline(always)]
