@@ -1,3 +1,5 @@
+#![feature(core)]
+
 extern crate byteorder;
 
 use std::io::Cursor;
@@ -55,6 +57,33 @@ impl XxCore {
         self.v3 = do_one_number(self.v3);
         self.v4 = do_one_number(self.v4);
     }
+
+    #[inline(always)]
+    fn finish(&self) -> u64 {
+        let mut hash;
+
+        hash =                   self.v1.rotate_left( 1);
+        hash = hash.wrapping_add(self.v2.rotate_left( 7));
+        hash = hash.wrapping_add(self.v3.rotate_left(12));
+        hash = hash.wrapping_add(self.v4.rotate_left(18));
+
+        #[inline(always)]
+        fn mix_one(mut hash: u64, mut value: u64) -> u64 {
+            value = value.wrapping_mul(PRIME64_2);
+            value = value.rotate_left(31);
+            value = value.wrapping_mul(PRIME64_1);
+            hash ^= value;
+            hash = hash.wrapping_mul(PRIME64_1);
+            hash.wrapping_add(PRIME64_4)
+        }
+
+        hash = mix_one(hash, self.v1);
+        hash = mix_one(hash, self.v2);
+        hash = mix_one(hash, self.v3);
+        hash = mix_one(hash, self.v4);
+
+        hash
+    }
 }
 
 impl std::fmt::Debug for XxCore {
@@ -76,6 +105,12 @@ impl XxHash {
             buffer_usage: 0,
         }
     }
+}
+
+#[inline(always)]
+fn split_at_maximum_chunk_size(bytes: &[u8], chunk_size: usize) -> (&[u8], &[u8]) {
+    let full_chunks = bytes.len() / chunk_size;
+    bytes.split_at(full_chunks * chunk_size)
 }
 
 impl XxHash {
@@ -118,8 +153,7 @@ impl XxHash {
             // v[1234], presumably for performance
             // reasons. Investigate.
 
-            let full_chunks = bytes.len() / CHUNK_SIZE;
-            let (to_use, leftover) = bytes.split_at(full_chunks * CHUNK_SIZE);
+            let (to_use, leftover) = split_at_maximum_chunk_size(bytes, CHUNK_SIZE);
 
             for chunk in to_use.chunks(CHUNK_SIZE) {
                 self.core.ingest_one_chunk(chunk);
@@ -135,6 +169,68 @@ impl XxHash {
             }
             self.buffer_usage = bytes.len();
         }
+    }
+
+    pub fn finish(&self) -> u64 {
+        let mut hash;
+
+        // We have processed at least one full chunk
+        if self.total_len >= CHUNK_SIZE as u64 {
+            // TODO: The original code pulls out local vars for
+            // v[1234], presumably for performance
+            // reasons. Investigate.
+
+            hash = self.core.finish();
+        } else {
+            hash = self.seed.wrapping_add(PRIME64_5);
+        }
+
+        hash = hash.wrapping_add(self.total_len);
+
+        let buffered = &self.buffer[..self.buffer_usage];
+        let (buffered_u64s, buffered) = split_at_maximum_chunk_size(buffered, 8);
+
+        // TODO: Should we create the cursor out here and just iterate
+        // until not enough?
+        for buffered_u64 in buffered_u64s.chunks(8) {
+            let mut rdr = Cursor::new(buffered_u64);
+            let mut k1 = rdr.read_u64::<LittleEndian>().unwrap();
+            k1 = k1.wrapping_mul(PRIME64_2);
+            k1 = k1.rotate_left(31);
+            k1 = k1.wrapping_mul(PRIME64_1);
+            hash ^= k1;
+            hash = hash.rotate_left(27);
+            hash = hash.wrapping_mul(PRIME64_1);
+            hash = hash.wrapping_add(PRIME64_4);
+        }
+
+        let (buffered_u32s, buffered) = split_at_maximum_chunk_size(buffered, 4);
+
+        for buffered_u32 in buffered_u32s.chunks(4) {
+            let mut rdr = Cursor::new(buffered_u32);
+            let mut k1 = rdr.read_u32::<LittleEndian>().unwrap() as u64;
+            k1 = k1.wrapping_mul(PRIME64_1);
+            hash ^= k1;
+            hash = hash.rotate_left(23);
+            hash = hash.wrapping_mul(PRIME64_2);
+            hash = hash.wrapping_add(PRIME64_3);
+        }
+
+        for buffered_u8 in buffered {
+            let k1 = (*buffered_u8 as u64).wrapping_mul(PRIME64_5);
+            hash ^= k1;
+            hash = hash.rotate_left(11);
+            hash = hash.wrapping_mul(PRIME64_1);
+        }
+
+        // The final intermixing
+        hash ^= hash.wrapping_shr(33);
+        hash = hash.wrapping_mul(PRIME64_2);
+        hash ^= hash.wrapping_shr(29);
+        hash = hash.wrapping_mul(PRIME64_3);
+        hash ^= hash.wrapping_shr(32);
+
+        hash
     }
 }
 
@@ -155,5 +251,49 @@ mod test {
         one_chunk.write(&bytes);
 
         assert_eq!(byte_by_byte.core, one_chunk.core);
+    }
+
+    #[test]
+    fn hash_of_nothing_matches_c_implementation() {
+        let mut hasher = XxHash::from_seed(0);
+        hasher.write(&[]);
+        assert_eq!(hasher.finish(), 0xef46db3751d8e999);
+    }
+
+    #[test]
+    fn hash_of_single_byte_matches_c_implementation() {
+        let mut hasher = XxHash::from_seed(0);
+        hasher.write(&[42]);
+        assert_eq!(hasher.finish(), 0x0a9edecebeb03ae4);
+    }
+
+    #[test]
+    fn hash_of_multiple_bytes_matches_c_implementation() {
+        let mut hasher = XxHash::from_seed(0);
+        hasher.write(b"Hello, world!\0");
+        assert_eq!(hasher.finish(), 0x7b06c531ea43e89f);
+    }
+
+    #[test]
+    fn hash_of_multiple_chunks_matches_c_implementation() {
+        let bytes: Vec<_> = (0..100).collect();
+        let mut hasher = XxHash::from_seed(0);
+        hasher.write(&bytes);
+        assert_eq!(hasher.finish(), 0x6ac1e58032166597);
+    }
+
+    #[test]
+    fn hash_with_different_seed_matches_c_implementation() {
+        let mut hasher = XxHash::from_seed(0xae0543311b702d91);
+        hasher.write(&[]);
+        assert_eq!(hasher.finish(), 0x4b6a04fcdf7a4672);
+    }
+
+    #[test]
+    fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation() {
+        let bytes: Vec<_> = (0..100).collect();
+        let mut hasher = XxHash::from_seed(0xae0543311b702d91);
+        hasher.write(&bytes);
+        assert_eq!(hasher.finish(), 0x567e355e0682e1f1);
     }
 }
