@@ -3,7 +3,7 @@
 
 extern crate byteorder;
 
-use std::io::Cursor;
+use std::io::{Read,Cursor};
 use byteorder::{LittleEndian,ReadBytesExt};
 
 const CHUNK_SIZE: usize = 32;
@@ -45,18 +45,21 @@ impl XxCore {
     fn ingest_one_chunk(&mut self, bytes: &[u8]) {
         let mut rdr = Cursor::new(bytes);
 
-        let mut do_one_number = |mut my_v: u64| -> u64 {
-            let v = rdr.read_u64::<LittleEndian>().unwrap();
-            let v = v.wrapping_mul(PRIME64_2);
-            my_v = my_v.wrapping_add(v);
-            my_v = my_v.rotate_left(31);
-            my_v.wrapping_mul(PRIME64_1)
+        #[inline(always)]
+        fn ingest_one_number<R>(mut current_value: u64, rdr: &mut R) -> u64
+            where R: Read
+        {
+            let value = rdr.read_u64::<LittleEndian>().unwrap();
+            let value = value.wrapping_mul(PRIME64_2);
+            current_value = current_value.wrapping_add(value);
+            current_value = current_value.rotate_left(31);
+            current_value.wrapping_mul(PRIME64_1)
         };
 
-        self.v1 = do_one_number(self.v1);
-        self.v2 = do_one_number(self.v2);
-        self.v3 = do_one_number(self.v3);
-        self.v4 = do_one_number(self.v4);
+        self.v1 = ingest_one_number(self.v1, &mut rdr);
+        self.v2 = ingest_one_number(self.v2, &mut rdr);
+        self.v3 = ingest_one_number(self.v3, &mut rdr);
+        self.v4 = ingest_one_number(self.v4, &mut rdr);
     }
 
     #[inline(always)]
