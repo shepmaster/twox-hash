@@ -17,11 +17,26 @@ struct $name<'a> {
 
 impl<'a> $name<'a> {
     fn new(bytes: &'a [u8]) -> ($name<'a>, &'a [u8]) {
-        let full_chunks = bytes.len() / $bytes_in_type;
-        let (mine, theirs) = bytes.split_at(full_chunks * $bytes_in_type);
+        $name::with_stride(bytes, 1)
+    }
+
+    // Stride is a grouping of sequential numbers
+    //
+    // 0 1 2 3 4 5 6 7
+    // -------------      We have 7 bytes
+    // --- --- --- X      Each number takes 2 bytes
+    // --- --- XXX X      With a stride of 2
+    //
+    // Only four bytes will be consumed, the rest returned
+    fn with_stride(bytes: &'a [u8], stride: usize) -> ($name<'a>, &'a [u8]) {
+        let n_numbers_in_bytes = bytes.len() / $bytes_in_type;
+        let n_strides_in_numbers = n_numbers_in_bytes / stride;
+        let total_numbers = n_strides_in_numbers * stride;
+
+        let (mine, theirs) = bytes.split_at(total_numbers * $bytes_in_type);
 
         let start = mine.as_ptr() as *const $number_type;
-        let end = unsafe { start.offset(full_chunks as isize) };
+        let end = unsafe { start.offset(total_numbers as isize) };
 
         let me = $name {
             start: start,
@@ -68,13 +83,27 @@ number_stream!(U64FromBytes, u64, U64_BYTES);
 pub trait NumberStreams {
     /// Reads u32s from the bytes
     fn u32_stream(&self) -> (U32FromBytes, &[u8]);
+    /// Reads u32s from the bytes, there will always be a multiple of `stride` numbers
+    fn u32_stream_with_stride(&self, stride: usize) -> (U32FromBytes, &[u8]);
     /// Reads u64s from the bytes
     fn u64_stream(&self) -> (U64FromBytes, &[u8]);
+    /// Reads u64s from the bytes, there will always be a multiple of `stride` numbers
+    fn u64_stream_with_stride(&self, stride: usize) -> (U64FromBytes, &[u8]);
 }
 
 impl<'a> NumberStreams for [u8] {
-    fn u32_stream(&self) -> (U32FromBytes, &[u8]) { U32FromBytes::new(self) }
-    fn u64_stream(&self) -> (U64FromBytes, &[u8]) { U64FromBytes::new(self) }
+    fn u32_stream(&self) -> (U32FromBytes, &[u8]) {
+        U32FromBytes::new(self)
+    }
+    fn u32_stream_with_stride(&self, stride: usize) -> (U32FromBytes, &[u8]) {
+        U32FromBytes::with_stride(self, stride)
+    }
+    fn u64_stream(&self) -> (U64FromBytes, &[u8]) {
+        U64FromBytes::new(self)
+    }
+    fn u64_stream_with_stride(&self, stride: usize) -> (U64FromBytes, &[u8]) {
+        U64FromBytes::with_stride(self, stride)
+    }
 }
 
 #[cfg(test)]
@@ -117,6 +146,23 @@ mod test {
         assert_eq!(rest, [42]);
     }
 
+    #[test]
+    fn can_read_u32_from_bytes_with_a_stride() {
+        let orig_values: &[u32] = &[0,1,2];
+        let as_u8 = u32_slice_as_u8(orig_values);
+
+        let (iter, rest) = as_u8.u32_stream_with_stride(2);
+        let values: Vec<_> = iter.collect();
+
+        assert_eq!(&values[..], &orig_values[..2]);
+
+        let (iter, rest) = rest.u32_stream();
+        let values: Vec<_> = iter.collect();
+
+        assert_eq!(&values[..], &orig_values[2..]);
+        assert!(rest.is_empty());
+    }
+
     fn u64_slice_as_u8(values: &[u64]) -> &[u8] {
         unsafe {
             slice::from_raw_parts(
@@ -149,5 +195,22 @@ mod test {
 
         assert_eq!(&values[..], &orig_values[..]);
         assert_eq!(rest, [42]);
+    }
+
+    #[test]
+    fn can_read_u64_from_bytes_with_a_stride() {
+        let orig_values: &[u64] = &[0,1,2];
+        let as_u8 = u64_slice_as_u8(orig_values);
+
+        let (iter, rest) = as_u8.u64_stream_with_stride(2);
+        let values: Vec<_> = iter.collect();
+
+        assert_eq!(&values[..], &orig_values[..2]);
+
+        let (iter, rest) = rest.u64_stream();
+        let values: Vec<_> = iter.collect();
+
+        assert_eq!(&values[..], &orig_values[2..]);
+        assert!(rest.is_empty());
     }
 }

@@ -178,11 +178,8 @@ impl Hasher for XxHash {
         }
 
         // Consume the input data in large chunks
-        if bytes.len() >= CHUNK_SIZE {
-            let (iter, leftover) = bytes.u64_stream();
-            self.core.ingest_chunks(iter);
-            bytes = leftover;
-        }
+        let (iter, bytes) = bytes.u64_stream_with_stride(4);
+        self.core.ingest_chunks(iter);
 
         // Save any leftover data for the next call
         if bytes.len() > 0 {
