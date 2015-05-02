@@ -78,9 +78,10 @@ impl XxCore {
 
     #[inline(always)]
     fn finish(&self) -> u64 {
-        // TODO: The original code pulls out local vars for
-        // v[1234], presumably for performance
-        // reasons. Investigate.
+        // The original code pulls out local vars for v[1234]
+        // here. Performance tests did not show that to be effective
+        // here, presumably because this method is not called in a
+        // tight loop.
 
         let mut hash;
 
