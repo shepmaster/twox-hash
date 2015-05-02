@@ -1,4 +1,3 @@
-#![feature(core)]
 #![feature(std_misc)]
 #![cfg_attr(test, feature(test))]
 
@@ -237,11 +236,11 @@ impl Hasher for XxHash {
         }
 
         // The final intermixing
-        hash ^= hash.wrapping_shr(33);
+        hash ^= hash >> 33;
         hash = hash.wrapping_mul(PRIME_2);
-        hash ^= hash.wrapping_shr(29);
+        hash ^= hash >> 29;
         hash = hash.wrapping_mul(PRIME_3);
-        hash ^= hash.wrapping_shr(32);
+        hash ^= hash >> 32;
 
         hash
     }

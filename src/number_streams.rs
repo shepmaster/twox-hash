@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
-use std::{ptr,u32,u64};
+use std::ptr;
 
-const U32_BYTES: usize = u32::BYTES;
-const U64_BYTES: usize = u64::BYTES;
+// We should use {u32,u64}::BYTES when they are stable;
+const U32_BYTES: usize = 4;
+const U64_BYTES: usize = 8;
 
 /// Converts a slice of bytes into an iterator of u32. The data is
 /// always treated as little endian!
