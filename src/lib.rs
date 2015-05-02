@@ -129,7 +129,7 @@ impl XxHash {
             total_len: 0,
             seed: seed,
             core: XxCore::with_seed(seed),
-            buffer: [0; CHUNK_SIZE],
+            buffer: unsafe { ::std::mem::uninitialized() },
             buffer_usage: 0,
         }
     }
