@@ -7,6 +7,8 @@ const U64_BYTES: usize = 8;
 
 macro_rules! number_stream(
     ($name:ident, $number_type:ty, $bytes_in_type:expr) => (
+#[allow(raw_pointer_derive)]
+#[derive(Debug,Copy,Clone)]
 struct $name<'a> {
     start: *const $number_type,
     end: *const $number_type,
@@ -41,6 +43,16 @@ impl<'a> Iterator for $name<'a> {
 
         self.start = unsafe { self.start.offset(1) };
         Some(v)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let cnt = self.count();
+        (cnt, Some(cnt))
+    }
+
+    fn count(self) -> usize() {
+        let total_bytes = self.end as usize - self.start as usize;
+        total_bytes / $bytes_in_type
     }
 }
 ));
