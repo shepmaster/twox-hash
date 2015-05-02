@@ -80,8 +80,8 @@ impl<'a> NumberStreams for [u8] {
 #[cfg(test)]
 mod test {
     use ::std::slice;
-    use super::{U32FromBytes,U32_BYTES};
-    use super::{U64FromBytes,U64_BYTES};
+    use super::{U32_BYTES,U64_BYTES};
+    use super::NumberStreams;
 
     fn u32_slice_as_u8(values: &[u32]) -> &[u8] {
         unsafe {
@@ -97,7 +97,7 @@ mod test {
         let orig_values: &[u32] = &[0,1];
         let as_u8 = u32_slice_as_u8(orig_values);
 
-        let (iter, rest) = U32FromBytes::new(as_u8);
+        let (iter, rest) = as_u8.u32_stream();
         let values: Vec<_> = iter.collect();
 
         assert_eq!(&values[..], &orig_values[..]);
@@ -110,7 +110,7 @@ mod test {
         let mut as_u8: Vec<_> = u32_slice_as_u8(orig_values).into();
         as_u8.push(42);
 
-        let (iter, rest) = U32FromBytes::new(&as_u8);
+        let (iter, rest) = as_u8.u32_stream();
         let values: Vec<_> = iter.collect();
 
         assert_eq!(&values[..], &orig_values[..]);
@@ -131,7 +131,7 @@ mod test {
         let orig_values: &[u64] = &[0,1];
         let as_u8 = u64_slice_as_u8(orig_values);
 
-        let (iter, rest) = U64FromBytes::new(as_u8);
+        let (iter, rest) = as_u8.u64_stream();
         let values: Vec<_> = iter.collect();
 
         assert_eq!(&values[..], &orig_values[..]);
@@ -144,7 +144,7 @@ mod test {
         let mut as_u8: Vec<_> = u64_slice_as_u8(orig_values).into();
         as_u8.push(42);
 
-        let (iter, rest) = U64FromBytes::new(&as_u8);
+        let (iter, rest) = as_u8.u64_stream();
         let values: Vec<_> = iter.collect();
 
         assert_eq!(&values[..], &orig_values[..]);
