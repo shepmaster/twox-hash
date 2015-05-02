@@ -3,7 +3,10 @@
 
 extern crate byteorder;
 
-use std::io::{Read,Cursor};
+mod number_streams;
+
+use std::io::Cursor;
+use number_streams::NumberStreams;
 use byteorder::{LittleEndian,ReadBytesExt};
 
 const CHUNK_SIZE: usize = 32;
@@ -42,24 +45,29 @@ impl XxCore {
     }
 
     #[inline(always)]
-    fn ingest_one_chunk(&mut self, bytes: &[u8]) {
-        let mut rdr = Cursor::new(bytes);
+    fn ingest_chunks<I>(&mut self, values: I)
+        where I: Iterator<Item=u64>
+    {
+        // TODO: The original code pulls out local vars for
+        // v[1234], presumably for performance
+        // reasons. Investigate.
 
         #[inline(always)]
-        fn ingest_one_number<R>(mut current_value: u64, rdr: &mut R) -> u64
-            where R: Read
-        {
-            let value = rdr.read_u64::<LittleEndian>().unwrap();
-            let value = value.wrapping_mul(PRIME64_2);
+        fn ingest_one_number(mut current_value: u64, mut value: u64) -> u64 {
+            value = value.wrapping_mul(PRIME64_2);
             current_value = current_value.wrapping_add(value);
             current_value = current_value.rotate_left(31);
             current_value.wrapping_mul(PRIME64_1)
         };
 
-        self.v1 = ingest_one_number(self.v1, &mut rdr);
-        self.v2 = ingest_one_number(self.v2, &mut rdr);
-        self.v3 = ingest_one_number(self.v3, &mut rdr);
-        self.v4 = ingest_one_number(self.v4, &mut rdr);
+        let mut values = values.peekable();
+
+        while values.peek().is_some() {
+            self.v1 = ingest_one_number(self.v1, values.next().unwrap());
+            self.v2 = ingest_one_number(self.v2, values.next().unwrap());
+            self.v3 = ingest_one_number(self.v3, values.next().unwrap());
+            self.v4 = ingest_one_number(self.v4, values.next().unwrap());
+        }
     }
 
     #[inline(always)]
@@ -145,7 +153,9 @@ impl XxHash {
                 std::ptr::copy_nonoverlapping(to_use.as_ptr(), tail, bytes_to_use);
             }
 
-            self.core.ingest_one_chunk(&self.buffer);
+            let (iter, _) = self.buffer.u64_stream();
+
+            self.core.ingest_chunks(iter);
 
             bytes = leftover;
             self.buffer_usage = 0;
@@ -153,16 +163,8 @@ impl XxHash {
 
         // Consume the input data in large chunks
         if bytes.len() >= CHUNK_SIZE {
-            // TODO: The original code pulls out local vars for
-            // v[1234], presumably for performance
-            // reasons. Investigate.
-
-            let (to_use, leftover) = split_at_maximum_chunk_size(bytes, CHUNK_SIZE);
-
-            for chunk in to_use.chunks(CHUNK_SIZE) {
-                self.core.ingest_one_chunk(chunk);
-            }
-
+            let (iter, leftover) = bytes.u64_stream();
+            self.core.ingest_chunks(iter);
             bytes = leftover;
         }
 
