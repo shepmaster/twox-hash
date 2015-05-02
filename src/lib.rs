@@ -20,7 +20,7 @@ struct XxCore {
 }
 
 #[derive(Debug,Copy,Clone)]
-struct XxHash {
+pub struct XxHash {
     total_len: u64,
     seed: u64,
     core: XxCore,
@@ -67,7 +67,7 @@ impl std::fmt::Debug for XxCore {
 }
 
 impl XxHash {
-    fn from_seed(seed: u64) -> XxHash {
+    pub fn from_seed(seed: u64) -> XxHash {
         XxHash {
             total_len: 0,
             seed: seed,
@@ -79,7 +79,7 @@ impl XxHash {
 }
 
 impl XxHash {
-    fn write(&mut self, bytes: &[u8]) {
+    pub fn write(&mut self, bytes: &[u8]) {
         let mut bytes = bytes;
 
         self.total_len += bytes.len() as u64;
