@@ -72,6 +72,10 @@ impl XxCore {
 
     #[inline(always)]
     fn finish(&self) -> u64 {
+        // TODO: The original code pulls out local vars for
+        // v[1234], presumably for performance
+        // reasons. Investigate.
+
         let mut hash;
 
         hash =                   self.v1.rotate_left( 1);
@@ -182,10 +186,6 @@ impl XxHash {
 
         // We have processed at least one full chunk
         if self.total_len >= CHUNK_SIZE as u64 {
-            // TODO: The original code pulls out local vars for
-            // v[1234], presumably for performance
-            // reasons. Investigate.
-
             hash = self.core.finish();
         } else {
             hash = self.seed.wrapping_add(PRIME64_5);
