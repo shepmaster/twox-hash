@@ -9,7 +9,7 @@ fi
 cargo doc
 
 # Add an automatic redirect
-repo_name=$(echo "${TRAVIS_REPO_SLUG}" | cut -d '/' -f 2)
+repo_name=$(echo "${TRAVIS_REPO_SLUG}" | cut -d '/' -f 2 | sed 's/-/_/')
 echo "<meta http-equiv=refresh content=0;url=${repo_name}/index.html>" > target/doc/index.html
 
 rm -rf generated-documentation
