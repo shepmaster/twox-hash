@@ -3,5 +3,15 @@ name = "twox-hash"
 version = "0.1.0"
 authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 
+description = "A Rust implementation of the XXHash algorithm"
+readme = "README.md"
+keywords = ["hash"]
+
+homepage = "https://github.com/shepmaster/twox-hash"
+repository = "https://github.com/shepmaster/twox-hash"
+documentation = "https://shepmaster.github.io/twox-hash/"
+
+license = "MIT"
+
 [dependencies]
 rand = "0.3"
