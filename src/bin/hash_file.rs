@@ -1,10 +1,10 @@
-extern crate hash;
+extern crate twox_hash;
 
 use std::env;
 use std::hash::Hasher;
 use std::fs::File;
 use std::io::{BufRead,BufReader};
-use hash::XxHash;
+use twox_hash::XxHash;
 
 fn main() {
     for arg in env::args().skip(1) {
