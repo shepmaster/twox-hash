@@ -243,7 +243,7 @@ impl Hasher for XxHash {
     }
 }
 
-struct RandomXxHashState(u64);
+pub struct RandomXxHashState(u64);
 
 impl RandomXxHashState {
     fn new() -> RandomXxHashState {
