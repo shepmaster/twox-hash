@@ -37,7 +37,7 @@ assert_eq!(hash.get(&42), Some(&"the answer"));
 
 ## Benchmarks
 
-|   Bytes | SipHasher (MB/s) | XXHash (MB/s) | Speedup |
+|   Bytes | SipHasher (MB/s) | XXHash (MB/s) |   Ratio |
 |---------|------------------|---------------|---------|
 |       1 |               66 |            41 |     62% |
 |       4 |              210 |           166 |     79% |
