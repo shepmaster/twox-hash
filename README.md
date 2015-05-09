@@ -2,6 +2,10 @@
 
 A Rust implementation of the [XXHash] algorithm.
 
+[![Build Status](https://travis-ci.org/shepmaster/twox-hash.svg)](https://travis-ci.org/shepmaster/twox-hash) [![Current Version](http://meritbadge.herokuapp.com/twox-hash)](https://crates.io/crates/twox-hash)
+
+[Documentation](https://shepmaster.github.io/twox-hash/)
+
 [XXHash]: https://github.com/Cyan4973/xxHash
 
 ## Examples
