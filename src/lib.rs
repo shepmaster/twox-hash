@@ -346,67 +346,85 @@ mod test {
 mod bench {
     extern crate test;
 
-    use std::hash::Hasher;
+    use std::hash::{Hasher,SipHasher};
     use super::XxHash;
 
-    #[inline(always)]
-    fn straight_line_slice_bench(b: &mut test::Bencher, len: usize) {
+    fn hasher_bench<H>(b: &mut test::Bencher, mut hasher: H, len: usize)
+        where H: Hasher
+    {
         let bytes: Vec<_> = (0..100).cycle().take(len).collect();
         b.bytes = bytes.len() as u64;
         b.iter(|| {
-            let mut hasher = XxHash::with_seed(0);
             hasher.write(&bytes);
             hasher.finish()
         });
     }
 
-    #[bench]
-    fn straight_line_megabyte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 1024*1024);
+    fn xxhash_bench(b: &mut test::Bencher, len: usize) {
+        hasher_bench(b, XxHash::with_seed(0), len)
+    }
+
+    fn siphash_bench(b: &mut test::Bencher, len: usize) {
+        hasher_bench(b, SipHasher::new(), len)
     }
 
     #[bench]
-    fn straight_line_1024_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 1024);
-    }
+    fn siphash_megabyte(b: &mut test::Bencher) { siphash_bench(b, 1024*1024) }
 
     #[bench]
-    fn straight_line_512_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 512);
-    }
+    fn siphash_1024_byte(b: &mut test::Bencher) { siphash_bench(b, 1024) }
 
     #[bench]
-    fn straight_line_256_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 256);
-    }
+    fn siphash_512_byte(b: &mut test::Bencher) { siphash_bench(b, 512) }
 
     #[bench]
-    fn straight_line_128_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 128);
-    }
+    fn siphash_256_byte(b: &mut test::Bencher) { siphash_bench(b, 256) }
 
     #[bench]
-    fn straight_line_32_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 32);
-    }
+    fn siphash_128_byte(b: &mut test::Bencher) { siphash_bench(b, 128) }
 
     #[bench]
-    fn straight_line_16_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 16);
-    }
+    fn siphash_32_byte(b: &mut test::Bencher) { siphash_bench(b, 32) }
 
     #[bench]
-    fn straight_line_4_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 4);
-    }
+    fn siphash_16_byte(b: &mut test::Bencher) { siphash_bench(b, 16) }
 
     #[bench]
-    fn straight_line_1_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 1);
-    }
+    fn siphash_4_byte(b: &mut test::Bencher) { siphash_bench(b, 4) }
 
     #[bench]
-    fn straight_line_0_byte(b: &mut test::Bencher) {
-        straight_line_slice_bench(b, 0);
-    }
+    fn siphash_1_byte(b: &mut test::Bencher) { siphash_bench(b, 1) }
+
+    #[bench]
+    fn siphash_0_byte(b: &mut test::Bencher) { siphash_bench(b, 0) }
+
+    #[bench]
+    fn xxhash_megabyte(b: &mut test::Bencher) { xxhash_bench(b, 1024*1024) }
+
+    #[bench]
+    fn xxhash_1024_byte(b: &mut test::Bencher) { xxhash_bench(b, 1024) }
+
+    #[bench]
+    fn xxhash_512_byte(b: &mut test::Bencher) { xxhash_bench(b, 512) }
+
+    #[bench]
+    fn xxhash_256_byte(b: &mut test::Bencher) { xxhash_bench(b, 256) }
+
+    #[bench]
+    fn xxhash_128_byte(b: &mut test::Bencher) { xxhash_bench(b, 128) }
+
+    #[bench]
+    fn xxhash_32_byte(b: &mut test::Bencher) { xxhash_bench(b, 32) }
+
+    #[bench]
+    fn xxhash_16_byte(b: &mut test::Bencher) { xxhash_bench(b, 16) }
+
+    #[bench]
+    fn xxhash_4_byte(b: &mut test::Bencher) { xxhash_bench(b, 4) }
+
+    #[bench]
+    fn xxhash_1_byte(b: &mut test::Bencher) { xxhash_bench(b, 1) }
+
+    #[bench]
+    fn xxhash_0_byte(b: &mut test::Bencher) { xxhash_bench(b, 0) }
 }
