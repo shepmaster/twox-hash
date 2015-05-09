@@ -374,6 +374,7 @@ mod test {
 #[cfg(test)]
 mod bench {
     extern crate test;
+    extern crate fnv;
 
     use std::hash::{Hasher,SipHasher};
     use super::XxHash;
@@ -395,6 +396,10 @@ mod bench {
 
     fn siphash_bench(b: &mut test::Bencher, len: usize) {
         hasher_bench(b, SipHasher::new(), len)
+    }
+
+    fn fnvhash_bench(b: &mut test::Bencher, len: usize) {
+        hasher_bench(b, <fnv::FnvHasher as Default>::default(), len)
     }
 
     #[bench]
@@ -426,6 +431,36 @@ mod bench {
 
     #[bench]
     fn siphash_0_byte(b: &mut test::Bencher) { siphash_bench(b, 0) }
+
+    #[bench]
+    fn fnvhash_megabyte(b: &mut test::Bencher) { fnvhash_bench(b, 1024*1024) }
+
+    #[bench]
+    fn fnvhash_1024_byte(b: &mut test::Bencher) { fnvhash_bench(b, 1024) }
+
+    #[bench]
+    fn fnvhash_512_byte(b: &mut test::Bencher) { fnvhash_bench(b, 512) }
+
+    #[bench]
+    fn fnvhash_256_byte(b: &mut test::Bencher) { fnvhash_bench(b, 256) }
+
+    #[bench]
+    fn fnvhash_128_byte(b: &mut test::Bencher) { fnvhash_bench(b, 128) }
+
+    #[bench]
+    fn fnvhash_32_byte(b: &mut test::Bencher) { fnvhash_bench(b, 32) }
+
+    #[bench]
+    fn fnvhash_16_byte(b: &mut test::Bencher) { fnvhash_bench(b, 16) }
+
+    #[bench]
+    fn fnvhash_4_byte(b: &mut test::Bencher) { fnvhash_bench(b, 4) }
+
+    #[bench]
+    fn fnvhash_1_byte(b: &mut test::Bencher) { fnvhash_bench(b, 1) }
+
+    #[bench]
+    fn fnvhash_0_byte(b: &mut test::Bencher) { fnvhash_bench(b, 0) }
 
     #[bench]
     fn xxhash_megabyte(b: &mut test::Bencher) { xxhash_bench(b, 1024*1024) }
