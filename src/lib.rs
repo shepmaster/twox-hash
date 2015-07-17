@@ -5,8 +5,7 @@
 //! ### With a fixed seed
 //!
 //! ```rust
-//! #![feature(std_misc)]
-//!
+//! #![feature(hashmap_hasher)]
 //! use std::collections::HashMap;
 //! use std::collections::hash_state::DefaultState;
 //! use twox_hash::XxHash;
@@ -27,7 +26,7 @@
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
 
-#![feature(std_misc)]
+#![feature(hashmap_hasher)]
 #![cfg_attr(test, feature(test))]
 
 extern crate rand;
