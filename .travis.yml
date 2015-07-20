@@ -1,5 +1,6 @@
 language: rust
 sudo: false
+rust: nightly
 after_success: "./deploy_gh_pages.sh"
 env:
   global:
