@@ -7,7 +7,6 @@ const U64_BYTES: usize = 8;
 
 macro_rules! number_stream(
     ($name:ident, $number_type:ty, $bytes_in_type:expr) => (
-#[allow(raw_pointer_derive)]
 #[derive(Debug,Copy,Clone)]
 struct $name<'a> {
     start: *const $number_type,
