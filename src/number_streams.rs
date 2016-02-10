@@ -8,7 +8,7 @@ const U64_BYTES: usize = 8;
 macro_rules! number_stream(
     ($name:ident, $number_type:ty, $bytes_in_type:expr) => (
 #[derive(Debug,Copy,Clone)]
-struct $name<'a> {
+pub struct $name<'a> {
     start: *const $number_type,
     end: *const $number_type,
     marker: PhantomData<&'a ()>
