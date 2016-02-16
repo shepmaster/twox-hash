@@ -5,13 +5,11 @@
 //! ### With a fixed seed
 //!
 //! ```rust
-//! #![feature(hashmap_hasher)]
-//!
+//! use std::hash::BuildHasherDefault;
 //! use std::collections::HashMap;
-//! use std::collections::hash_state::DefaultState;
 //! use twox_hash::XxHash;
 //!
-//! let mut hash: HashMap<_, _, DefaultState<XxHash>> = Default::default();
+//! let mut hash: HashMap<_, _, BuildHasherDefault<XxHash>> = Default::default();
 //! hash.insert(42, "the answer");
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
@@ -20,22 +18,20 @@
 //!
 //! ```rust
 //! use std::collections::HashMap;
-//! use twox_hash::RandomXxHashState;
+//! use twox_hash::RandomXxHashBuilder;
 //!
-//! let mut hash: HashMap<_, _, RandomXxHashState> = Default::default();
+//! let mut hash: HashMap<_, _, RandomXxHashBuilder> = Default::default();
 //! hash.insert(42, "the answer");
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
 
-#![feature(hashmap_hasher)]
 #![cfg_attr(test, feature(test))]
 
 extern crate rand;
 
 mod number_streams;
 
-use std::hash::Hasher;
-use std::collections::hash_state::HashState;
+use std::hash::{Hasher, BuildHasher};
 use rand::Rng;
 use number_streams::NumberStreams;
 
@@ -272,30 +268,29 @@ impl Hasher for XxHash {
     }
 }
 
-pub struct RandomXxHashState(u64);
+pub struct RandomXxHashBuilder(u64);
 
-impl RandomXxHashState {
-    fn new() -> RandomXxHashState {
-        RandomXxHashState(rand::thread_rng().gen())
+impl RandomXxHashBuilder {
+    fn new() -> RandomXxHashBuilder {
+        RandomXxHashBuilder(rand::thread_rng().gen())
     }
 }
 
-impl Default for RandomXxHashState {
-    fn default() -> RandomXxHashState { RandomXxHashState::new() }
+impl Default for RandomXxHashBuilder {
+    fn default() -> RandomXxHashBuilder { RandomXxHashBuilder::new() }
 }
 
-impl HashState for RandomXxHashState {
+impl BuildHasher for RandomXxHashBuilder {
     type Hasher = XxHash;
 
-    fn hasher(&self) -> XxHash { XxHash::with_seed(self.0) }
+    fn build_hasher(&self) -> XxHash { XxHash::with_seed(self.0) }
 }
 
 #[cfg(test)]
 mod test {
-    use std::hash::Hasher;
+    use std::hash::{Hasher, BuildHasherDefault};
     use std::collections::HashMap;
-    use std::collections::hash_state::DefaultState;
-    use super::{XxHash,RandomXxHashState};
+    use super::{XxHash, RandomXxHashBuilder};
 
     #[test]
     fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
@@ -358,14 +353,14 @@ mod test {
 
     #[test]
     fn can_be_used_in_a_hashmap_with_a_default_seed() {
-        let mut hash: HashMap<_, _, DefaultState<XxHash>> = Default::default();
+        let mut hash: HashMap<_, _, BuildHasherDefault<XxHash>> = Default::default();
         hash.insert(42, "the answer");
         assert_eq!(hash.get(&42), Some(&"the answer"));
     }
 
     #[test]
     fn can_be_used_in_a_hashmap_with_a_random_seed() {
-        let mut hash: HashMap<_, _, RandomXxHashState> = Default::default();
+        let mut hash: HashMap<_, _, RandomXxHashBuilder> = Default::default();
         hash.insert(42, "the answer");
         assert_eq!(hash.get(&42), Some(&"the answer"));
     }
