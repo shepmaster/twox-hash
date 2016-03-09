@@ -25,7 +25,7 @@
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
 
-#![cfg_attr(test, feature(test))]
+#![cfg_attr(feature = "unstable", feature(test))]
 
 extern crate rand;
 
@@ -366,7 +366,7 @@ mod test {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(feature = "unstable", test))]
 mod bench {
     extern crate test;
     extern crate fnv;

@@ -1,7 +1,18 @@
 language: rust
 sudo: false
-rust: nightly
-after_success: "./deploy_gh_pages.sh"
+rust:
+  - 1.7.0
+  - stable
+  - beta
+  - nightly
 env:
   global:
     secure: sddzqtxWZXGCGhFRfIArUHhJyzp0e9j5jdbMbDfw+ZS2HioGoLdbvufWnIoFD0fFGRhVnL+2xrE4j/HbuSKbwvPLHf/1Ln/zFKmK7JcGXyGL+TFgYEayhhggWSlxHSZbN5wxRXBDLfgnMg3iOL0gtm4yIDV2pDBzCkXCTD1hKDhS6WDPAWTtQb47wo1+oFZO81UnnCskHVwlobodWV4Tj9eFh5ABB/W/xV/lKYvacPW0iMv5NPZkxJ16WOwjZrPxuldgD/i/h+RdnUFWWnPaRzSDDJnFEISMIX5s8GVAwYNQatySQ/T5DqC8qalWG2Z+RROwQ/EayfTI/vvrzJTslqEptf5zQOnq9amEc7hKHlMxz9GpFd2Sv4ANkMAtgcxjBNn2QIS7GrQJHzjwxTyRzWms7b41GNPusNcawx6drsJ0LBk9lx6HHPskAtqFdd2FVS5VuMid6j57rYK3Biu/Yi9temvUIHzuyYZFvYAwANAFTgIt+zT45flLrDu/zsk2XMpNIQLeL7khT7Qkwj4y3qskgFE6ICfQhDGkhleHsLz7xQJ0QfDrjBCOW3xx7Ys16V5A66ClTnlB/gLGRnGy0v0TokrvSjVjbdRBtjVNxliSnJyhyoR/MRn8FpdlULziJhU6U2YlCtoLprStTC0P6SuwOae+4Vl/cXAW3jlkm7o=
+matrix:
+  include:
+  - rust: nightly
+    env: FEATURES="unstable"
+script: |
+  cargo build --verbose --features "${FEATURES}"
+  cargo test --verbose --features "${FEATURES}"
+after_success: "./deploy_gh_pages.sh"
