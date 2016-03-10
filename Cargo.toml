@@ -13,6 +13,9 @@ documentation = "https://shepmaster.github.io/twox-hash/"
 
 license = "MIT"
 
+[features]
+unstable = []
+
 [dependencies]
 rand = "0.3"
 
