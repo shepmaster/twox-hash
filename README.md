@@ -13,13 +13,11 @@ A Rust implementation of the [XXHash] algorithm.
 ### With a fixed seed
 
 ```rust
-#![feature(std_misc)]
-
+use std::hash::BuildHasherDefault;
 use std::collections::HashMap;
-use std::collections::hash_state::DefaultState;
-use hash::XxHash;
+use twox_hash::XxHash;
 
-let mut hash: HashMap<_, _, DefaultState<XxHash>> = Default::default();
+let mut hash: HashMap<_, _, BuildHasherDefault<XxHash>> = Default::default();
 hash.insert(42, "the answer");
 assert_eq!(hash.get(&42), Some(&"the answer"));
 ```
@@ -28,9 +26,9 @@ assert_eq!(hash.get(&42), Some(&"the answer"));
 
 ```rust
 use std::collections::HashMap;
-use hash::RandomXxHashState;
+use twox_hash::RandomXxHashBuilder;
 
-let mut hash: HashMap<_, _, RandomXxHashState> = Default::default();
+let mut hash: HashMap<_, _, RandomXxHashBuilder> = Default::default();
 hash.insert(42, "the answer");
 assert_eq!(hash.get(&42), Some(&"the answer"));
 ```
