@@ -6,8 +6,8 @@ authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 description = "A Rust implementation of the XXHash algorithm"
 readme = "README.md"
 keywords = ["hash"]
+categories = ["algorithms"]
 
-homepage = "https://github.com/shepmaster/twox-hash"
 repository = "https://github.com/shepmaster/twox-hash"
 documentation = "https://docs.rs/twox-hash/"
 
