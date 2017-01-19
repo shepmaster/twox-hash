@@ -9,7 +9,7 @@ keywords = ["hash"]
 
 homepage = "https://github.com/shepmaster/twox-hash"
 repository = "https://github.com/shepmaster/twox-hash"
-documentation = "https://shepmaster.github.io/twox-hash/"
+documentation = "https://docs.rs/twox-hash/"
 
 license = "MIT"
 
