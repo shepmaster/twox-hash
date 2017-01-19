@@ -268,6 +268,7 @@ impl Hasher for XxHash {
     }
 }
 
+#[derive(Clone)]
 pub struct RandomXxHashBuilder(u64);
 
 impl RandomXxHashBuilder {
