@@ -1,72 +1,43 @@
-//! A Rust implementation of the [XXHash] algorithm.
-//!
-//! [XXHash]: https://github.com/Cyan4973/xxHash
-//!
-//! ### With a fixed seed
-//!
-//! ```rust
-//! use std::hash::BuildHasherDefault;
-//! use std::collections::HashMap;
-//! use twox_hash::XxHash;
-//!
-//! let mut hash: HashMap<_, _, BuildHasherDefault<XxHash>> = Default::default();
-//! hash.insert(42, "the answer");
-//! assert_eq!(hash.get(&42), Some(&"the answer"));
-//! ```
-//!
-//! ### With a random seed
-//!
-//! ```rust
-//! use std::collections::HashMap;
-//! use twox_hash::RandomXxHashBuilder;
-//!
-//! let mut hash: HashMap<_, _, RandomXxHashBuilder> = Default::default();
-//! hash.insert(42, "the answer");
-//! assert_eq!(hash.get(&42), Some(&"the answer"));
-//! ```
-
-#![cfg_attr(feature = "unstable", feature(test))]
-
-extern crate rand;
-
-mod number_streams;
-mod thirty_two;
-
-pub use thirty_two::XxHash as XxHash32;
-pub use thirty_two::RandomXxHashBuilder as RandomXxHashBuilder32;
+use std;
+use rand;
 
 use std::hash::{Hasher, BuildHasher};
 use rand::Rng;
 use number_streams::NumberStreams;
 
-const CHUNK_SIZE: usize = 32;
+const CHUNK_SIZE: usize = 16;
 
-const PRIME_1: u64 = 11400714785074694791;
-const PRIME_2: u64 = 14029467366897019727;
-const PRIME_3: u64 = 1609587929392839161;
-const PRIME_4: u64 = 9650029242287828579;
-const PRIME_5: u64 = 2870177450012600261;
+const PRIME_1: u32 = 2654435761;
+const PRIME_2: u32 = 2246822519;
+const PRIME_3: u32 = 3266489917;
+const PRIME_4: u32 =  668265263;
+const PRIME_5: u32 =  374761393;
 
 #[derive(Copy,Clone,PartialEq)]
 struct XxCore {
-    v1: u64,
-    v2: u64,
-    v3: u64,
-    v4: u64,
+    v1: u32,
+    v2: u32,
+    v3: u32,
+    v4: u32,
 }
 
-/// Calculates the 64-bit hash.
+/// Calculates the 32-bit hash. Care should be taken when using this
+/// hash.
+///
+/// Although this struct implements `Hasher`, it only calculates a
+/// 32-bit number, leaving the upper bits as 0. This means it is
+/// unlikely to be correct to use this in places like a `HashMap`.
 #[derive(Debug,Copy,Clone)]
 pub struct XxHash {
-    total_len: u64,
-    seed: u64,
+    total_len: u32,
+    seed: u32,
     core: XxCore,
     buffer: [u8; CHUNK_SIZE],
     buffer_usage: usize,
 }
 
 impl XxCore {
-    fn with_seed(seed: u64) -> XxCore {
+    fn with_seed(seed: u32) -> XxCore {
         XxCore {
             v1: seed.wrapping_add(PRIME_1).wrapping_add(PRIME_2),
             v2: seed.wrapping_add(PRIME_2),
@@ -77,13 +48,13 @@ impl XxCore {
 
     #[inline(always)]
     fn ingest_chunks<I>(&mut self, values: I)
-        where I: Iterator<Item=u64>
+        where I: Iterator<Item=u32>
     {
         #[inline(always)]
-        fn ingest_one_number(mut current_value: u64, mut value: u64) -> u64 {
+        fn ingest_one_number(mut current_value: u32, mut value: u32) -> u32 {
             value = value.wrapping_mul(PRIME_2);
             current_value = current_value.wrapping_add(value);
-            current_value = current_value.rotate_left(31);
+            current_value = current_value.rotate_left(13); // DIFF
             current_value.wrapping_mul(PRIME_1)
         };
 
@@ -112,7 +83,7 @@ impl XxCore {
     }
 
     #[inline(always)]
-    fn finish(&self) -> u64 {
+    fn finish(&self) -> u32 {
         // The original code pulls out local vars for v[1234]
         // here. Performance tests did not show that to be effective
         // here, presumably because this method is not called in a
@@ -124,21 +95,6 @@ impl XxCore {
         hash = hash.wrapping_add(self.v2.rotate_left( 7));
         hash = hash.wrapping_add(self.v3.rotate_left(12));
         hash = hash.wrapping_add(self.v4.rotate_left(18));
-
-        #[inline(always)]
-        fn mix_one(mut hash: u64, mut value: u64) -> u64 {
-            value = value.wrapping_mul(PRIME_2);
-            value = value.rotate_left(31);
-            value = value.wrapping_mul(PRIME_1);
-            hash ^= value;
-            hash = hash.wrapping_mul(PRIME_1);
-            hash.wrapping_add(PRIME_4)
-        }
-
-        hash = mix_one(hash, self.v1);
-        hash = mix_one(hash, self.v2);
-        hash = mix_one(hash, self.v3);
-        hash = mix_one(hash, self.v4);
 
         hash
     }
@@ -155,7 +111,7 @@ impl std::fmt::Debug for XxCore {
 
 impl XxHash {
     /// Constructs the hash with an initial seed
-    pub fn with_seed(seed: u64) -> XxHash {
+    pub fn with_seed(seed: u32) -> XxHash {
         XxHash {
             total_len: 0,
             seed: seed,
@@ -176,7 +132,7 @@ impl Hasher for XxHash {
     fn write(&mut self, bytes: &[u8]) {
         let mut bytes = bytes;
 
-        self.total_len += bytes.len() as u64;
+        self.total_len += bytes.len() as u32;
 
         // Even with new data, we still don't have a full buffer. Wait
         // until we have a full buffer.
@@ -200,7 +156,7 @@ impl Hasher for XxHash {
                 std::ptr::copy_nonoverlapping(to_use.as_ptr(), tail, bytes_to_use);
             }
 
-            let (iter, _) = self.buffer.u64_stream();
+            let (iter, _) = self.buffer.u32_stream();
 
             self.core.ingest_chunks(iter);
 
@@ -209,7 +165,7 @@ impl Hasher for XxHash {
         }
 
         // Consume the input data in large chunks
-        let (iter, bytes) = bytes.u64_stream_with_stride(4);
+        let (iter, bytes) = bytes.u32_stream_with_stride(4);
         self.core.ingest_chunks(iter);
 
         // Save any leftover data for the next call
@@ -221,11 +177,11 @@ impl Hasher for XxHash {
         }
     }
 
-    fn finish(&self) -> u64 {
+    fn finish(&self) -> u64 { // NODIFF
         let mut hash;
 
         // We have processed at least one full chunk
-        if self.total_len >= CHUNK_SIZE as u64 {
+        if self.total_len >= CHUNK_SIZE as u32 {
             hash = self.core.finish();
         } else {
             hash = self.seed.wrapping_add(PRIME_5);
@@ -234,49 +190,36 @@ impl Hasher for XxHash {
         hash = hash.wrapping_add(self.total_len);
 
         let buffered = &self.buffer[..self.buffer_usage];
-        let (buffered_u64s, buffered) = buffered.u64_stream();
-
-        for mut k1 in buffered_u64s {
-            k1 = k1.wrapping_mul(PRIME_2);
-            k1 = k1.rotate_left(31);
-            k1 = k1.wrapping_mul(PRIME_1);
-            hash ^= k1;
-            hash = hash.rotate_left(27);
-            hash = hash.wrapping_mul(PRIME_1);
-            hash = hash.wrapping_add(PRIME_4);
-        }
-
         let (buffered_u32s, buffered) = buffered.u32_stream();
 
         for k1 in buffered_u32s {
-            let k1 = (k1 as u64).wrapping_mul(PRIME_1);
-            hash ^= k1;
-            hash = hash.rotate_left(23);
-            hash = hash.wrapping_mul(PRIME_2);
-            hash = hash.wrapping_add(PRIME_3);
+            let k1 = k1.wrapping_mul(PRIME_3);
+            hash = hash.wrapping_add(k1);
+            hash = hash.rotate_left(17);
+            hash = hash.wrapping_mul(PRIME_4);
         }
 
         for buffered_u8 in buffered {
-            let k1 = (*buffered_u8 as u64).wrapping_mul(PRIME_5);
-            hash ^= k1;
+            let k1 = (*buffered_u8 as u32).wrapping_mul(PRIME_5);
+            hash = hash.wrapping_add(k1);
             hash = hash.rotate_left(11);
             hash = hash.wrapping_mul(PRIME_1);
         }
 
         // The final intermixing
-        hash ^= hash >> 33;
+        hash ^= hash >> 15;
         hash = hash.wrapping_mul(PRIME_2);
-        hash ^= hash >> 29;
+        hash ^= hash >> 13;
         hash = hash.wrapping_mul(PRIME_3);
-        hash ^= hash >> 32;
+        hash ^= hash >> 16;
 
-        hash
+        hash as u64
     }
 }
 
 #[derive(Clone)]
-/// Constructs a randomized seed and reuses it for multiple hasher instances.
-pub struct RandomXxHashBuilder(u64);
+/// Constructs a randomized seed and reuses it for multiple hasher instances. See the usage warning on `XxHash32`.
+pub struct RandomXxHashBuilder(u32);
 
 impl RandomXxHashBuilder {
     fn new() -> RandomXxHashBuilder {
@@ -319,21 +262,21 @@ mod test {
     fn hash_of_nothing_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&[]);
-        assert_eq!(hasher.finish(), 0xef46db3751d8e999);
+        assert_eq!(hasher.finish(), 0x02cc5d05);
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&[42]);
-        assert_eq!(hasher.finish(), 0x0a9edecebeb03ae4);
+        assert_eq!(hasher.finish(), 0xe0fe705f);
     }
 
     #[test]
     fn hash_of_multiple_bytes_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(b"Hello, world!\0");
-        assert_eq!(hasher.finish(), 0x7b06c531ea43e89f);
+        assert_eq!(hasher.finish(), 0x9e5e7e93);
     }
 
     #[test]
@@ -341,22 +284,22 @@ mod test {
         let bytes: Vec<_> = (0..100).collect();
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&bytes);
-        assert_eq!(hasher.finish(), 0x6ac1e58032166597);
+        assert_eq!(hasher.finish(), 0x7f89ba44);
     }
 
     #[test]
     fn hash_with_different_seed_matches_c_implementation() {
-        let mut hasher = XxHash::with_seed(0xae0543311b702d91);
+        let mut hasher = XxHash::with_seed(0x42c91977);
         hasher.write(&[]);
-        assert_eq!(hasher.finish(), 0x4b6a04fcdf7a4672);
+        assert_eq!(hasher.finish(), 0xd6bf8459);
     }
 
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation() {
         let bytes: Vec<_> = (0..100).collect();
-        let mut hasher = XxHash::with_seed(0xae0543311b702d91);
+        let mut hasher = XxHash::with_seed(0x42c91977);
         hasher.write(&bytes);
-        assert_eq!(hasher.finish(), 0x567e355e0682e1f1);
+        assert_eq!(hasher.finish(), 0x6d2f6c17);
     }
 
     #[test]
@@ -373,6 +316,3 @@ mod test {
         assert_eq!(hash.get(&42), Some(&"the answer"));
     }
 }
-
-#[cfg(all(feature = "unstable", test))]
-mod bench;
