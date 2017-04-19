@@ -13,11 +13,5 @@ documentation = "https://docs.rs/twox-hash/"
 
 license = "MIT"
 
-[features]
-unstable = []
-
 [dependencies]
 rand = "0.3"
-
-[dev-dependencies]
-fnv = "1.0"

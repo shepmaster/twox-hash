@@ -25,8 +25,6 @@
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
 
-#![cfg_attr(feature = "unstable", feature(test))]
-
 extern crate rand;
 
 mod number_streams;
@@ -373,6 +371,3 @@ mod test {
         assert_eq!(hash.get(&42), Some(&"the answer"));
     }
 }
-
-#[cfg(all(feature = "unstable", test))]
-mod bench;

@@ -1,8 +1,8 @@
-extern crate test;
-extern crate fnv;
-
 use std::hash::{Hasher,SipHasher};
-use super::{XxHash, XxHash32};
+
+use test;
+use fnv;
+use twox_hash::{XxHash, XxHash32};
 
 fn hasher_bench<H>(b: &mut test::Bencher, mut hasher: H, len: usize)
     where H: Hasher

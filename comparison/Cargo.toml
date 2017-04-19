@@ -1,0 +1,13 @@
+[package]
+authors = ["Jake Goulding <jake.goulding@gmail.com>"]
+name = "comparison"
+version = "0.1.0"
+
+[dependencies]
+fnv = "1.0"
+
+[dependencies.twox-hash]
+path = ".."
+
+[features]
+bench = []
