@@ -55,6 +55,7 @@ struct XxCore {
     v4: u64,
 }
 
+/// Calculates the 64-bit hash.
 #[derive(Debug,Copy,Clone)]
 pub struct XxHash {
     total_len: u64,
@@ -153,6 +154,7 @@ impl std::fmt::Debug for XxCore {
 }
 
 impl XxHash {
+    /// Constructs the hash with an initial seed
     pub fn with_seed(seed: u64) -> XxHash {
         XxHash {
             total_len: 0,
@@ -273,6 +275,7 @@ impl Hasher for XxHash {
 }
 
 #[derive(Clone)]
+/// Constructs a randomized seed and reuses it for multiple hasher instances.
 pub struct RandomXxHashBuilder(u64);
 
 impl RandomXxHashBuilder {

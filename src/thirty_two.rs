@@ -21,6 +21,12 @@ struct XxCore {
     v4: u32,
 }
 
+/// Calculates the 32-bit hash. Care should be taken when using this
+/// hash.
+///
+/// Although this struct implements `Hasher`, it only calculates a
+/// 32-bit number, leaving the upper bits as 0. This means it is
+/// unlikely to be correct to use this in places like a `HashMap`.
 #[derive(Debug,Copy,Clone)]
 pub struct XxHash {
     total_len: u32,
@@ -104,6 +110,7 @@ impl std::fmt::Debug for XxCore {
 }
 
 impl XxHash {
+    /// Constructs the hash with an initial seed
     pub fn with_seed(seed: u32) -> XxHash {
         XxHash {
             total_len: 0,
@@ -211,6 +218,7 @@ impl Hasher for XxHash {
 }
 
 #[derive(Clone)]
+/// Constructs a randomized seed and reuses it for multiple hasher instances. See the usage warning on `XxHash32`.
 pub struct RandomXxHashBuilder(u32);
 
 impl RandomXxHashBuilder {
