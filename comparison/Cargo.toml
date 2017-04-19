@@ -5,6 +5,9 @@ version = "0.1.0"
 
 [dependencies]
 fnv = "1.0"
+quickcheck = "0.4.1"
+rand = "0.3.15"
+xxhash2 = "0.1.0"
 
 [dependencies.twox-hash]
 path = ".."

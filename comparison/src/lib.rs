@@ -12,3 +12,17 @@ extern crate test;
 
 #[cfg(all(feature = "bench", test))]
 mod bench;
+
+
+
+#[cfg(all(feature = "quickcheck", test))]
+extern crate quickcheck;
+
+#[cfg(all(feature = "quickcheck", test))]
+extern crate rand;
+
+#[cfg(all(feature = "quickcheck", test))]
+extern crate xxhash2;
+
+#[cfg(all(feature = "quickcheck", test))]
+mod same;
