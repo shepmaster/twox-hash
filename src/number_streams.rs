@@ -64,7 +64,7 @@ impl<'a> Iterator for $name<'a> {
         (cnt, Some(cnt))
     }
 
-    fn count(self) -> usize() {
+    fn count(self) -> usize {
         let total_bytes = self.end as usize - self.start as usize;
         total_bytes / $bytes_in_type
     }
