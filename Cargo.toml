@@ -14,4 +14,4 @@ documentation = "https://docs.rs/twox-hash/"
 license = "MIT"
 
 [dependencies]
-rand = "0.3.10"
+rand = ">= 0.3.10, < 0.5"
