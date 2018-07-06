@@ -1,10 +1,17 @@
 language: rust
 sudo: false
 rust:
-  - 1.15.1
   - stable
   - beta
   - nightly
+matrix:
+  include:
+    - rust: 1.15.1
+      env: DOWNGRADE=1
 script: |
-  cargo build --verbose --features "${FEATURES}"
-  cargo test --verbose --features "${FEATURES}"
+  if [[ -n $DOWNGRADE ]]; then
+    cargo generate-lockfile
+    cargo update --package rand --precise 0.3.10
+  fi
+  cargo build --verbose
+  cargo test --verbose
