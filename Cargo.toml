@@ -1,6 +1,6 @@
 [package]
 name = "twox-hash"
-version = "1.1.1"
+version = "1.1.2"
 authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 
 description = "A Rust implementation of the XXHash algorithm"
