@@ -27,6 +27,11 @@
 
 extern crate rand;
 
+#[cfg(feature="serialize")]
+extern crate serde;
+#[cfg(feature="serialize")]
+use serde::{Serialize, Deserialize};
+
 mod number_streams;
 mod thirty_two;
 
@@ -45,6 +50,7 @@ const PRIME_3: u64 = 1609587929392839161;
 const PRIME_4: u64 = 9650029242287828579;
 const PRIME_5: u64 = 2870177450012600261;
 
+#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))] 
 #[derive(Copy,Clone,PartialEq)]
 struct XxCore {
     v1: u64,
@@ -54,7 +60,8 @@ struct XxCore {
 }
 
 /// Calculates the 64-bit hash.
-#[derive(Debug,Copy,Clone)]
+#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))] 
+#[derive(PartialEq, Debug,Copy,Clone)]
 pub struct XxHash {
     total_len: u64,
     seed: u64,
@@ -369,5 +376,17 @@ mod test {
         let mut hash: HashMap<_, _, RandomXxHashBuilder> = Default::default();
         hash.insert(42, "the answer");
         assert_eq!(hash.get(&42), Some(&"the answer"));
+    }
+
+    #[cfg(feature="serialize")]
+    #[test]
+    fn test_serialization() {
+        let mut hasher = XxHash::with_seed(0);
+        hasher.write(b"Hello, world!\0");
+        hasher.finish();
+
+        let serialized = serde_json::to_string(&hasher).unwrap();
+        let unserialized: XxHash = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(hasher, unserialized);
     }
 }
