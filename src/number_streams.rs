@@ -1,5 +1,5 @@
-use std::marker::PhantomData;
-use std::ptr;
+use core::marker::PhantomData;
+use core::ptr;
 
 // We should use {u32,u64}::BYTES when they are stable;
 const U32_BYTES: usize = 4;
@@ -107,6 +107,7 @@ impl<'a> NumberStreams for [u8] {
 
 #[cfg(test)]
 mod test {
+    use std::prelude::v1::*;
     use ::std::slice;
     use super::{U32_BYTES,U64_BYTES};
     use super::NumberStreams;
