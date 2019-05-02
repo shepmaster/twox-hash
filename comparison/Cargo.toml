@@ -7,10 +7,11 @@ version = "0.1.0"
 fnv = "1.0"
 quickcheck = "0.4.1"
 rand = "0.3.15"
-xxhash2 = "0.1.0"
-
-[dependencies.twox-hash]
-path = ".."
+twox-hash = { path = ".." }
+libc = "0.2.53"
 
 [features]
 bench = []
+
+[build-dependencies]
+cc = "1.0.36"

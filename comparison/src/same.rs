@@ -3,7 +3,7 @@ use std::hash::Hasher;
 use quickcheck::{QuickCheck, StdGen};
 use rand::ThreadRng;
 use twox_hash::{XxHash, XxHash32};
-use xxhash2;
+use c_xxhash;
 
 fn qc() -> QuickCheck<StdGen<ThreadRng>> {
     QuickCheck::new()
@@ -18,7 +18,7 @@ fn same_results_as_c_for_64_bit() {
         hasher.write(&data);
         let our_result = hasher.finish();
 
-        let their_result = xxhash2::hash64(&data, seed);
+        let their_result = c_xxhash::hash64(&data, seed);
 
         our_result == their_result
     }
@@ -33,7 +33,7 @@ fn same_results_as_c_for_32_bit() {
         hasher.write(&data);
         let our_result = hasher.finish();
 
-        let their_result = xxhash2::hash32(&data, seed);
+        let their_result = c_xxhash::hash32(&data, seed);
 
         our_result == their_result as u64
     }

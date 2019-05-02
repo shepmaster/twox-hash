@@ -19,10 +19,13 @@ mod bench;
 extern crate quickcheck;
 
 #[cfg(all(feature = "quickcheck", test))]
+extern crate libc;
+
+#[cfg(all(feature = "quickcheck", test))]
 extern crate rand;
 
 #[cfg(all(feature = "quickcheck", test))]
-extern crate xxhash2;
+mod c_xxhash;
 
 #[cfg(all(feature = "quickcheck", test))]
 mod same;
