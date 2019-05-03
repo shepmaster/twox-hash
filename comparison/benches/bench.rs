@@ -9,11 +9,7 @@ use criterion::{
     PlotConfiguration, Throughput,
 };
 use fnv::FnvHasher;
-use std::{
-    fmt,
-    hash::{Hasher, SipHasher},
-    ops,
-};
+use std::{collections::hash_map::DefaultHasher, fmt, hash::Hasher, ops};
 use twox_hash::{XxHash, XxHash32};
 
 const INPUT_SIZES: &[usize] = &[0, 1, 4, 16, 32, 128, 256, 512, 1024, 1024 * 1024];
@@ -39,7 +35,7 @@ fn bench_everything(c: &mut Criterion) {
             .with_function("XxHash32", bench_hasher(|| XxHash32::with_seed(0)))
             .with_function("XxHash64 (C)", bench_c(|d| hash64(d, 0)))
             .with_function("XxHash32 (C)", bench_c(|d| hash32(d, 0)))
-            .with_function("SipHasher", bench_hasher(|| SipHasher::new()))
+            .with_function("DefaultHasher", bench_hasher(|| DefaultHasher::new()))
             .with_function("FnvHasher", bench_hasher(|| FnvHasher::default()))
             .throughput(|data| Throughput::Elements(data.0.len() as u32))
             .plot_config(plot_config);
