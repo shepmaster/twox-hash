@@ -1,15 +1,35 @@
-#![cfg_attr(feature = "bench", feature(test))]
-
 extern crate libc;
+extern crate proptest;
 extern crate twox_hash;
 
 pub mod c_xxhash;
 
-#[cfg(all(feature = "quickcheck", test))]
-extern crate quickcheck;
+use proptest::prelude::*;
+use std::hash::Hasher;
+#[cfg(test)]
+use twox_hash::{XxHash, XxHash32};
 
-#[cfg(all(feature = "quickcheck", test))]
-extern crate rand;
+pub fn hash_once(mut hasher: impl Hasher, data: &[u8]) -> u64 {
+    hasher.write(&data);
+    hasher.finish()
+}
 
-#[cfg(all(feature = "quickcheck", test))]
-mod same;
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(100_000))]
+
+    #[test]
+    fn same_results_as_c_for_64_bit(seed: u64, data: Vec<u8>) {
+        let our_result = hash_once(XxHash::with_seed(seed), &data);
+        let their_result = c_xxhash::hash64(&data, seed);
+
+        our_result == their_result
+    }
+
+    #[test]
+    fn same_results_as_c_for_32_bit(seed: u32, data: Vec<u8>) {
+        let our_result = hash_once(XxHash32::with_seed(seed), &data);
+        let their_result = c_xxhash::hash32(&data, seed);
+
+        our_result == their_result as u64
+    }
+}

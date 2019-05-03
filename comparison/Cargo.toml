@@ -9,11 +9,11 @@ harness = false
 
 [dependencies]
 fnv = "1.0"
-quickcheck = "0.4.1"
 rand = "0.3.15"
 twox-hash = { path = ".." }
 libc = "0.2.53"
 criterion = "0.2.11"
+proptest = "0.9.3"
 
 [features]
 bench = []
