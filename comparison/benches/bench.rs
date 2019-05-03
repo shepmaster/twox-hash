@@ -1,10 +1,12 @@
-#[macro_use]
-extern crate criterion;
-extern crate fnv;
-extern crate twox_hash;
+#![deny(rust_2018_idioms)]
 
+use comparison::{
+    c_xxhash::{hash32, hash64},
+    hash_once,
+};
 use criterion::{
-    AxisScale, Bencher, Criterion, ParameterizedBenchmark, PlotConfiguration, Throughput,
+    criterion_group, criterion_main, AxisScale, Bencher, Criterion, ParameterizedBenchmark,
+    PlotConfiguration, Throughput,
 };
 use fnv::FnvHasher;
 use std::{
@@ -16,13 +18,11 @@ use twox_hash::{XxHash, XxHash32};
 
 const INPUT_SIZES: &[usize] = &[0, 1, 4, 16, 32, 128, 256, 512, 1024, 1024 * 1024];
 
-fn bench_hasher(mut hasher: impl Hasher) -> impl FnMut(&mut Bencher, &Data) {
-    move |b, data| {
-        b.iter(|| {
-            hasher.write(data);
-            hasher.finish()
-        })
-    }
+fn bench_hasher<H>(hasher: impl Fn() -> H) -> impl FnMut(&mut Bencher, &Data)
+where
+    H: Hasher,
+{
+    move |b, data| b.iter(|| hash_once(hasher(), data))
 }
 
 fn bench_c<R>(hasher: impl Fn(&[u8]) -> R) -> impl FnMut(&mut Bencher, &Data) {
@@ -34,20 +34,15 @@ fn bench_everything(c: &mut Criterion) {
 
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
-    let bench = ParameterizedBenchmark::new("XxHash64", bench_hasher(XxHash::with_seed(0)), data)
-        .with_function("XxHash32", bench_hasher(XxHash32::with_seed(0)))
-        .with_function(
-            "XxHash64 (C)",
-            bench_c(|d| comparison::c_xxhash::hash64(d, 0)),
-        )
-        .with_function(
-            "XxHash32 (C)",
-            bench_c(|d| comparison::c_xxhash::hash32(d, 0)),
-        )
-        .with_function("SipHasher", bench_hasher(SipHasher::new()))
-        .with_function("FnvHasher", bench_hasher(FnvHasher::default()))
-        .throughput(|data| Throughput::Elements(data.0.len() as u32))
-        .plot_config(plot_config);
+    let bench =
+        ParameterizedBenchmark::new("XxHash64", bench_hasher(|| XxHash::with_seed(0)), data)
+            .with_function("XxHash32", bench_hasher(|| XxHash32::with_seed(0)))
+            .with_function("XxHash64 (C)", bench_c(|d| hash64(d, 0)))
+            .with_function("XxHash32 (C)", bench_c(|d| hash32(d, 0)))
+            .with_function("SipHasher", bench_hasher(|| SipHasher::new()))
+            .with_function("FnvHasher", bench_hasher(|| FnvHasher::default()))
+            .throughput(|data| Throughput::Elements(data.0.len() as u32))
+            .plot_config(plot_config);
 
     c.bench("All Hashers", bench);
 }

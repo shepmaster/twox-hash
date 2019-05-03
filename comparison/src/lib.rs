@@ -1,13 +1,11 @@
-extern crate libc;
-extern crate proptest;
-extern crate twox_hash;
-
-pub mod c_xxhash;
+#![deny(rust_2018_idioms)]
 
 use proptest::prelude::*;
 use std::hash::Hasher;
 #[cfg(test)]
 use twox_hash::{XxHash, XxHash32};
+
+pub mod c_xxhash;
 
 pub fn hash_once(mut hasher: impl Hasher, data: &[u8]) -> u64 {
     hasher.write(&data);
