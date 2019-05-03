@@ -10,7 +10,7 @@ harness = false
 
 [dependencies]
 fnv = "1.0"
-rand = "0.3.15"
+rand = "0.6.5"
 twox-hash = { path = ".." }
 libc = "0.2.53"
 criterion = "0.2.11"

@@ -9,7 +9,8 @@ use criterion::{
     PlotConfiguration, Throughput,
 };
 use fnv::FnvHasher;
-use std::{collections::hash_map::DefaultHasher, fmt, hash::Hasher, ops};
+use rand::{distributions::Standard, rngs::StdRng, Rng, SeedableRng};
+use std::{collections::hash_map::DefaultHasher, env, fmt, hash::Hasher, ops};
 use twox_hash::{XxHash, XxHash32};
 
 const INPUT_SIZES: &[usize] = &[0, 1, 4, 16, 32, 128, 256, 512, 1024, 1024 * 1024];
@@ -26,7 +27,13 @@ fn bench_c<R>(hasher: impl Fn(&[u8]) -> R) -> impl FnMut(&mut Bencher, &Data) {
 }
 
 fn bench_everything(c: &mut Criterion) {
-    let data: Vec<_> = INPUT_SIZES.iter().map(|&l| Data::new(l)).collect();
+    let seed: u64 = env::var("RANDOM_SEED")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(rand::random);
+    eprintln!("Using RANDOM_SEED={}", seed);
+
+    let data: Vec<_> = INPUT_SIZES.iter().map(|&l| Data::new(l, seed)).collect();
 
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
@@ -46,8 +53,10 @@ fn bench_everything(c: &mut Criterion) {
 struct Data(Vec<u8>);
 
 impl Data {
-    fn new(len: usize) -> Self {
-        Self(vec![0; len])
+    fn new(len: usize, seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let data = rng.sample_iter(&Standard).take(len).collect();
+        Self(data)
     }
 
     fn len(&self) -> usize {
