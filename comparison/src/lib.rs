@@ -1,28 +1,33 @@
-#![cfg_attr(feature = "bench", feature(test))]
+#![deny(rust_2018_idioms)]
 
-extern crate twox_hash;
+use proptest::prelude::*;
+use std::hash::Hasher;
+#[cfg(test)]
+use twox_hash::{XxHash, XxHash32};
 
+pub mod c_xxhash;
 
+pub fn hash_once(mut hasher: impl Hasher, data: &[u8]) -> u64 {
+    hasher.write(&data);
+    hasher.finish()
+}
 
-#[cfg(all(feature = "bench", test))]
-extern crate fnv;
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(100_000))]
 
-#[cfg(all(feature = "bench", test))]
-extern crate test;
+    #[test]
+    fn same_results_as_c_for_64_bit(seed: u64, data: Vec<u8>) {
+        let our_result = hash_once(XxHash::with_seed(seed), &data);
+        let their_result = c_xxhash::hash64(&data, seed);
 
-#[cfg(all(feature = "bench", test))]
-mod bench;
+        our_result == their_result
+    }
 
+    #[test]
+    fn same_results_as_c_for_32_bit(seed: u32, data: Vec<u8>) {
+        let our_result = hash_once(XxHash32::with_seed(seed), &data);
+        let their_result = c_xxhash::hash32(&data, seed);
 
-
-#[cfg(all(feature = "quickcheck", test))]
-extern crate quickcheck;
-
-#[cfg(all(feature = "quickcheck", test))]
-extern crate rand;
-
-#[cfg(all(feature = "quickcheck", test))]
-extern crate xxhash2;
-
-#[cfg(all(feature = "quickcheck", test))]
-mod same;
+        our_result == their_result as u64
+    }
+}

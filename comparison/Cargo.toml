@@ -2,15 +2,22 @@
 authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 name = "comparison"
 version = "0.1.0"
+edition = "2018"
+
+[[bench]]
+name = "bench"
+harness = false
 
 [dependencies]
 fnv = "1.0"
-quickcheck = "0.4.1"
-rand = "0.3.15"
-xxhash2 = "0.1.0"
-
-[dependencies.twox-hash]
-path = ".."
+rand = "0.6.5"
+twox-hash = { path = ".." }
+libc = "0.2.53"
+criterion = "0.2.11"
+proptest = "0.9.3"
 
 [features]
 bench = []
+
+[build-dependencies]
+cc = "1.0.36"
