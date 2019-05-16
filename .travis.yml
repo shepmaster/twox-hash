@@ -15,3 +15,4 @@ script: |
   fi
   cargo build --verbose
   cargo test --verbose
+  ci/check-no-std.sh

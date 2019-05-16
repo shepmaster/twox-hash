@@ -1,8 +1,6 @@
-use std;
-use rand;
+use core;
 
-use std::hash::{Hasher, BuildHasher};
-use rand::Rng;
+use core::hash::Hasher;
 use number_streams::NumberStreams;
 
 const CHUNK_SIZE: usize = 16;
@@ -100,8 +98,8 @@ impl XxCore {
     }
 }
 
-impl std::fmt::Debug for XxCore {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+impl core::fmt::Debug for XxCore {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
         write!(
             f, "XxCore {{ {:016x} {:016x} {:016x} {:016x} }}",
             self.v1, self.v2, self.v3, self.v4
@@ -116,7 +114,7 @@ impl XxHash {
             total_len: 0,
             seed: seed,
             core: XxCore::with_seed(seed),
-            buffer: unsafe { ::std::mem::uninitialized() },
+            buffer: unsafe { ::core::mem::uninitialized() },
             buffer_usage: 0,
         }
     }
@@ -139,7 +137,7 @@ impl Hasher for XxHash {
         if self.buffer_usage + bytes.len() < self.buffer.len() {
             unsafe {
                 let tail = self.buffer.as_mut_ptr().offset(self.buffer_usage as isize);
-                std::ptr::copy_nonoverlapping(bytes.as_ptr(), tail, bytes.len());
+                core::ptr::copy_nonoverlapping(bytes.as_ptr(), tail, bytes.len());
             }
             self.buffer_usage += bytes.len();
             return;
@@ -153,7 +151,7 @@ impl Hasher for XxHash {
 
             unsafe {
                 let tail = self.buffer.as_mut_ptr().offset(self.buffer_usage as isize);
-                std::ptr::copy_nonoverlapping(to_use.as_ptr(), tail, bytes_to_use);
+                core::ptr::copy_nonoverlapping(to_use.as_ptr(), tail, bytes_to_use);
             }
 
             let (iter, _) = self.buffer.u32_stream();
@@ -171,7 +169,7 @@ impl Hasher for XxHash {
         // Save any leftover data for the next call
         if bytes.len() > 0 {
             unsafe {
-                std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.buffer.as_mut_ptr(), bytes.len());
+                core::ptr::copy_nonoverlapping(bytes.as_ptr(), self.buffer.as_mut_ptr(), bytes.len());
             }
             self.buffer_usage = bytes.len();
         }
@@ -217,28 +215,12 @@ impl Hasher for XxHash {
     }
 }
 
-#[derive(Clone)]
-/// Constructs a randomized seed and reuses it for multiple hasher instances. See the usage warning on `XxHash32`.
-pub struct RandomXxHashBuilder(u32);
-
-impl RandomXxHashBuilder {
-    fn new() -> RandomXxHashBuilder {
-        RandomXxHashBuilder(rand::thread_rng().gen())
-    }
-}
-
-impl Default for RandomXxHashBuilder {
-    fn default() -> RandomXxHashBuilder { RandomXxHashBuilder::new() }
-}
-
-impl BuildHasher for RandomXxHashBuilder {
-    type Hasher = XxHash;
-
-    fn build_hasher(&self) -> XxHash { XxHash::with_seed(self.0) }
-}
+#[cfg(feature = "std")]
+pub use ::std_support::thirty_two::RandomXxHashBuilder;
 
 #[cfg(test)]
 mod test {
+    use std::prelude::v1::*;
     use std::hash::{Hasher, BuildHasherDefault};
     use std::collections::HashMap;
     use super::{XxHash, RandomXxHashBuilder};

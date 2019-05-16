@@ -14,12 +14,13 @@ documentation = "https://docs.rs/twox-hash/"
 license = "MIT"
 
 [dependencies]
-rand = ">= 0.3.10, < 0.7"
+rand = { version = ">= 0.3.10, < 0.7", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true}
 
 [dev-dependencies]
 serde_json = "1.0"
 
 [features]
+default = ["std"]
 serialize = ["serde"]
-
+std = ["rand"]
