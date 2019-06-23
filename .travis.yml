@@ -13,6 +13,7 @@ script: |
     cargo generate-lockfile
     cargo update --package rand --precise 0.3.10
   fi
-  cargo build --verbose
-  cargo test --verbose
+  cargo build
+  cargo test
+  cargo test --all-features
   ci/check-no-std.sh

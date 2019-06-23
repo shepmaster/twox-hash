@@ -38,8 +38,14 @@ extern crate serde;
 #[cfg(feature="serialize")]
 use serde::{Serialize, Deserialize};
 
+#[cfg(feature = "digest")]
+extern crate digest;
+
 mod number_streams;
 mod thirty_two;
+
+#[cfg(feature = "digest")]
+mod digest_support;
 
 pub use thirty_two::XxHash as XxHash32;
 #[cfg(feature = "std")]
