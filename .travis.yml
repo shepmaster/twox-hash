@@ -6,14 +6,10 @@ rust:
   - nightly
 matrix:
   include:
-    - rust: 1.15.1
-      env: DOWNGRADE=1
+    - rust: 1.32.0
 script: |
-  if [[ -n $DOWNGRADE ]]; then
-    cargo generate-lockfile
-    cargo update --package rand --precise 0.3.10
-  fi
+  set -e
   cargo build
   cargo test
-  cargo test --all-features
   ci/check-no-std.sh
+  cargo test --all-features
