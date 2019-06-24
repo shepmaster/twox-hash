@@ -3,6 +3,9 @@ use core;
 use core::hash::Hasher;
 use number_streams::NumberStreams;
 
+#[cfg(feature="serialize")]
+use serde::{Serialize, Deserialize};
+
 const CHUNK_SIZE: usize = 16;
 
 const PRIME_1: u32 = 2654435761;
@@ -11,6 +14,7 @@ const PRIME_3: u32 = 3266489917;
 const PRIME_4: u32 =  668265263;
 const PRIME_5: u32 =  374761393;
 
+#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))]
 #[derive(Copy,Clone,PartialEq)]
 struct XxCore {
     v1: u32,
@@ -25,7 +29,8 @@ struct XxCore {
 /// Although this struct implements `Hasher`, it only calculates a
 /// 32-bit number, leaving the upper bits as 0. This means it is
 /// unlikely to be correct to use this in places like a `HashMap`.
-#[derive(Debug,Copy,Clone)]
+#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))]
+#[derive(Debug,Copy,Clone,PartialEq)]
 pub struct XxHash {
     total_len: u32,
     seed: u32,
@@ -114,7 +119,7 @@ impl XxHash {
             total_len: 0,
             seed: seed,
             core: XxCore::with_seed(seed),
-            buffer: unsafe { ::core::mem::uninitialized() },
+            buffer: [0; CHUNK_SIZE],
             buffer_usage: 0,
         }
     }
@@ -296,5 +301,49 @@ mod test {
         let mut hash: HashMap<_, _, RandomXxHashBuilder> = Default::default();
         hash.insert(42, "the answer");
         assert_eq!(hash.get(&42), Some(&"the answer"));
+    }
+
+    #[cfg(feature="serialize")]
+    type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
+    #[cfg(feature="serialize")]
+    #[test]
+    fn test_serialization_cycle() -> TestResult {
+        let mut hasher = XxHash::with_seed(0);
+        hasher.write(b"Hello, world!\0");
+        hasher.finish();
+
+        let serialized = serde_json::to_string(&hasher)?;
+        let unserialized: XxHash = serde_json::from_str(&serialized)?;
+        assert_eq!(hasher, unserialized);
+        Ok(())
+    }
+
+    #[cfg(feature="serialize")]
+    #[test]
+    fn test_serialization_stability() -> TestResult {
+        let mut hasher = XxHash::with_seed(0);
+        hasher.write(b"Hello, world!\0");
+        hasher.finish();
+
+        let serialized = r#"{
+            "total_len": 14,
+            "seed": 0,
+            "core": {
+              "v1": 606290984,
+              "v2": 2246822519,
+              "v3": 0,
+              "v4": 1640531535
+            },
+            "buffer": [
+              72,  101, 108, 108, 111, 44, 32, 119,
+              111, 114, 108, 100, 33,  0,  0,  0
+            ],
+            "buffer_usage": 14
+        }"#;
+
+        let unserialized: XxHash = serde_json::from_str(serialized).unwrap();
+        assert_eq!(hasher, unserialized);
+        Ok(())
     }
 }
