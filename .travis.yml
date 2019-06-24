@@ -9,7 +9,8 @@ matrix:
     - rust: 1.15.1
       env: DOWNGRADE=1
 script: |
-  if [[ -n $DOWNGRADE ]]; then
+  set -e
+  if [[ -n ${DOWNGRADE:-} ]]; then
     cargo generate-lockfile
     cargo update --package rand --precise 0.3.10
   fi
