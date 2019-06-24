@@ -177,7 +177,7 @@ impl XxHash {
             total_len: 0,
             seed: seed,
             core: XxCore::with_seed(seed),
-            buffer: unsafe { ::core::mem::uninitialized() },
+            buffer: [0; CHUNK_SIZE],
             buffer_usage: 0,
         }
     }
@@ -379,14 +379,48 @@ mod test {
     }
 
     #[cfg(feature="serialize")]
+    type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
+    #[cfg(feature="serialize")]
     #[test]
-    fn test_serialization() {
+    fn test_serialization_cycle() -> TestResult {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(b"Hello, world!\0");
         hasher.finish();
 
-        let serialized = serde_json::to_string(&hasher).unwrap();
-        let unserialized: XxHash = serde_json::from_str(&serialized).unwrap();
+        let serialized = serde_json::to_string(&hasher)?;
+        let unserialized: XxHash = serde_json::from_str(&serialized)?;
         assert_eq!(hasher, unserialized);
+        Ok(())
+    }
+
+    #[cfg(feature="serialize")]
+    #[test]
+    fn test_serialization_stability() -> TestResult {
+        let mut hasher = XxHash::with_seed(0);
+        hasher.write(b"Hello, world!\0");
+        hasher.finish();
+
+        let serialized = r#"{
+            "total_len": 14,
+            "seed": 0,
+            "core": {
+              "v1": 6983438078262162902,
+              "v2": 14029467366897019727,
+              "v3": 0,
+              "v4": 7046029288634856825
+            },
+            "buffer": [
+              72,  101, 108, 108, 111, 44, 32, 119,
+              111, 114, 108, 100, 33,  0,  0,  0,
+              0,   0,   0,   0,   0,   0,  0,  0,
+              0,   0,   0,   0,   0,   0,  0,  0
+            ],
+            "buffer_usage": 14
+        }"#;
+
+        let unserialized: XxHash = serde_json::from_str(serialized).unwrap();
+        assert_eq!(hasher, unserialized);
+        Ok(())
     }
 }
