@@ -30,25 +30,17 @@
 #[cfg(test)]
 extern crate std;
 
-#[cfg(feature = "std")]
-extern crate rand;
-
-#[cfg(feature="serialize")]
-extern crate serde;
 #[cfg(feature="serialize")]
 use serde::{Serialize, Deserialize};
-
-#[cfg(feature = "digest")]
-extern crate digest;
 
 mod thirty_two;
 
 #[cfg(feature = "digest")]
 mod digest_support;
 
-pub use thirty_two::XxHash as XxHash32;
+pub use crate::thirty_two::XxHash as XxHash32;
 #[cfg(feature = "std")]
-pub use thirty_two::RandomXxHashBuilder as RandomXxHashBuilder32;
+pub use crate::thirty_two::RandomXxHashBuilder as RandomXxHashBuilder32;
 
 use core::{cmp, hash::Hasher};
 
@@ -191,7 +183,7 @@ impl XxCore {
 }
 
 impl core::fmt::Debug for XxCore {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
         write!(
             f, "XxCore {{ {:016x} {:016x} {:016x} {:016x} }}",
             self.v1, self.v2, self.v3, self.v4
@@ -353,7 +345,7 @@ impl Hasher for XxHash {
 mod std_support;
 
 #[cfg(feature = "std")]
-pub use std_support::sixty_four::RandomXxHashBuilder;
+pub use crate::std_support::sixty_four::RandomXxHashBuilder;
 
 #[cfg(test)]
 mod test {

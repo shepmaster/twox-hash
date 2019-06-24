@@ -1,4 +1,4 @@
-extern crate twox_hash;
+
 
 use std::env;
 use std::hash::Hasher;

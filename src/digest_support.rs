@@ -9,7 +9,7 @@ use digest::{
 };
 
 use crate::XxHash as XxHash64;
-use thirty_two::XxHash as XxHash32;
+use crate::thirty_two::XxHash as XxHash32;
 
 impl Digest for XxHash32 {
     type OutputSize = U4;

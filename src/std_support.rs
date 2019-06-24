@@ -1,7 +1,7 @@
 pub mod sixty_four {
     use rand::{self, Rng};
     use core::hash::BuildHasher;
-    use ::XxHash;
+    use crate::XxHash;
 
     #[derive(Clone)]
     /// Constructs a randomized seed and reuses it for multiple hasher instances.
@@ -27,7 +27,7 @@ pub mod sixty_four {
 pub mod thirty_two {
     use rand::{self, Rng};
     use core::hash::BuildHasher;
-    use ::thirty_two::XxHash;
+    use crate::thirty_two::XxHash;
 
     #[derive(Clone)]
     /// Constructs a randomized seed and reuses it for multiple hasher instances. See the usage warning on `XxHash32`.

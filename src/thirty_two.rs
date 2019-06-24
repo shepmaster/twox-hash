@@ -1,4 +1,6 @@
-use TransmutingByteSlices;
+#[cfg(feature="serialize")]
+use serde::{Serialize, Deserialize};
+use crate::TransmutingByteSlices;
 use core::{self, cmp, hash::Hasher};
 
 #[cfg(feature="serialize")]
@@ -101,7 +103,7 @@ impl XxCore {
 }
 
 impl core::fmt::Debug for XxCore {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
         write!(
             f, "XxCore {{ {:016x} {:016x} {:016x} {:016x} }}",
             self.v1, self.v2, self.v3, self.v4
@@ -242,7 +244,7 @@ impl Hasher for XxHash {
 }
 
 #[cfg(feature = "std")]
-pub use ::std_support::thirty_two::RandomXxHashBuilder;
+pub use crate::std_support::thirty_two::RandomXxHashBuilder;
 
 #[cfg(test)]
 mod test {
