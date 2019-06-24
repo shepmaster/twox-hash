@@ -8,8 +8,8 @@ use digest::{
     Digest,
 };
 
-use crate::XxHash as XxHash64;
 use crate::thirty_two::XxHash as XxHash32;
+use crate::XxHash as XxHash64;
 
 impl Digest for XxHash32 {
     type OutputSize = U4;
@@ -201,10 +201,7 @@ mod test {
     #[test]
     fn hash_of_multiple_chunks_matches_c_implementation_32() {
         let bytes: Vec<_> = (0..100).collect();
-        assert_eq!(
-            XxHash32::digest(&bytes)[..],
-            0x7f89ba44u32.to_be_bytes()
-        );
+        assert_eq!(XxHash32::digest(&bytes)[..], 0x7f89ba44u32.to_be_bytes());
     }
 
     #[test]

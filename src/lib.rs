@@ -30,19 +30,19 @@
 #[cfg(test)]
 extern crate std;
 
-#[cfg(feature="serialize")]
-use serde::{Serialize, Deserialize};
+use core::{cmp, hash::Hasher};
+
+#[cfg(feature = "serialize")]
+use serde::{Deserialize, Serialize};
 
 mod thirty_two;
 
 #[cfg(feature = "digest")]
 mod digest_support;
 
-pub use crate::thirty_two::XxHash as XxHash32;
 #[cfg(feature = "std")]
 pub use crate::thirty_two::RandomXxHashBuilder as RandomXxHashBuilder32;
-
-use core::{cmp, hash::Hasher};
+pub use crate::thirty_two::XxHash as XxHash32;
 
 trait TransmutingByteSlices {
     fn as_u64_arrays(&self) -> (&[u8], &[[u64; 4]], &[u8]);
@@ -84,8 +84,8 @@ const PRIME_3: u64 = 1609587929392839161;
 const PRIME_4: u64 = 9650029242287828579;
 const PRIME_5: u64 = 2870177450012600261;
 
-#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))] 
-#[derive(Copy,Clone,PartialEq)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Copy, Clone, PartialEq)]
 struct XxCore {
     v1: u64,
     v2: u64,
@@ -94,13 +94,13 @@ struct XxCore {
 }
 
 /// Calculates the 64-bit hash.
-#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))] 
-#[derive(PartialEq, Debug,Copy,Clone)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub struct XxHash {
     total_len: u64,
     seed: u64,
     core: XxCore,
-    #[cfg_attr(feature="serialize", serde(flatten))]
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     buffer: Buffer,
 }
 
@@ -158,8 +158,8 @@ impl XxCore {
 
         let mut hash;
 
-        hash =                   self.v1.rotate_left( 1);
-        hash = hash.wrapping_add(self.v2.rotate_left( 7));
+        hash = self.v1.rotate_left(1);
+        hash = hash.wrapping_add(self.v2.rotate_left(7));
         hash = hash.wrapping_add(self.v3.rotate_left(12));
         hash = hash.wrapping_add(self.v4.rotate_left(18));
 
@@ -185,18 +185,19 @@ impl XxCore {
 impl core::fmt::Debug for XxCore {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
         write!(
-            f, "XxCore {{ {:016x} {:016x} {:016x} {:016x} }}",
+            f,
+            "XxCore {{ {:016x} {:016x} {:016x} {:016x} }}",
             self.v1, self.v2, self.v3, self.v4
         )
     }
 }
 
-#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
 struct Buffer {
-    #[cfg_attr(feature="serialize", serde(rename = "buffer"))]
+    #[cfg_attr(feature = "serialize", serde(rename = "buffer"))]
     data: [u8; CHUNK_SIZE],
-    #[cfg_attr(feature="serialize", serde(rename = "buffer_usage"))]
+    #[cfg_attr(feature = "serialize", serde(rename = "buffer_usage"))]
     len: usize,
 }
 
@@ -351,9 +352,9 @@ pub use crate::std_support::sixty_four::RandomXxHashBuilder;
 mod test {
     use std::prelude::v1::*;
 
-    use std::hash::{Hasher, BuildHasherDefault};
+    use super::{RandomXxHashBuilder, XxHash};
     use std::collections::HashMap;
-    use super::{XxHash, RandomXxHashBuilder};
+    use std::hash::{BuildHasherDefault, Hasher};
 
     #[test]
     fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
@@ -428,10 +429,10 @@ mod test {
         assert_eq!(hash.get(&42), Some(&"the answer"));
     }
 
-    #[cfg(feature="serialize")]
+    #[cfg(feature = "serialize")]
     type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-    #[cfg(feature="serialize")]
+    #[cfg(feature = "serialize")]
     #[test]
     fn test_serialization_cycle() -> TestResult {
         let mut hasher = XxHash::with_seed(0);
@@ -444,7 +445,7 @@ mod test {
         Ok(())
     }
 
-    #[cfg(feature="serialize")]
+    #[cfg(feature = "serialize")]
     #[test]
     fn test_serialization_stability() -> TestResult {
         let mut hasher = XxHash::with_seed(0);
