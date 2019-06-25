@@ -3,7 +3,7 @@
 use proptest::{prelude::*, collection::vec as propvec};
 use std::hash::Hasher;
 #[cfg(test)]
-use twox_hash::{XxHash, XxHash32};
+use twox_hash::{XxHash32, XxHash64};
 
 pub mod c_xxhash;
 
@@ -50,7 +50,7 @@ proptest! {
 
     #[test]
     fn same_results_as_c_for_64_bit(seed: u64, data: Vec<u8>) {
-        let our_result = hash_once(XxHash::with_seed(seed), &data);
+        let our_result = hash_once(XxHash64::with_seed(seed), &data);
         let their_result = c_xxhash::hash64(&data, seed);
 
         our_result == their_result
@@ -59,7 +59,7 @@ proptest! {
    #[test]
     fn same_results_as_c_with_offset_for_64_bit(seed: u64, (data, offset) in data_and_offset()) {
         let data = &data[offset..];
-        let our_result = hash_once(XxHash::with_seed(seed), data);
+        let our_result = hash_once(XxHash64::with_seed(seed), data);
         let their_result = c_xxhash::hash64(data, seed);
 
         our_result == their_result
@@ -88,8 +88,8 @@ proptest! {
 
     #[test]
     fn same_results_with_many_chunks_as_one_for_64_bit(seed: u64, (data, chunk_sizes) in data_and_chunk_sizes()) {
-        let chunked_result = hash_by_chunks(XxHash::with_seed(seed), &data, &chunk_sizes);
-        let monolithic_result = hash_once(XxHash::with_seed(seed), &data);
+        let chunked_result = hash_by_chunks(XxHash64::with_seed(seed), &data, &chunk_sizes);
+        let monolithic_result = hash_once(XxHash64::with_seed(seed), &data);
 
         chunked_result == monolithic_result
     }
