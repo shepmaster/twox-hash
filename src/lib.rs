@@ -41,7 +41,6 @@ use serde::{Serialize, Deserialize};
 #[cfg(feature = "digest")]
 extern crate digest;
 
-mod number_streams;
 mod thirty_two;
 
 #[cfg(feature = "digest")]
@@ -51,8 +50,39 @@ pub use thirty_two::XxHash as XxHash32;
 #[cfg(feature = "std")]
 pub use thirty_two::RandomXxHashBuilder as RandomXxHashBuilder32;
 
-use core::hash::Hasher;
-use number_streams::NumberStreams;
+use core::{cmp, hash::Hasher};
+
+trait TransmutingByteSlices {
+    fn as_u64_arrays(&self) -> (&[u8], &[[u64; 4]], &[u8]);
+    fn as_u64s(&self) -> (&[u8], &[u64], &[u8]);
+    fn as_u32_arrays(&self) -> (&[u8], &[[u32; 4]], &[u8]);
+    fn as_u32s(&self) -> (&[u8], &[u32], &[u8]);
+}
+
+// # Safety
+//
+// - Interpreting a properly-aligned set of bytes as a `u64` should be
+//   valid.
+// - `align_to` guarantees to only transmute aligned data.
+// - An array is a tightly-packed set of bytes (as shown by `impl
+//   TryFrom<&[u8]> for &[u8; N]`)
+impl TransmutingByteSlices for [u8] {
+    fn as_u64_arrays(&self) -> (&[u8], &[[u64; 4]], &[u8]) {
+        unsafe { self.align_to::<[u64; 4]>() }
+    }
+
+    fn as_u64s(&self) -> (&[u8], &[u64], &[u8]) {
+        unsafe { self.align_to::<u64>() }
+    }
+
+    fn as_u32_arrays(&self) -> (&[u8], &[[u32; 4]], &[u8]) {
+        unsafe { self.align_to::<[u32; 4]>() }
+    }
+
+    fn as_u32s(&self) -> (&[u8], &[u32], &[u8]) {
+        unsafe { self.align_to::<u32>() }
+    }
+}
 
 const CHUNK_SIZE: usize = 32;
 
@@ -78,8 +108,8 @@ pub struct XxHash {
     total_len: u64,
     seed: u64,
     core: XxCore,
-    buffer: [u8; CHUNK_SIZE],
-    buffer_usage: usize,
+    #[cfg_attr(feature="serialize", serde(flatten))]
+    buffer: Buffer,
 }
 
 impl XxCore {
@@ -93,8 +123,9 @@ impl XxCore {
     }
 
     #[inline(always)]
-    fn ingest_chunks<I>(&mut self, values: I)
-        where I: Iterator<Item=u64>
+    fn ingest_chunks<'a, I>(&mut self, values: I)
+    where
+        I: IntoIterator<Item = &'a [u64; 4]>,
     {
         #[inline(always)]
         fn ingest_one_number(mut current_value: u64, mut value: u64) -> u64 {
@@ -113,13 +144,11 @@ impl XxCore {
         let mut v3 = self.v3;
         let mut v4 = self.v4;
 
-        let mut values = values.peekable();
-
-        while values.peek().is_some() {
-            v1 = ingest_one_number(v1, values.next().unwrap());
-            v2 = ingest_one_number(v2, values.next().unwrap());
-            v3 = ingest_one_number(v3, values.next().unwrap());
-            v4 = ingest_one_number(v4, values.next().unwrap());
+        for &[n1, n2, n3, n4] in values {
+            v1 = ingest_one_number(v1, n1);
+            v2 = ingest_one_number(v2, n2);
+            v3 = ingest_one_number(v3, n3);
+            v4 = ingest_one_number(v4, n4);
         }
 
         self.v1 = v1;
@@ -170,6 +199,38 @@ impl core::fmt::Debug for XxCore {
     }
 }
 
+#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))]
+#[derive(Debug, Copy, Clone, Default, PartialEq)]
+struct Buffer {
+    #[cfg_attr(feature="serialize", serde(rename = "buffer"))]
+    data: [u8; CHUNK_SIZE],
+    #[cfg_attr(feature="serialize", serde(rename = "buffer_usage"))]
+    len: usize,
+}
+
+impl Buffer {
+    fn data(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
+
+    /// Consumes as much of the parameter as it can, returning the unused part.
+    fn consume<'a>(&mut self, data: &'a [u8]) -> &'a [u8] {
+        let to_use = cmp::min(self.available(), data.len());
+        let (data, remaining) = data.split_at(to_use);
+        self.data[self.len..][..to_use].copy_from_slice(data);
+        self.len += to_use;
+        remaining
+    }
+
+    fn available(&self) -> usize {
+        CHUNK_SIZE - self.len
+    }
+
+    fn is_full(&self) -> bool {
+        self.len == CHUNK_SIZE
+    }
+}
+
 impl XxHash {
     /// Constructs the hash with an initial seed
     pub fn with_seed(seed: u64) -> XxHash {
@@ -177,8 +238,29 @@ impl XxHash {
             total_len: 0,
             seed: seed,
             core: XxCore::with_seed(seed),
-            buffer: [0; CHUNK_SIZE],
-            buffer_usage: 0,
+            buffer: Buffer::default(),
+        }
+    }
+
+    fn buffer_bytes(&mut self, mut data: &[u8]) {
+        while !data.is_empty() {
+            data = self.buffer.consume(data);
+            if self.buffer.is_full() {
+                let (unaligned_head, aligned, unaligned_tail) =
+                    self.buffer.data[..].as_u64_arrays();
+                debug_assert!(
+                    unaligned_head.is_empty(),
+                    "buffer was not aligned for 64-bit numbers"
+                );
+                debug_assert_eq!(
+                    aligned.len(),
+                    1,
+                    "buffer did not have enough 64-bit numbers"
+                );
+                debug_assert!(unaligned_tail.is_empty(), "buffer has trailing data");
+                self.core.ingest_chunks(aligned);
+                self.buffer.len = 0;
+            }
         }
     }
 }
@@ -191,51 +273,19 @@ impl Default for XxHash {
 
 impl Hasher for XxHash {
     fn write(&mut self, bytes: &[u8]) {
-        let mut bytes = bytes;
+        let (unaligned_head, aligned, unaligned_tail) = bytes.as_u64_arrays();
+
+        self.buffer_bytes(unaligned_head);
+
+        // Surprisingly, if we still have bytes in the buffer here, we
+        // don't do anything with them yet! This matches the C
+        // implementation.
+
+        self.core.ingest_chunks(aligned);
+
+        self.buffer_bytes(unaligned_tail);
 
         self.total_len += bytes.len() as u64;
-
-        // Even with new data, we still don't have a full buffer. Wait
-        // until we have a full buffer.
-        if self.buffer_usage + bytes.len() < self.buffer.len() {
-            unsafe {
-                let tail = self.buffer.as_mut_ptr().offset(self.buffer_usage as isize);
-                core::ptr::copy_nonoverlapping(bytes.as_ptr(), tail, bytes.len());
-            }
-            self.buffer_usage += bytes.len();
-            return;
-        }
-
-        // Some data left from previous update. Fill the buffer and
-        // consume it first.
-        if self.buffer_usage > 0 {
-            let bytes_to_use = self.buffer.len() - self.buffer_usage;
-            let (to_use, leftover) = bytes.split_at(bytes_to_use);
-
-            unsafe {
-                let tail = self.buffer.as_mut_ptr().offset(self.buffer_usage as isize);
-                core::ptr::copy_nonoverlapping(to_use.as_ptr(), tail, bytes_to_use);
-            }
-
-            let (iter, _) = self.buffer.u64_stream();
-
-            self.core.ingest_chunks(iter);
-
-            bytes = leftover;
-            self.buffer_usage = 0;
-        }
-
-        // Consume the input data in large chunks
-        let (iter, bytes) = bytes.u64_stream_with_stride(4);
-        self.core.ingest_chunks(iter);
-
-        // Save any leftover data for the next call
-        if bytes.len() > 0 {
-            unsafe {
-                core::ptr::copy_nonoverlapping(bytes.as_ptr(), self.buffer.as_mut_ptr(), bytes.len());
-            }
-            self.buffer_usage = bytes.len();
-        }
     }
 
     fn finish(&self) -> u64 {
@@ -250,11 +300,15 @@ impl Hasher for XxHash {
 
         hash = hash.wrapping_add(self.total_len);
 
-        let buffered = &self.buffer[..self.buffer_usage];
-        let (buffered_u64s, buffered) = buffered.u64_stream();
+        let buffered = &self.buffer.data();
+        let (before, buffered_u64s, buffered) = buffered.as_u64s();
+        debug_assert!(
+            before.is_empty(),
+            "buffer was not aligned for 64-bit numbers"
+        );
 
-        for mut k1 in buffered_u64s {
-            k1 = k1.wrapping_mul(PRIME_2);
+        for buffered_u64 in buffered_u64s {
+            let mut k1 = buffered_u64.wrapping_mul(PRIME_2);
             k1 = k1.rotate_left(31);
             k1 = k1.wrapping_mul(PRIME_1);
             hash ^= k1;
@@ -263,18 +317,22 @@ impl Hasher for XxHash {
             hash = hash.wrapping_add(PRIME_4);
         }
 
-        let (buffered_u32s, buffered) = buffered.u32_stream();
+        let (before, buffered_u32s, buffered_u8s) = buffered.as_u32s();
+        debug_assert!(
+            before.is_empty(),
+            "buffer was not aligned for 32-bit numbers"
+        );
 
-        for k1 in buffered_u32s {
-            let k1 = (k1 as u64).wrapping_mul(PRIME_1);
+        for &buffered_u32 in buffered_u32s {
+            let k1 = (buffered_u32 as u64).wrapping_mul(PRIME_1);
             hash ^= k1;
             hash = hash.rotate_left(23);
             hash = hash.wrapping_mul(PRIME_2);
             hash = hash.wrapping_add(PRIME_3);
         }
 
-        for buffered_u8 in buffered {
-            let k1 = (*buffered_u8 as u64).wrapping_mul(PRIME_5);
+        for &buffered_u8 in buffered_u8s {
+            let k1 = (buffered_u8 as u64).wrapping_mul(PRIME_5);
             hash ^= k1;
             hash = hash.rotate_left(11);
             hash = hash.wrapping_mul(PRIME_1);
