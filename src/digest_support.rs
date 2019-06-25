@@ -119,21 +119,21 @@ mod test {
     fn hash_of_nothing_matches_c_implementation_64() {
         let mut hasher = XxHash64::new();
         hasher.input(&[]);
-        assert_eq!(hasher.result()[..], 0xef46db3751d8e999u64.to_be_bytes());
+        assert_eq!(hasher.result()[..], 0xef46_db37_51d8_e999_u64.to_be_bytes());
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation_64() {
         let mut hasher = XxHash64::new();
         hasher.input(&[42]);
-        assert_eq!(hasher.result()[..], 0x0a9edecebeb03ae4u64.to_be_bytes());
+        assert_eq!(hasher.result()[..], 0x0a9e_dece_beb0_3ae4_u64.to_be_bytes());
     }
 
     #[test]
     fn hash_of_multiple_bytes_matches_c_implementation_64() {
         assert_eq!(
             XxHash64::digest(b"Hello, world!\0")[..],
-            0x7b06c531ea43e89fu64.to_be_bytes()
+            0x7b06_c531_ea43_e89f_u64.to_be_bytes()
         );
     }
 
@@ -142,23 +142,23 @@ mod test {
         let bytes: Vec<_> = (0..100).collect();
         assert_eq!(
             XxHash64::digest(&bytes)[..],
-            0x6ac1e58032166597u64.to_be_bytes()
+            0x6ac1_e580_3216_6597_u64.to_be_bytes()
         );
     }
 
     #[test]
     fn hash_with_different_seed_matches_c_implementation_64() {
-        let mut hasher = XxHash64::with_seed(0xae0543311b702d91);
+        let mut hasher = XxHash64::with_seed(0xae05_4331_1b70_2d91);
         hasher.input(&[]);
-        assert_eq!(hasher.result()[..], 0x4b6a04fcdf7a4672u64.to_be_bytes());
+        assert_eq!(hasher.result()[..], 0x4b6a_04fc_df7a_4672_u64.to_be_bytes());
     }
 
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation_64() {
         let bytes: Vec<_> = (0..100).collect();
-        let mut hasher = XxHash64::with_seed(0xae0543311b702d91);
+        let mut hasher = XxHash64::with_seed(0xae05_4331_1b70_2d91);
         hasher.input(&bytes);
-        assert_eq!(hasher.result()[..], 0x567e355e0682e1f1u64.to_be_bytes());
+        assert_eq!(hasher.result()[..], 0x567e_355e_0682_e1f1_u64.to_be_bytes());
     }
 
     #[test]
@@ -180,42 +180,42 @@ mod test {
     fn hash_of_nothing_matches_c_implementation_32() {
         let mut hasher = XxHash32::new();
         hasher.input(&[]);
-        assert_eq!(hasher.result()[..], 0x02cc5d05u32.to_be_bytes());
+        assert_eq!(hasher.result()[..], 0x02cc_5d05_u32.to_be_bytes());
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation_32() {
         let mut hasher = XxHash32::new();
         hasher.input(&[42]);
-        assert_eq!(hasher.result()[..], 0xe0fe705fu32.to_be_bytes());
+        assert_eq!(hasher.result()[..], 0xe0fe_705f_u32.to_be_bytes());
     }
 
     #[test]
     fn hash_of_multiple_bytes_matches_c_implementation_32() {
         assert_eq!(
             XxHash32::digest(b"Hello, world!\0")[..],
-            0x9e5e7e93u32.to_be_bytes()
+            0x9e5e_7e93_u32.to_be_bytes()
         );
     }
 
     #[test]
     fn hash_of_multiple_chunks_matches_c_implementation_32() {
         let bytes: Vec<_> = (0..100).collect();
-        assert_eq!(XxHash32::digest(&bytes)[..], 0x7f89ba44u32.to_be_bytes());
+        assert_eq!(XxHash32::digest(&bytes)[..], 0x7f89_ba44_u32.to_be_bytes());
     }
 
     #[test]
     fn hash_with_different_seed_matches_c_implementation_32() {
-        let mut hasher = XxHash32::with_seed(0x42c91977);
+        let mut hasher = XxHash32::with_seed(0x42c9_1977);
         hasher.input(&[]);
-        assert_eq!(hasher.result()[..], 0xd6bf8459u32.to_be_bytes());
+        assert_eq!(hasher.result()[..], 0xd6bf_8459_u32.to_be_bytes());
     }
 
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation_32() {
         let bytes: Vec<_> = (0..100).collect();
-        let mut hasher = XxHash32::with_seed(0x42c91977);
+        let mut hasher = XxHash32::with_seed(0x42c9_1977);
         hasher.input(&bytes);
-        assert_eq!(hasher.result()[..], 0x6d2f6c17u32.to_be_bytes());
+        assert_eq!(hasher.result()[..], 0x6d2f_6c17_u32.to_be_bytes());
     }
 }

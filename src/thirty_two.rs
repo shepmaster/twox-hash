@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 
 const CHUNK_SIZE: usize = 16;
 
-const PRIME_1: u32 = 2654435761;
-const PRIME_2: u32 = 2246822519;
-const PRIME_3: u32 = 3266489917;
-const PRIME_4: u32 = 668265263;
-const PRIME_5: u32 = 374761393;
+const PRIME_1: u32 = 2_654_435_761;
+const PRIME_2: u32 = 2_246_822_519;
+const PRIME_3: u32 = 3_266_489_917;
+const PRIME_4: u32 = 668_265_263;
+const PRIME_5: u32 = 374_761_393;
 
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Copy, Clone, PartialEq)]
@@ -147,7 +147,7 @@ impl XxHash {
     pub fn with_seed(seed: u32) -> XxHash {
         XxHash {
             total_len: 0,
-            seed: seed,
+            seed,
             core: XxCore::with_seed(seed),
             buffer: Buffer::default(),
         }
@@ -199,14 +199,12 @@ impl Hasher for XxHash {
     }
 
     fn finish(&self) -> u64 {
-        let mut hash;
-
-        // We have processed at least one full chunk
-        if self.total_len >= CHUNK_SIZE as u32 {
-            hash = self.core.finish();
+        let mut hash = if self.total_len >= CHUNK_SIZE as u32 {
+            // We have processed at least one full chunk
+            self.core.finish()
         } else {
-            hash = self.seed.wrapping_add(PRIME_5);
-        }
+            self.seed.wrapping_add(PRIME_5)
+        };
 
         hash = hash.wrapping_add(self.total_len);
 
@@ -217,15 +215,15 @@ impl Hasher for XxHash {
             "buffer was not aligned for 32-bit numbers"
         );
 
-        for buffered_u32 in buffered_u32s {
+        for &buffered_u32 in buffered_u32s {
             let k1 = buffered_u32.wrapping_mul(PRIME_3);
             hash = hash.wrapping_add(k1);
             hash = hash.rotate_left(17);
             hash = hash.wrapping_mul(PRIME_4);
         }
 
-        for buffered_u8 in buffered_u8s {
-            let k1 = (*buffered_u8 as u32).wrapping_mul(PRIME_5);
+        for &buffered_u8 in buffered_u8s {
+            let k1 = u32::from(buffered_u8).wrapping_mul(PRIME_5);
             hash = hash.wrapping_add(k1);
             hash = hash.rotate_left(11);
             hash = hash.wrapping_mul(PRIME_1);
@@ -238,7 +236,8 @@ impl Hasher for XxHash {
         hash = hash.wrapping_mul(PRIME_3);
         hash ^= hash >> 16;
 
-        hash as u64
+        // FIXME: we should return a u32
+        u64::from(hash)
     }
 }
 
@@ -271,21 +270,21 @@ mod test {
     fn hash_of_nothing_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&[]);
-        assert_eq!(hasher.finish(), 0x02cc5d05);
+        assert_eq!(hasher.finish(), 0x02cc_5d05);
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&[42]);
-        assert_eq!(hasher.finish(), 0xe0fe705f);
+        assert_eq!(hasher.finish(), 0xe0fe_705f);
     }
 
     #[test]
     fn hash_of_multiple_bytes_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(b"Hello, world!\0");
-        assert_eq!(hasher.finish(), 0x9e5e7e93);
+        assert_eq!(hasher.finish(), 0x9e5e_7e93);
     }
 
     #[test]
@@ -293,22 +292,22 @@ mod test {
         let bytes: Vec<_> = (0..100).collect();
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&bytes);
-        assert_eq!(hasher.finish(), 0x7f89ba44);
+        assert_eq!(hasher.finish(), 0x7f89_ba44);
     }
 
     #[test]
     fn hash_with_different_seed_matches_c_implementation() {
-        let mut hasher = XxHash::with_seed(0x42c91977);
+        let mut hasher = XxHash::with_seed(0x42c9_1977);
         hasher.write(&[]);
-        assert_eq!(hasher.finish(), 0xd6bf8459);
+        assert_eq!(hasher.finish(), 0xd6bf_8459);
     }
 
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation() {
         let bytes: Vec<_> = (0..100).collect();
-        let mut hasher = XxHash::with_seed(0x42c91977);
+        let mut hasher = XxHash::with_seed(0x42c9_1977);
         hasher.write(&bytes);
-        assert_eq!(hasher.finish(), 0x6d2f6c17);
+        assert_eq!(hasher.finish(), 0x6d2f_6c17);
     }
 
     #[test]

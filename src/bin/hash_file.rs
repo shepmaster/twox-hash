@@ -14,7 +14,7 @@ fn main() {
         loop {
             let consumed = {
                 let bytes = f.fill_buf().unwrap();
-                if bytes.len() == 0 {
+                if bytes.is_empty() {
                     break;
                 }
                 hasher.write(bytes);
