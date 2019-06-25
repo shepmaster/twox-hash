@@ -1,9 +1,7 @@
-extern crate twox_hash;
-
 use std::env;
-use std::hash::Hasher;
 use std::fs::File;
-use std::io::{BufRead,BufReader};
+use std::hash::Hasher;
+use std::io::{BufRead, BufReader};
 use twox_hash::XxHash;
 
 fn main() {
@@ -16,7 +14,9 @@ fn main() {
         loop {
             let consumed = {
                 let bytes = f.fill_buf().unwrap();
-                if bytes.len() == 0 { break }
+                if bytes.is_empty() {
+                    break;
+                }
                 hasher.write(bytes);
                 bytes.len()
             };

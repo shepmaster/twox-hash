@@ -30,27 +30,19 @@
 #[cfg(test)]
 extern crate std;
 
-#[cfg(feature = "std")]
-extern crate rand;
+use core::{cmp, hash::Hasher};
 
-#[cfg(feature="serialize")]
-extern crate serde;
-#[cfg(feature="serialize")]
-use serde::{Serialize, Deserialize};
-
-#[cfg(feature = "digest")]
-extern crate digest;
+#[cfg(feature = "serialize")]
+use serde::{Deserialize, Serialize};
 
 mod thirty_two;
 
 #[cfg(feature = "digest")]
 mod digest_support;
 
-pub use thirty_two::XxHash as XxHash32;
 #[cfg(feature = "std")]
-pub use thirty_two::RandomXxHashBuilder as RandomXxHashBuilder32;
-
-use core::{cmp, hash::Hasher};
+pub use crate::thirty_two::RandomXxHashBuilder as RandomXxHashBuilder32;
+pub use crate::thirty_two::XxHash as XxHash32;
 
 trait TransmutingByteSlices {
     fn as_u64_arrays(&self) -> (&[u8], &[[u64; 4]], &[u8]);
@@ -86,14 +78,14 @@ impl TransmutingByteSlices for [u8] {
 
 const CHUNK_SIZE: usize = 32;
 
-const PRIME_1: u64 = 11400714785074694791;
-const PRIME_2: u64 = 14029467366897019727;
-const PRIME_3: u64 = 1609587929392839161;
-const PRIME_4: u64 = 9650029242287828579;
-const PRIME_5: u64 = 2870177450012600261;
+const PRIME_1: u64 = 11_400_714_785_074_694_791;
+const PRIME_2: u64 = 14_029_467_366_897_019_727;
+const PRIME_3: u64 = 1_609_587_929_392_839_161;
+const PRIME_4: u64 = 9_650_029_242_287_828_579;
+const PRIME_5: u64 = 2_870_177_450_012_600_261;
 
-#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))] 
-#[derive(Copy,Clone,PartialEq)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Copy, Clone, PartialEq)]
 struct XxCore {
     v1: u64,
     v2: u64,
@@ -102,13 +94,13 @@ struct XxCore {
 }
 
 /// Calculates the 64-bit hash.
-#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))] 
-#[derive(PartialEq, Debug,Copy,Clone)]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub struct XxHash {
     total_len: u64,
     seed: u64,
     core: XxCore,
-    #[cfg_attr(feature="serialize", serde(flatten))]
+    #[cfg_attr(feature = "serialize", serde(flatten))]
     buffer: Buffer,
 }
 
@@ -166,8 +158,8 @@ impl XxCore {
 
         let mut hash;
 
-        hash =                   self.v1.rotate_left( 1);
-        hash = hash.wrapping_add(self.v2.rotate_left( 7));
+        hash = self.v1.rotate_left(1);
+        hash = hash.wrapping_add(self.v2.rotate_left(7));
         hash = hash.wrapping_add(self.v3.rotate_left(12));
         hash = hash.wrapping_add(self.v4.rotate_left(18));
 
@@ -191,20 +183,21 @@ impl XxCore {
 }
 
 impl core::fmt::Debug for XxCore {
-    fn fmt(&self, f: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
         write!(
-            f, "XxCore {{ {:016x} {:016x} {:016x} {:016x} }}",
+            f,
+            "XxCore {{ {:016x} {:016x} {:016x} {:016x} }}",
             self.v1, self.v2, self.v3, self.v4
         )
     }
 }
 
-#[cfg_attr(feature="serialize", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
 struct Buffer {
-    #[cfg_attr(feature="serialize", serde(rename = "buffer"))]
+    #[cfg_attr(feature = "serialize", serde(rename = "buffer"))]
     data: [u8; CHUNK_SIZE],
-    #[cfg_attr(feature="serialize", serde(rename = "buffer_usage"))]
+    #[cfg_attr(feature = "serialize", serde(rename = "buffer_usage"))]
     len: usize,
 }
 
@@ -236,7 +229,7 @@ impl XxHash {
     pub fn with_seed(seed: u64) -> XxHash {
         XxHash {
             total_len: 0,
-            seed: seed,
+            seed,
             core: XxCore::with_seed(seed),
             buffer: Buffer::default(),
         }
@@ -289,14 +282,12 @@ impl Hasher for XxHash {
     }
 
     fn finish(&self) -> u64 {
-        let mut hash;
-
-        // We have processed at least one full chunk
-        if self.total_len >= CHUNK_SIZE as u64 {
-            hash = self.core.finish();
+        let mut hash = if self.total_len >= CHUNK_SIZE as u64 {
+            // We have processed at least one full chunk
+            self.core.finish()
         } else {
-            hash = self.seed.wrapping_add(PRIME_5);
-        }
+            self.seed.wrapping_add(PRIME_5)
+        };
 
         hash = hash.wrapping_add(self.total_len);
 
@@ -324,7 +315,7 @@ impl Hasher for XxHash {
         );
 
         for &buffered_u32 in buffered_u32s {
-            let k1 = (buffered_u32 as u64).wrapping_mul(PRIME_1);
+            let k1 = u64::from(buffered_u32).wrapping_mul(PRIME_1);
             hash ^= k1;
             hash = hash.rotate_left(23);
             hash = hash.wrapping_mul(PRIME_2);
@@ -332,7 +323,7 @@ impl Hasher for XxHash {
         }
 
         for &buffered_u8 in buffered_u8s {
-            let k1 = (buffered_u8 as u64).wrapping_mul(PRIME_5);
+            let k1 = u64::from(buffered_u8).wrapping_mul(PRIME_5);
             hash ^= k1;
             hash = hash.rotate_left(11);
             hash = hash.wrapping_mul(PRIME_1);
@@ -353,15 +344,15 @@ impl Hasher for XxHash {
 mod std_support;
 
 #[cfg(feature = "std")]
-pub use std_support::sixty_four::RandomXxHashBuilder;
+pub use crate::std_support::sixty_four::RandomXxHashBuilder;
 
 #[cfg(test)]
 mod test {
     use std::prelude::v1::*;
 
-    use std::hash::{Hasher, BuildHasherDefault};
+    use super::{RandomXxHashBuilder, XxHash};
     use std::collections::HashMap;
-    use super::{XxHash, RandomXxHashBuilder};
+    use std::hash::{BuildHasherDefault, Hasher};
 
     #[test]
     fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
@@ -382,21 +373,21 @@ mod test {
     fn hash_of_nothing_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&[]);
-        assert_eq!(hasher.finish(), 0xef46db3751d8e999);
+        assert_eq!(hasher.finish(), 0xef46_db37_51d8_e999);
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&[42]);
-        assert_eq!(hasher.finish(), 0x0a9edecebeb03ae4);
+        assert_eq!(hasher.finish(), 0x0a9e_dece_beb0_3ae4);
     }
 
     #[test]
     fn hash_of_multiple_bytes_matches_c_implementation() {
         let mut hasher = XxHash::with_seed(0);
         hasher.write(b"Hello, world!\0");
-        assert_eq!(hasher.finish(), 0x7b06c531ea43e89f);
+        assert_eq!(hasher.finish(), 0x7b06_c531_ea43_e89f);
     }
 
     #[test]
@@ -404,22 +395,22 @@ mod test {
         let bytes: Vec<_> = (0..100).collect();
         let mut hasher = XxHash::with_seed(0);
         hasher.write(&bytes);
-        assert_eq!(hasher.finish(), 0x6ac1e58032166597);
+        assert_eq!(hasher.finish(), 0x6ac1_e580_3216_6597);
     }
 
     #[test]
     fn hash_with_different_seed_matches_c_implementation() {
-        let mut hasher = XxHash::with_seed(0xae0543311b702d91);
+        let mut hasher = XxHash::with_seed(0xae05_4331_1b70_2d91);
         hasher.write(&[]);
-        assert_eq!(hasher.finish(), 0x4b6a04fcdf7a4672);
+        assert_eq!(hasher.finish(), 0x4b6a_04fc_df7a_4672);
     }
 
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation() {
         let bytes: Vec<_> = (0..100).collect();
-        let mut hasher = XxHash::with_seed(0xae0543311b702d91);
+        let mut hasher = XxHash::with_seed(0xae05_4331_1b70_2d91);
         hasher.write(&bytes);
-        assert_eq!(hasher.finish(), 0x567e355e0682e1f1);
+        assert_eq!(hasher.finish(), 0x567e_355e_0682_e1f1);
     }
 
     #[test]
@@ -436,10 +427,10 @@ mod test {
         assert_eq!(hash.get(&42), Some(&"the answer"));
     }
 
-    #[cfg(feature="serialize")]
+    #[cfg(feature = "serialize")]
     type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
-    #[cfg(feature="serialize")]
+    #[cfg(feature = "serialize")]
     #[test]
     fn test_serialization_cycle() -> TestResult {
         let mut hasher = XxHash::with_seed(0);
@@ -452,7 +443,7 @@ mod test {
         Ok(())
     }
 
-    #[cfg(feature="serialize")]
+    #[cfg(feature = "serialize")]
     #[test]
     fn test_serialization_stability() -> TestResult {
         let mut hasher = XxHash::with_seed(0);

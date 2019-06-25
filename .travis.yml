@@ -7,9 +7,14 @@ rust:
 matrix:
   include:
     - rust: 1.32.0
+before_script: |
+  set -e
+  rustup component add rustfmt clippy
 script: |
   set -e
   cargo build
   cargo test
   ci/check-no-std.sh
   cargo test --all-features
+  cargo fmt --all -- --check
+  cargo clippy --all-targets --all-features -- -D warnings
