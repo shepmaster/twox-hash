@@ -1,5 +1,3 @@
-use core::hash::Hasher;
-
 use digest::{
     generic_array::{
         typenum::consts::{U4, U8},
@@ -30,7 +28,7 @@ impl Digest for XxHash32 {
     }
 
     fn result(self) -> GenericArray<u8, Self::OutputSize> {
-        (self.finish() as u32).to_be_bytes().into()
+        self.finish().to_be_bytes().into()
     }
 
     fn result_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
