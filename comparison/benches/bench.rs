@@ -11,7 +11,7 @@ use criterion::{
 use fnv::FnvHasher;
 use rand::{distributions::Standard, rngs::StdRng, Rng, SeedableRng};
 use std::{collections::hash_map::DefaultHasher, env, fmt, hash::Hasher, ops};
-use twox_hash::{XxHash, XxHash32};
+use twox_hash::{XxHash32, XxHash64};
 
 const INPUT_SIZES: &[usize] = &[0, 1, 4, 16, 32, 128, 256, 512, 1024, 1024 * 1024];
 
@@ -38,7 +38,7 @@ fn bench_everything(c: &mut Criterion) {
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
     let bench =
-        ParameterizedBenchmark::new("XxHash64", bench_hasher(|| XxHash::with_seed(0)), data)
+        ParameterizedBenchmark::new("XxHash64", bench_hasher(|| XxHash64::with_seed(0)), data)
             .with_function("XxHash32", bench_hasher(|| XxHash32::with_seed(0)))
             .with_function("XxHash64 (C)", bench_c(|d| hash64(d, 0)))
             .with_function("XxHash32 (C)", bench_c(|d| hash32(d, 0)))

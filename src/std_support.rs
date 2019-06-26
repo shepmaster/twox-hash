@@ -1,59 +1,59 @@
 pub mod sixty_four {
-    use crate::XxHash;
+    use crate::XxHash64;
     use core::hash::BuildHasher;
     use rand::{self, Rng};
 
     #[derive(Clone)]
     /// Constructs a randomized seed and reuses it for multiple hasher instances.
-    pub struct RandomXxHashBuilder(u64);
+    pub struct RandomXxHashBuilder64(u64);
 
-    impl RandomXxHashBuilder {
-        fn new() -> RandomXxHashBuilder {
-            RandomXxHashBuilder(rand::thread_rng().gen())
+    impl RandomXxHashBuilder64 {
+        fn new() -> RandomXxHashBuilder64 {
+            RandomXxHashBuilder64(rand::thread_rng().gen())
         }
     }
 
-    impl Default for RandomXxHashBuilder {
-        fn default() -> RandomXxHashBuilder {
-            RandomXxHashBuilder::new()
+    impl Default for RandomXxHashBuilder64 {
+        fn default() -> RandomXxHashBuilder64 {
+            RandomXxHashBuilder64::new()
         }
     }
 
-    impl BuildHasher for RandomXxHashBuilder {
-        type Hasher = XxHash;
+    impl BuildHasher for RandomXxHashBuilder64 {
+        type Hasher = XxHash64;
 
-        fn build_hasher(&self) -> XxHash {
-            XxHash::with_seed(self.0)
+        fn build_hasher(&self) -> XxHash64 {
+            XxHash64::with_seed(self.0)
         }
     }
 }
 
 pub mod thirty_two {
-    use crate::thirty_two::XxHash;
+    use crate::XxHash32;
     use core::hash::BuildHasher;
     use rand::{self, Rng};
 
     #[derive(Clone)]
     /// Constructs a randomized seed and reuses it for multiple hasher instances. See the usage warning on `XxHash32`.
-    pub struct RandomXxHashBuilder(u32);
+    pub struct RandomXxHashBuilder32(u32);
 
-    impl RandomXxHashBuilder {
-        fn new() -> RandomXxHashBuilder {
-            RandomXxHashBuilder(rand::thread_rng().gen())
+    impl RandomXxHashBuilder32 {
+        fn new() -> RandomXxHashBuilder32 {
+            RandomXxHashBuilder32(rand::thread_rng().gen())
         }
     }
 
-    impl Default for RandomXxHashBuilder {
-        fn default() -> RandomXxHashBuilder {
-            RandomXxHashBuilder::new()
+    impl Default for RandomXxHashBuilder32 {
+        fn default() -> RandomXxHashBuilder32 {
+            RandomXxHashBuilder32::new()
         }
     }
 
-    impl BuildHasher for RandomXxHashBuilder {
-        type Hasher = XxHash;
+    impl BuildHasher for RandomXxHashBuilder32 {
+        type Hasher = XxHash32;
 
-        fn build_hasher(&self) -> XxHash {
-            XxHash::with_seed(self.0)
+        fn build_hasher(&self) -> XxHash32 {
+            XxHash32::with_seed(self.0)
         }
     }
 }

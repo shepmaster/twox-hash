@@ -9,12 +9,16 @@ matrix:
     - rust: 1.32.0
 before_script: |
   set -e
-  rustup component add rustfmt clippy
+  if [[ $TRAVIS_RUST_VERSION = 'stable' ]]; then
+    rustup component add rustfmt clippy
+  fi
 script: |
   set -e
   cargo build
   cargo test
   ci/check-no-std.sh
   cargo test --all-features
-  cargo fmt --all -- --check
-  cargo clippy --all-targets --all-features -- -D warnings
+  if [[ $TRAVIS_RUST_VERSION = 'stable' ]]; then
+    cargo fmt --all -- --check
+    cargo clippy --all-targets --all-features -- -D warnings
+  fi
