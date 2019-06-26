@@ -153,6 +153,22 @@ impl XxHash32 {
         }
     }
 
+    pub(crate) fn write(&mut self, bytes: &[u8]) {
+        let (unaligned_head, aligned, unaligned_tail) = bytes.as_u32_arrays();
+
+        self.buffer_bytes(unaligned_head);
+
+        // Surprisingly, if we still have bytes in the buffer here, we
+        // don't do anything with them yet! This matches the C
+        // implementation.
+
+        self.core.ingest_chunks(aligned);
+
+        self.buffer_bytes(unaligned_tail);
+
+        self.total_len += bytes.len() as u32;
+    }
+
     fn buffer_bytes(&mut self, mut data: &[u8]) {
         while !data.is_empty() {
             data = self.buffer.consume(data);
@@ -173,32 +189,8 @@ impl XxHash32 {
             }
         }
     }
-}
 
-impl Default for XxHash32 {
-    fn default() -> XxHash32 {
-        XxHash32::with_seed(0)
-    }
-}
-
-impl Hasher for XxHash32 {
-    fn write(&mut self, bytes: &[u8]) {
-        let (unaligned_head, aligned, unaligned_tail) = bytes.as_u32_arrays();
-
-        self.buffer_bytes(unaligned_head);
-
-        // Surprisingly, if we still have bytes in the buffer here, we
-        // don't do anything with them yet! This matches the C
-        // implementation.
-
-        self.core.ingest_chunks(aligned);
-
-        self.buffer_bytes(unaligned_tail);
-
-        self.total_len += bytes.len() as u32;
-    }
-
-    fn finish(&self) -> u64 {
+    pub(crate) fn finish(&self) -> u32 {
         let mut hash = if self.total_len >= CHUNK_SIZE as u32 {
             // We have processed at least one full chunk
             self.core.finish()
@@ -236,8 +228,23 @@ impl Hasher for XxHash32 {
         hash = hash.wrapping_mul(PRIME_3);
         hash ^= hash >> 16;
 
-        // FIXME: we should return a u32
-        u64::from(hash)
+        hash
+    }
+}
+
+impl Default for XxHash32 {
+    fn default() -> XxHash32 {
+        XxHash32::with_seed(0)
+    }
+}
+
+impl Hasher for XxHash32 {
+    fn write(&mut self, bytes: &[u8]) {
+        XxHash32::write(self, bytes)
+    }
+
+    fn finish(&self) -> u64 {
+        u64::from(XxHash32::finish(self))
     }
 }
 
@@ -248,7 +255,7 @@ pub use crate::std_support::thirty_two::RandomXxHashBuilder32;
 mod test {
     use super::{RandomXxHashBuilder32, XxHash32};
     use std::collections::HashMap;
-    use std::hash::{BuildHasherDefault, Hasher};
+    use std::hash::BuildHasherDefault;
     use std::prelude::v1::*;
 
     #[test]

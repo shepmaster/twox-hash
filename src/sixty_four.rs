@@ -163,6 +163,22 @@ impl XxHash64 {
         }
     }
 
+    pub(crate) fn write(&mut self, bytes: &[u8]) {
+        let (unaligned_head, aligned, unaligned_tail) = bytes.as_u64_arrays();
+
+        self.buffer_bytes(unaligned_head);
+
+        // Surprisingly, if we still have bytes in the buffer here, we
+        // don't do anything with them yet! This matches the C
+        // implementation.
+
+        self.core.ingest_chunks(aligned);
+
+        self.buffer_bytes(unaligned_tail);
+
+        self.total_len += bytes.len() as u64;
+    }
+
     fn buffer_bytes(&mut self, mut data: &[u8]) {
         while !data.is_empty() {
             data = self.buffer.consume(data);
@@ -184,32 +200,8 @@ impl XxHash64 {
             }
         }
     }
-}
 
-impl Default for XxHash64 {
-    fn default() -> XxHash64 {
-        XxHash64::with_seed(0)
-    }
-}
-
-impl Hasher for XxHash64 {
-    fn write(&mut self, bytes: &[u8]) {
-        let (unaligned_head, aligned, unaligned_tail) = bytes.as_u64_arrays();
-
-        self.buffer_bytes(unaligned_head);
-
-        // Surprisingly, if we still have bytes in the buffer here, we
-        // don't do anything with them yet! This matches the C
-        // implementation.
-
-        self.core.ingest_chunks(aligned);
-
-        self.buffer_bytes(unaligned_tail);
-
-        self.total_len += bytes.len() as u64;
-    }
-
-    fn finish(&self) -> u64 {
+    pub(crate) fn finish(&self) -> u64 {
         let mut hash = if self.total_len >= CHUNK_SIZE as u64 {
             // We have processed at least one full chunk
             self.core.finish()
@@ -268,6 +260,22 @@ impl Hasher for XxHash64 {
     }
 }
 
+impl Default for XxHash64 {
+    fn default() -> XxHash64 {
+        XxHash64::with_seed(0)
+    }
+}
+
+impl Hasher for XxHash64 {
+    fn write(&mut self, bytes: &[u8]) {
+        XxHash64::write(self, bytes)
+    }
+
+    fn finish(&self) -> u64 {
+        XxHash64::finish(self)
+    }
+}
+
 #[cfg(feature = "std")]
 pub use crate::std_support::sixty_four::RandomXxHashBuilder64;
 
@@ -275,7 +283,7 @@ pub use crate::std_support::sixty_four::RandomXxHashBuilder64;
 mod test {
     use super::{RandomXxHashBuilder64, XxHash64};
     use std::collections::HashMap;
-    use std::hash::{BuildHasherDefault, Hasher};
+    use std::hash::BuildHasherDefault;
     use std::prelude::v1::*;
 
     #[test]
