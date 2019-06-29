@@ -122,23 +122,55 @@ impl core::fmt::Debug for XxCore {
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
+#[repr(align(8))]
+#[cfg_attr(feature = "serialize", serde(transparent))]
+struct AlignToU64<T>(T);
+
+#[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[derive(Debug, Copy, Clone, Default, PartialEq)]
 struct Buffer {
     #[cfg_attr(feature = "serialize", serde(rename = "buffer"))]
-    data: [u8; CHUNK_SIZE],
+    data: AlignToU64<[u8; CHUNK_SIZE]>,
     #[cfg_attr(feature = "serialize", serde(rename = "buffer_usage"))]
     len: usize,
 }
 
 impl Buffer {
     fn data(&self) -> &[u8] {
-        &self.data[..self.len]
+        &self.data.0[..self.len]
+    }
+
+    fn as_u64_arrays(&self) -> &[[u64; 4]] {
+        let (head, u64_arrays, tail) = self.data().as_u64_arrays();
+
+        debug_assert!(head.is_empty(), "buffer was not aligned for 64-bit numbers");
+        debug_assert_eq!(
+            u64_arrays.len(),
+            1,
+            "buffer did not have enough 64-bit numbers"
+        );
+        debug_assert!(tail.is_empty(), "buffer has trailing data");
+
+        u64_arrays
+    }
+
+    fn as_u64s_and_u32s(&self) -> (&[u64], &[u32], &[u8]) {
+        let (head, u64s, tail) = self.data().as_u64s();
+
+        debug_assert!(head.is_empty(), "buffer was not aligned for 64-bit numbers");
+
+        let (head, u32s, tail) = tail.as_u32s();
+
+        debug_assert!(head.is_empty(), "buffer was not aligned for 32-bit numbers");
+
+        (u64s, u32s, tail)
     }
 
     /// Consumes as much of the parameter as it can, returning the unused part.
     fn consume<'a>(&mut self, data: &'a [u8]) -> &'a [u8] {
         let to_use = cmp::min(self.available(), data.len());
         let (data, remaining) = data.split_at(to_use);
-        self.data[self.len..][..to_use].copy_from_slice(data);
+        self.data.0[self.len..][..to_use].copy_from_slice(data);
         self.len += to_use;
         remaining
     }
@@ -183,19 +215,7 @@ impl XxHash64 {
         while !data.is_empty() {
             data = self.buffer.consume(data);
             if self.buffer.is_full() {
-                let (unaligned_head, aligned, unaligned_tail) =
-                    self.buffer.data[..].as_u64_arrays();
-                debug_assert!(
-                    unaligned_head.is_empty(),
-                    "buffer was not aligned for 64-bit numbers"
-                );
-                debug_assert_eq!(
-                    aligned.len(),
-                    1,
-                    "buffer did not have enough 64-bit numbers"
-                );
-                debug_assert!(unaligned_tail.is_empty(), "buffer has trailing data");
-                self.core.ingest_chunks(aligned);
+                self.core.ingest_chunks(self.buffer.as_u64_arrays());
                 self.buffer.len = 0;
             }
         }
@@ -211,12 +231,7 @@ impl XxHash64 {
 
         hash = hash.wrapping_add(self.total_len);
 
-        let buffered = &self.buffer.data();
-        let (before, buffered_u64s, buffered) = buffered.as_u64s();
-        debug_assert!(
-            before.is_empty(),
-            "buffer was not aligned for 64-bit numbers"
-        );
+        let (buffered_u64s, buffered_u32s, buffered_u8s) = self.buffer.as_u64s_and_u32s();
 
         for buffered_u64 in buffered_u64s {
             let mut k1 = buffered_u64.wrapping_mul(PRIME_2);
@@ -227,12 +242,6 @@ impl XxHash64 {
             hash = hash.wrapping_mul(PRIME_1);
             hash = hash.wrapping_add(PRIME_4);
         }
-
-        let (before, buffered_u32s, buffered_u8s) = buffered.as_u32s();
-        debug_assert!(
-            before.is_empty(),
-            "buffer was not aligned for 32-bit numbers"
-        );
 
         for &buffered_u32 in buffered_u32s {
             let k1 = u64::from(buffered_u32).wrapping_mul(PRIME_1);
