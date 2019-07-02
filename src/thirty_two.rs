@@ -165,6 +165,10 @@ impl Buffer {
         CHUNK_SIZE - self.len
     }
 
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     fn is_full(&self) -> bool {
         self.len == CHUNK_SIZE
     }
@@ -184,15 +188,12 @@ impl XxHash32 {
     pub(crate) fn write(&mut self, bytes: &[u8]) {
         let (unaligned_head, aligned, unaligned_tail) = bytes.as_u32_arrays();
 
-        self.buffer_bytes(unaligned_head);
-
-        // Surprisingly, if we still have bytes in the buffer here, we
-        // don't do anything with them yet! This matches the C
-        // implementation.
-
-        self.core.ingest_chunks(aligned);
-
-        self.buffer_bytes(unaligned_tail);
+        if !self.buffer.is_empty() || !unaligned_head.is_empty() {
+            self.buffer_bytes(bytes);
+        } else {
+            self.core.ingest_chunks(aligned);
+            self.buffer_bytes(unaligned_tail);
+        }
 
         self.total_len += bytes.len() as u32;
     }
