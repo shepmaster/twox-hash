@@ -53,7 +53,7 @@ proptest! {
         let our_result = hash_once(XxHash64::with_seed(seed), &data);
         let their_result = c_xxhash::hash64(&data, seed);
 
-        our_result == their_result
+        prop_assert_eq!(our_result, their_result);
     }
 
    #[test]
@@ -62,7 +62,7 @@ proptest! {
         let our_result = hash_once(XxHash64::with_seed(seed), data);
         let their_result = c_xxhash::hash64(data, seed);
 
-        our_result == their_result
+        prop_assert_eq!(our_result, their_result);
     }
 
     #[test]
@@ -70,7 +70,7 @@ proptest! {
         let our_result = hash_once(XxHash32::with_seed(seed), &data);
         let their_result = c_xxhash::hash32(&data, seed);
 
-        our_result == their_result as u64
+        prop_assert_eq!(our_result, their_result as u64);
     }
 
    #[test]
@@ -79,7 +79,7 @@ proptest! {
         let our_result = hash_once(XxHash32::with_seed(seed), data);
         let their_result = c_xxhash::hash32(data, seed);
 
-        our_result == their_result as u64
+        prop_assert_eq!(our_result, their_result as u64);
     }
 }
 
@@ -91,7 +91,7 @@ proptest! {
         let chunked_result = hash_by_chunks(XxHash64::with_seed(seed), &data, &chunk_sizes);
         let monolithic_result = hash_once(XxHash64::with_seed(seed), &data);
 
-        chunked_result == monolithic_result
+        prop_assert_eq!(chunked_result, monolithic_result);
     }
 
     #[test]
@@ -99,6 +99,6 @@ proptest! {
         let chunked_result = hash_by_chunks(XxHash32::with_seed(seed), &data, &chunk_sizes);
         let monolithic_result = hash_once(XxHash32::with_seed(seed), &data);
 
-        chunked_result == monolithic_result
+        prop_assert_eq!(chunked_result, monolithic_result);
     }
 }
