@@ -268,6 +268,14 @@ impl XxHash64 {
 
         hash
     }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    pub fn total_len(&self) -> u64 {
+        self.total_len
+    }
 }
 
 impl Default for XxHash64 {
@@ -277,12 +285,12 @@ impl Default for XxHash64 {
 }
 
 impl Hasher for XxHash64 {
-    fn write(&mut self, bytes: &[u8]) {
-        XxHash64::write(self, bytes)
-    }
-
     fn finish(&self) -> u64 {
         XxHash64::finish(self)
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        XxHash64::write(self, bytes)
     }
 }
 

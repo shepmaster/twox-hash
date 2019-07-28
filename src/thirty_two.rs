@@ -243,6 +243,14 @@ impl XxHash32 {
 
         hash
     }
+
+    pub fn seed(&self) -> u32 {
+        self.seed
+    }
+
+    pub fn total_len(&self) -> u32 {
+        self.total_len
+    }
 }
 
 impl Default for XxHash32 {
@@ -252,12 +260,12 @@ impl Default for XxHash32 {
 }
 
 impl Hasher for XxHash32 {
-    fn write(&mut self, bytes: &[u8]) {
-        XxHash32::write(self, bytes)
-    }
-
     fn finish(&self) -> u64 {
         u64::from(XxHash32::finish(self))
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        XxHash32::write(self, bytes)
     }
 }
 
