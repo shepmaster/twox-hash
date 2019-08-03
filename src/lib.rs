@@ -30,6 +30,8 @@
 #[cfg(test)]
 extern crate std;
 
+use core::{marker::PhantomData, mem};
+
 mod sixty_four;
 mod thirty_two;
 
@@ -55,34 +57,49 @@ pub type XxHash = XxHash64;
 /// `RandomXxHashBuilder64` instead.
 pub type RandomXxHashBuilder = RandomXxHashBuilder64;
 
-trait TransmutingByteSlices {
-    fn as_u64_arrays(&self) -> (&[u8], &[[u64; 4]], &[u8]);
-    fn as_u64s(&self) -> (&[u8], &[u64], &[u8]);
-    fn as_u32_arrays(&self) -> (&[u8], &[[u32; 4]], &[u8]);
-    fn as_u32s(&self) -> (&[u8], &[u32], &[u8]);
+/// An unaligned buffer with iteration support for `UnalignedItem`.
+struct UnalignedBuffer<'a, T> {
+    buf: &'a [u8],
+    phantom: PhantomData<T>,
 }
 
-// # Safety
-//
-// - Interpreting a properly-aligned set of bytes as a `u64` should be
-//   valid.
-// - `align_to` guarantees to only transmute aligned data.
-// - An array is a tightly-packed set of bytes (as shown by `impl
-//   TryFrom<&[u8]> for &[u8; N]`)
-impl TransmutingByteSlices for [u8] {
-    fn as_u64_arrays(&self) -> (&[u8], &[[u64; 4]], &[u8]) {
-        unsafe { self.align_to::<[u64; 4]>() }
+/// Types implementing this trait must be transmutable from a `*const
+/// u8` to `*const Self` at any possible alignment.
+///
+/// The intent is to use this with only primitive integer types (and
+/// tightly-packed arrays of those integers).
+unsafe trait UnalignedItem {}
+
+unsafe impl UnalignedItem for [u64; 4] {}
+unsafe impl UnalignedItem for [u32; 4] {}
+unsafe impl UnalignedItem for u64 {}
+unsafe impl UnalignedItem for u32 {}
+
+impl<'a, T: UnalignedItem> UnalignedBuffer<'a, T> {
+    #[inline]
+    fn new(buf: &'a [u8]) -> Self {
+        Self {
+            buf,
+            phantom: PhantomData,
+        }
     }
 
-    fn as_u64s(&self) -> (&[u8], &[u64], &[u8]) {
-        unsafe { self.align_to::<u64>() }
+    #[inline]
+    fn remaining(&self) -> &[u8] {
+        self.buf
     }
+}
 
-    fn as_u32_arrays(&self) -> (&[u8], &[[u32; 4]], &[u8]) {
-        unsafe { self.align_to::<[u32; 4]>() }
-    }
+impl<'a, T: UnalignedItem> Iterator for UnalignedBuffer<'a, T> {
+    type Item = T;
 
-    fn as_u32s(&self) -> (&[u8], &[u32], &[u8]) {
-        unsafe { self.align_to::<u32>() }
+    fn next(&mut self) -> Option<Self::Item> {
+        let size = mem::size_of::<T>();
+        self.buf.get(size..).map(|remaining| {
+            // `self.buf` has at least `size` bytes that can be read as `T`.
+            let result = unsafe { (self.buf.as_ptr() as *const T).read_unaligned() };
+            self.buf = remaining;
+            result
+        })
     }
 }
