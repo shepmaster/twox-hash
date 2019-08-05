@@ -1,4 +1,4 @@
-use crate::TransmutingByteSlices;
+use crate::UnalignedBuffer;
 use core::{cmp, hash::Hasher};
 
 #[cfg(feature = "serialize")]
@@ -43,9 +43,9 @@ impl XxCore {
     }
 
     #[inline(always)]
-    fn ingest_chunks<'a, I>(&mut self, values: I)
+    fn ingest_chunks<I>(&mut self, values: I)
     where
-        I: IntoIterator<Item = &'a [u64; 4]>,
+        I: IntoIterator<Item = [u64; 4]>,
     {
         #[inline(always)]
         fn ingest_one_number(mut current_value: u64, mut value: u64) -> u64 {
@@ -64,7 +64,7 @@ impl XxCore {
         let mut v3 = self.v3;
         let mut v4 = self.v4;
 
-        for &[n1, n2, n3, n4] in values {
+        for [n1, n2, n3, n4] in values {
             v1 = ingest_one_number(v1, n1);
             v2 = ingest_one_number(v2, n2);
             v3 = ingest_one_number(v3, n3);
@@ -140,32 +140,6 @@ impl Buffer {
         &self.data.0[..self.len]
     }
 
-    fn as_u64_arrays(&self) -> &[[u64; 4]] {
-        let (head, u64_arrays, tail) = self.data().as_u64_arrays();
-
-        debug_assert!(head.is_empty(), "buffer was not aligned for 64-bit numbers");
-        debug_assert_eq!(
-            u64_arrays.len(),
-            1,
-            "buffer did not have enough 64-bit numbers"
-        );
-        debug_assert!(tail.is_empty(), "buffer has trailing data");
-
-        u64_arrays
-    }
-
-    fn as_u64s_and_u32s(&self) -> (&[u64], &[u32], &[u8]) {
-        let (head, u64s, tail) = self.data().as_u64s();
-
-        debug_assert!(head.is_empty(), "buffer was not aligned for 64-bit numbers");
-
-        let (head, u32s, tail) = tail.as_u32s();
-
-        debug_assert!(head.is_empty(), "buffer was not aligned for 32-bit numbers");
-
-        (u64s, u32s, tail)
-    }
-
     /// Consumes as much of the parameter as it can, returning the unused part.
     fn consume<'a>(&mut self, data: &'a [u8]) -> &'a [u8] {
         let to_use = cmp::min(self.available(), data.len());
@@ -173,6 +147,13 @@ impl Buffer {
         self.data.0[self.len..][..to_use].copy_from_slice(data);
         self.len += to_use;
         remaining
+    }
+
+    fn set_data(&mut self, data: &[u8]) {
+        debug_assert!(self.is_empty());
+        debug_assert!(data.len() < CHUNK_SIZE);
+        self.data.0[..data.len()].copy_from_slice(data);
+        self.len = data.len();
     }
 
     fn available(&self) -> usize {
@@ -200,25 +181,30 @@ impl XxHash64 {
     }
 
     pub(crate) fn write(&mut self, bytes: &[u8]) {
-        let (unaligned_head, aligned, unaligned_tail) = bytes.as_u64_arrays();
-
-        if !self.buffer.is_empty() || !unaligned_head.is_empty() {
-            self.buffer_bytes(bytes);
-        } else {
-            self.core.ingest_chunks(aligned);
-            self.buffer_bytes(unaligned_tail);
+        let remaining = self.maybe_consume_bytes(bytes);
+        if !remaining.is_empty() {
+            let mut remaining = UnalignedBuffer::new(remaining);
+            self.core.ingest_chunks(&mut remaining);
+            self.buffer.set_data(remaining.remaining());
         }
-
         self.total_len += bytes.len() as u64;
     }
 
-    fn buffer_bytes(&mut self, mut data: &[u8]) {
-        while !data.is_empty() {
-            data = self.buffer.consume(data);
+    // Consume bytes and try to make `self.buffer` empty.
+    // If there are not enough bytes, `self.buffer` can be non-empty, and this
+    // function returns an empty slice.
+    fn maybe_consume_bytes<'a>(&mut self, data: &'a [u8]) -> &'a [u8] {
+        if self.buffer.is_empty() {
+            data
+        } else {
+            let data = self.buffer.consume(data);
             if self.buffer.is_full() {
-                self.core.ingest_chunks(self.buffer.as_u64_arrays());
+                let mut u64s = UnalignedBuffer::new(self.buffer.data());
+                self.core.ingest_chunks(&mut u64s);
+                debug_assert!(u64s.remaining().is_empty());
                 self.buffer.len = 0;
             }
+            data
         }
     }
 
@@ -232,9 +218,8 @@ impl XxHash64 {
 
         hash = hash.wrapping_add(self.total_len);
 
-        let (buffered_u64s, buffered_u32s, buffered_u8s) = self.buffer.as_u64s_and_u32s();
-
-        for buffered_u64 in buffered_u64s {
+        let mut buffered_u64s = UnalignedBuffer::<u64>::new(self.buffer.data());
+        for buffered_u64 in &mut buffered_u64s {
             let mut k1 = buffered_u64.wrapping_mul(PRIME_2);
             k1 = k1.rotate_left(31);
             k1 = k1.wrapping_mul(PRIME_1);
@@ -244,7 +229,8 @@ impl XxHash64 {
             hash = hash.wrapping_add(PRIME_4);
         }
 
-        for &buffered_u32 in buffered_u32s {
+        let mut buffered_u32s = UnalignedBuffer::<u32>::new(buffered_u64s.remaining());
+        for buffered_u32 in &mut buffered_u32s {
             let k1 = u64::from(buffered_u32).wrapping_mul(PRIME_1);
             hash ^= k1;
             hash = hash.rotate_left(23);
@@ -252,6 +238,7 @@ impl XxHash64 {
             hash = hash.wrapping_add(PRIME_3);
         }
 
+        let buffered_u8s = buffered_u32s.remaining();
         for &buffered_u8 in buffered_u8s {
             let k1 = u64::from(buffered_u8).wrapping_mul(PRIME_5);
             hash ^= k1;

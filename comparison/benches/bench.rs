@@ -13,7 +13,8 @@ use rand::{distributions::Standard, rngs::StdRng, Rng, SeedableRng};
 use std::{collections::hash_map::DefaultHasher, env, fmt, hash::Hasher, ops};
 use twox_hash::{XxHash32, XxHash64};
 
-const INPUT_SIZES: &[usize] = &[0, 1, 4, 16, 32, 128, 256, 512, 1024, 1024 * 1024];
+const INPUT_SIZES: &[usize] = &[0, 1, 4, 16, 23, 32, 47, 128, 256, 512, 1024, 1024 * 1024];
+const OFFSETS: &[usize] = &[0, 1];
 
 fn bench_hasher<H>(hasher: impl Fn() -> H) -> impl FnMut(&mut Bencher, &Data)
 where
@@ -33,7 +34,15 @@ fn bench_everything(c: &mut Criterion) {
         .unwrap_or_else(rand::random);
     eprintln!("Using RANDOM_SEED={}", seed);
 
-    let data: Vec<_> = INPUT_SIZES.iter().map(|&l| Data::new(l, seed)).collect();
+    let data: Vec<_> = OFFSETS
+        .iter()
+        .flat_map(|&o| {
+            INPUT_SIZES
+                .iter()
+                .map(|&l| Data::new(l, seed, o))
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     let plot_config = PlotConfiguration::default().summary_scale(AxisScale::Logarithmic);
 
@@ -50,30 +59,36 @@ fn bench_everything(c: &mut Criterion) {
     c.bench("All Hashers", bench);
 }
 
-struct Data(Vec<u8>);
+struct Data(Vec<u8>, usize);
 
 impl Data {
-    fn new(len: usize, seed: u64) -> Self {
+    fn new(len: usize, seed: u64, offset: usize) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
-        let data = rng.sample_iter(&Standard).take(len).collect();
-        Self(data)
+        let data = rng.sample_iter(&Standard).take(len + offset).collect();
+        Self(data, offset)
     }
 
+    #[inline]
     fn len(&self) -> usize {
-        self.0.len()
+        self.0.len() - self.offset()
+    }
+
+    #[inline]
+    fn offset(&self) -> usize {
+        self.1
     }
 }
 
 impl ops::Deref for Data {
     type Target = [u8];
     fn deref(&self) -> &[u8] {
-        &self.0
+        &self.0[self.offset()..]
     }
 }
 
 impl fmt::Debug for Data {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} bytes", self.len())
+        write!(f, "{} bytes/offset {}", self.len(), self.offset())
     }
 }
 
