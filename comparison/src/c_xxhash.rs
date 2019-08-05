@@ -1,15 +1,15 @@
 mod ffi {
-    use libc::{c_void, size_t, uint32_t, uint64_t};
+    use libc::{c_void, size_t};
 
     #[allow(non_camel_case_types)]
-    type XXH32_hash_t = uint32_t;
+    type XXH32_hash_t = u32;
 
     #[allow(non_camel_case_types)]
-    type XXH64_hash_t = uint64_t;
+    type XXH64_hash_t = u64;
 
     extern "C" {
-        pub fn XXH32(input: *const c_void, length: size_t, seed: uint32_t) -> XXH32_hash_t;
-        pub fn XXH64(input: *const c_void, length: size_t, seed: uint64_t) -> XXH64_hash_t;
+        pub fn XXH32(input: *const c_void, length: size_t, seed: u32) -> XXH32_hash_t;
+        pub fn XXH64(input: *const c_void, length: size_t, seed: u64) -> XXH64_hash_t;
     }
 }
 
