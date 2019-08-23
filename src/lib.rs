@@ -34,6 +34,7 @@ use core::{marker::PhantomData, mem};
 
 mod sixty_four;
 mod thirty_two;
+pub mod xxh3;
 
 #[cfg(feature = "std")]
 mod std_support;

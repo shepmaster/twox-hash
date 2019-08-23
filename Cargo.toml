@@ -15,6 +15,7 @@ documentation = "https://docs.rs/twox-hash/"
 license = "MIT"
 
 [dependencies]
+cfg-if = "0.1"
 rand = { version = ">= 0.3.10, < 0.8", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true}
 digest = { version = "0.8", default-features = false, optional = true  }
@@ -26,3 +27,5 @@ serde_json = "1.0"
 default = ["std"]
 serialize = ["serde"]
 std = ["rand"]
+avx2 = []
+sse2 = []
