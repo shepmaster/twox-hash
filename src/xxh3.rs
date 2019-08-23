@@ -88,6 +88,62 @@ pub fn hash128_with_secret(data: &[u8], secret: &[u8]) -> u128 {
     }
 }
 
+#[derive(Clone, Default)]
+pub struct Hasher64(State);
+
+impl Hasher64 {
+    pub fn with_seed(seed: u64) -> Self {
+        Self(State::with_seed(seed))
+    }
+
+    pub fn with_secret<S: Into<Vec<u8>>>(secret: S) -> Self {
+        Self(State::with_secret(secret))
+    }
+}
+
+impl Hasher for Hasher64 {
+    fn finish(&self) -> u64 {
+        self.0.digest64()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.update(bytes, AccWidth::Acc64Bits)
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct Hasher128(State);
+
+impl Hasher128 {
+    pub fn with_seed(seed: u64) -> Self {
+        Self(State::with_seed(seed))
+    }
+
+    pub fn with_secret<S: Into<Vec<u8>>>(secret: S) -> Self {
+        Self(State::with_secret(secret))
+    }
+}
+
+impl Hasher for Hasher128 {
+    fn finish(&self) -> u64 {
+        self.0.digest128() as u64
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.update(bytes, AccWidth::Acc128Bits)
+    }
+}
+
+pub trait HasherExt: Hasher {
+    fn finish_ext(&self) -> u128;
+}
+
+impl HasherExt for Hasher128 {
+    fn finish_ext(&self) -> u128 {
+        self.0.digest128()
+    }
+}
+
 /* ==========================================
  * XXH3 default settings
  * ========================================== */
@@ -159,7 +215,9 @@ cfg_if! {
     }
 }
 
-const_assert_eq!(acc_size; mem::size_of::<Acc>(), 64);
+const ACC_SIZE: usize = mem::size_of::<Acc>();
+
+const_assert_eq!(acc_size; ACC_SIZE, 64);
 
 impl Default for Acc {
     fn default() -> Self {
@@ -781,14 +839,15 @@ impl State {
     }
 
     #[inline(always)]
-    fn digest_long(&self, acc: &mut [u64], acc_width: AccWidth) {
+    fn digest_long(&self, acc_width: AccWidth) -> Acc {
+        let mut acc = self.acc.clone();
         let secret_limit = self.secret_limit();
 
         if self.buf.len() >= STRIPE_LEN {
             // digest locally, state remains unaltered, and can continue ingesting more data afterwards
             let total_nb_stripes = self.buf.len() / STRIPE_LEN;
             let _nb_stripes_so_far = consume_stripes(
-                acc,
+                &mut acc,
                 self.nb_stripes_so_far,
                 self.nb_stripes_per_block(),
                 &self.buf,
@@ -800,7 +859,7 @@ impl State {
             if (self.buf.len() % STRIPE_LEN) != 0 {
                 unsafe {
                     accumulate512(
-                        acc,
+                        &mut acc,
                         &self.buf[self.buf.len() - STRIPE_LEN..],
                         &self.secret[secret_limit - SECRET_LASTACC_START..],
                         acc_width,
@@ -822,20 +881,20 @@ impl State {
 
             unsafe {
                 accumulate512(
-                    acc,
+                    &mut acc,
                     &last_stripe[..],
                     &self.secret[secret_limit - SECRET_LASTACC_START..],
                     acc_width,
                 );
             }
         }
+
+        acc
     }
 
     fn digest64(&self) -> u64 {
         if self.total_len > MIDSIZE_MAX {
-            let mut acc = self.acc.clone();
-
-            self.digest_long(&mut acc, AccWidth::Acc64Bits);
+            let acc = self.digest_long(AccWidth::Acc64Bits);
 
             merge_accs(
                 &acc,
@@ -850,7 +909,32 @@ impl State {
     }
 
     fn digest128(&self) -> u128 {
-        0
+        let secret_limit = self.secret_limit();
+
+        if self.total_len > MIDSIZE_MAX {
+            let acc = self.digest_long(AccWidth::Acc128Bits);
+
+            debug_assert!(secret_limit + STRIPE_LEN >= ACC_SIZE + SECRET_MERGEACCS_START);
+
+            let total_len = self.total_len as u64;
+
+            let low64 = merge_accs(
+                &acc,
+                &self.secret[SECRET_MERGEACCS_START..],
+                total_len.wrapping_mul(PRIME64_1),
+            );
+            let high64 = merge_accs(
+                &acc,
+                &self.secret[secret_limit + STRIPE_LEN - ACC_SIZE - SECRET_MERGEACCS_START..],
+                !total_len.wrapping_mul(PRIME64_2),
+            );
+
+            u128::from(low64) + (u128::from(high64) << 64)
+        } else if self.seed != 0 {
+            hash128_with_seed(&self.buf, self.seed)
+        } else {
+            hash128_with_secret(&self.buf, &self.secret[..secret_limit + STRIPE_LEN])
+        }
     }
 }
 
@@ -899,62 +983,6 @@ fn consume_stripes(
         );
 
         nb_stripes_so_far + total_stripes
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct Hasher64(State);
-
-impl Hasher64 {
-    pub fn with_seed(seed: u64) -> Self {
-        Self(State::with_seed(seed))
-    }
-
-    pub fn with_secret<S: Into<Vec<u8>>>(secret: S) -> Self {
-        Self(State::with_secret(secret))
-    }
-}
-
-impl Hasher for Hasher64 {
-    fn finish(&self) -> u64 {
-        self.0.digest64()
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.0.update(bytes, AccWidth::Acc64Bits)
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct Hasher128(State);
-
-impl Hasher128 {
-    pub fn with_seed(seed: u64) -> Self {
-        Self(State::with_seed(seed))
-    }
-
-    pub fn with_secret<S: Into<Vec<u8>>>(secret: S) -> Self {
-        Self(State::with_secret(secret))
-    }
-}
-
-impl Hasher for Hasher128 {
-    fn finish(&self) -> u64 {
-        self.0.digest128() as u64
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.0.update(bytes, AccWidth::Acc128Bits)
-    }
-}
-
-pub trait HasherExt: Hasher {
-    fn finish_ext(&self) -> u128;
-}
-
-impl HasherExt for Hasher128 {
-    fn finish_ext(&self) -> u128 {
-        self.0.digest128()
     }
 }
 
@@ -1175,12 +1203,18 @@ fn hash_long_128bits_internal(data: &[u8], secret: &[u8]) -> u128 {
     );
     let high64 = merge_accs(
         &acc,
-        &secret[secret.len() - mem::size_of::<Acc>() - SECRET_MERGEACCS_START..],
+        &secret[secret.len() - ACC_SIZE - SECRET_MERGEACCS_START..],
         !len.wrapping_mul(PRIME64_2),
     );
 
     u128::from(low64) + (u128::from(high64) << 64)
 }
+
+/* ===   XXH3 128-bit streaming   === */
+
+/* all the functions are actually the same as for 64-bit streaming variant,
+just the reset one is different (different initial acc values for 0,5,6,7),
+and near the end of the digest function */
 
 #[cfg(test)]
 mod tests {
@@ -1240,32 +1274,38 @@ mod tests {
         ];
 
         for (buf, seed, result) in test_cases {
-            let hash = hash64_with_seed(buf, seed);
+            {
+                let hash = hash64_with_seed(buf, seed);
 
-            assert_eq!(
-                hash,
-                result,
-                "hash64_with_seed(&buf[..{}], seed={}) failed, got 0x{:X}, expected 0x{:X}",
-                buf.len(),
-                seed,
-                hash,
-                result
-            );
+                assert_eq!(
+                    hash,
+                    result,
+                    "hash64_with_seed(&buf[..{}], seed={}) failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    seed,
+                    hash,
+                    result
+                );
+            }
 
             // streaming API test
-            let mut hasher = Hasher64::with_seed(seed);
-            hasher.write(buf);
-            let hash = hasher.finish();
 
-            assert_eq!(
-                hash,
-                result,
-                "Hasher64::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
-                buf.len(),
-                seed,
-                hash,
-                result
-            );
+            // single ingestio
+            {
+                let mut hasher = Hasher64::with_seed(seed);
+                hasher.write(buf);
+                let hash = hasher.finish();
+
+                assert_eq!(
+                    hash,
+                    result,
+                    "Hasher64::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    seed,
+                    hash,
+                    result
+                );
+            }
 
             if buf.len() > 3 {
                 // 2 ingestions
@@ -1275,32 +1315,36 @@ mod tests {
                 let hash = hasher.finish();
 
                 assert_eq!(
-                hash,
-                result,
-                "Hasher64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
-                buf.len(),
-                seed,
-                hash,
-                result
-            );
+                    hash,
+                    result,
+                    "Hasher64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    seed,
+                    hash,
+                    result
+                );
             }
 
             // byte by byte ingestion
-            let mut hasher = Hasher64::with_seed(seed);
+            {
+                let mut hasher = Hasher64::with_seed(seed);
 
-            for chunk in buf.chunks(1) {
-                hasher.write(chunk);
+                for chunk in buf.chunks(1) {
+                    hasher.write(chunk);
+                }
+
+                let hash = hasher.finish();
+
+                assert_eq!(
+                    hash,
+                    result,
+                    "Hasher64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    seed,
+                    hash,
+                    result
+                );
             }
-
-            assert_eq!(
-            hash,
-            result,
-            "Hasher64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
-            buf.len(),
-            seed,
-            hash,
-            result
-        );
         }
     }
 
@@ -1326,45 +1370,56 @@ mod tests {
         ];
 
         for (buf, secret, result) in test_cases {
-            let hash = hash64_with_secret(buf, secret);
+            {
+                let hash = hash64_with_secret(buf, secret);
 
-            assert_eq!(
-                hash,
-                result,
-                "hash64_with_secret(&buf[..{}], secret) failed, got 0x{:X}, expected 0x{:X}",
-                buf.len(),
-                hash,
-                result
-            );
-
-            let mut hasher = Hasher64::with_secret(secret);
-            hasher.write(buf);
-            let hash = hasher.finish();
-
-            assert_eq!(
-                hash,
-                result,
-                "Hasher64::update(&buf[..{}]) with secret failed, got 0x{:X}, expected 0x{:X}",
-                buf.len(),
-                hash,
-                result
-            );
-
-            // byte by byte ingestion
-            let mut hasher = Hasher64::with_secret(secret);
-
-            for chunk in buf.chunks(1) {
-                hasher.write(chunk);
+                assert_eq!(
+                    hash,
+                    result,
+                    "hash64_with_secret(&buf[..{}], secret) failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    hash,
+                    result
+                );
             }
 
-            assert_eq!(
-            hash,
-            result,
-            "Hasher64::update(&buf[..{}].chunks(1)) with secret failed, got 0x{:X}, expected 0x{:X}",
-            buf.len(),
-            hash,
-            result
-        );
+            // streaming API test
+
+            // single ingestio
+            {
+                let mut hasher = Hasher64::with_secret(secret);
+                hasher.write(buf);
+                let hash = hasher.finish();
+
+                assert_eq!(
+                    hash,
+                    result,
+                    "Hasher64::update(&buf[..{}]) with secret failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    hash,
+                    result
+                );
+            }
+
+            // byte by byte ingestion
+            {
+                let mut hasher = Hasher64::with_secret(secret);
+
+                for chunk in buf.chunks(1) {
+                    hasher.write(chunk);
+                }
+
+                let hash = hasher.finish();
+
+                assert_eq!(
+                    hash,
+                    result,
+                    "Hasher64::update(&buf[..{}].chunks(1)) with secret failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    hash,
+                    result
+                );
+            }
         }
     }
 
@@ -1406,18 +1461,79 @@ mod tests {
         ];
 
         for (buf, seed, lo, hi) in test_cases {
-            let hash = hash128_with_seed(buf, seed);
             let result = u128::from(lo) + (u128::from(hi) << 64);
 
-            assert_eq!(
-                hash,
-                result,
-                "hash128_with_seed(&buf[..{}], seed={}) failed, got 0x{:X}, expected 0x{:X}",
-                buf.len(),
-                seed,
-                hash,
-                result
-            );
+            {
+                let hash = hash128_with_seed(buf, seed);
+
+                assert_eq!(
+                    hash,
+                    result,
+                    "hash128_with_seed(&buf[..{}], seed={}) failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    seed,
+                    hash,
+                    result
+                );
+            }
+
+            // streaming API test
+
+            // single ingestio
+            {
+                let mut hasher = Hasher128::with_seed(seed);
+                hasher.write(buf);
+                let hash = hasher.finish_ext();
+
+                assert_eq!(
+                    hash,
+                    result,
+                    "Hasher128::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    seed,
+                    hash,
+                    result
+                );
+            }
+
+            if buf.len() > 3 {
+                // 2 ingestions
+                let mut hasher = Hasher128::with_seed(seed);
+                hasher.write(&buf[..3]);
+                hasher.write(&buf[3..]);
+                let hash = hasher.finish_ext();
+
+                assert_eq!(
+                    hash,
+                    result,
+                    "Hasher64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    seed,
+                    hash,
+                    result
+                );
+            }
+
+            // byte by byte ingestion
+            {
+                let mut hasher = Hasher128::with_seed(seed);
+
+                for chunk in buf.chunks(1) {
+                    hasher.write(chunk);
+                }
+
+                let hash = hasher.finish_ext();
+
+                assert_eq!(
+                    hash,
+                    result,
+                    "Hasher64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    buf.len(),
+                    seed,
+                    hash,
+                    result
+                );
+            }
         }
     }
 }
