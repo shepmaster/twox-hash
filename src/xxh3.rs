@@ -14,6 +14,9 @@ use core::arch::x86_64::*;
 use cfg_if::cfg_if;
 use static_assertions::{const_assert, const_assert_eq};
 
+#[cfg(feature = "serialize")]
+use serde::{Deserialize, Serialize};
+
 use crate::sixty_four::{
     PRIME_1 as PRIME64_1, PRIME_2 as PRIME64_2, PRIME_3 as PRIME64_3, PRIME_4 as PRIME64_4,
     PRIME_5 as PRIME64_5,
@@ -88,6 +91,8 @@ pub fn hash128_with_secret(data: &[u8], secret: &[u8]) -> u128 {
     }
 }
 
+/// Calculates the 64-bit hash.
+#[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Clone, Default)]
 pub struct Hasher64(State);
 
@@ -111,6 +116,8 @@ impl Hasher for Hasher64 {
     }
 }
 
+/// Calculates the 128-bit hash.
+#[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Clone, Default)]
 pub struct Hasher128(State);
 
@@ -186,6 +193,53 @@ impl Deref for Secret {
     }
 }
 
+cfg_if! {
+    if #[cfg(feature = "serialize")] {
+        impl Serialize for Secret {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                serializer.serialize_bytes(self)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for Secret {
+            fn deserialize<D>(deserializer: D) -> Result<Secret, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                deserializer.deserialize_bytes(SecretVisitor)
+            }
+        }
+
+        struct SecretVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for SecretVisitor {
+            type Value = Secret;
+
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+                formatter.write_str("secret with a bytes array")
+            }
+
+            fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                if v.len() == SECRET_DEFAULT_SIZE {
+                    let mut secret = [0; SECRET_DEFAULT_SIZE];
+
+                    secret.copy_from_slice(v);
+
+                    Ok(Secret(secret))
+                } else {
+                    Err(E::custom("incomplete secret data"))
+                }
+            }
+        }
+    }
+}
+
 impl Secret {
     pub fn with_seed(seed64: u64) -> Self {
         let mut secret = [0; SECRET_DEFAULT_SIZE];
@@ -202,14 +256,17 @@ impl Secret {
 cfg_if! {
     if #[cfg(any(target_feature = "avx2", feature = "avx2"))] {
         #[repr(align(32))]
+        #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
         #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     } else if #[cfg(any(target_feature = "sse2", feature = "sse2"))] {
         #[repr(align(16))]
+        #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
         #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     } else {
         #[repr(align(8))]
+        #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
         #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     }
@@ -528,6 +585,7 @@ fn accumulate(acc: &mut [u64], data: &[u8], secret: &[u8], nb_stripes: usize, ac
     }
 }
 
+#[inline(always)]
 const fn _mm_shuffle(z: u32, y: u32, x: u32, w: u32) -> i32 {
     ((z << 6) | (y << 4) | (x << 2) | w) as i32
 }
@@ -630,6 +688,7 @@ cfg_if! {
             }
         }
     } else {
+        #[inline(always)]
         unsafe fn accumulate512(acc: &mut [u64], data: &[u8], key: &[u32], acc_width: AccWidth) {
             for i in (0..ACC_NB).step_by(2) {
                 let in1 = data[8*i..].read_u64_le();
@@ -651,6 +710,7 @@ cfg_if! {
             }
         }
 
+        #[inline(always)]
         unsafe fn scramble_acc(acc: &mut [u64], key: &[u8]) {
             for i in 0..ACC_NB {
                 let key64 = key[8*i].read_u64_le();
@@ -664,6 +724,7 @@ cfg_if! {
     }
 }
 
+#[inline(always)]
 fn merge_accs(acc: &[u64], secret: &[u8], start: u64) -> u64 {
     avalanche(
         start
@@ -716,6 +777,7 @@ const_assert!(internal_buffer_size; INTERNAL_BUFFER_SIZE >= MIDSIZE_MAX);
 const_assert_eq!(clean_multiple; INTERNAL_BUFFER_SIZE % STRIPE_LEN, 0);
 
 #[repr(align(64))]
+#[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Clone)]
 struct State {
     acc: Acc,
@@ -726,6 +788,7 @@ struct State {
     nb_stripes_so_far: usize,
 }
 
+#[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Clone)]
 enum With {
     Default(Secret),
@@ -894,6 +957,7 @@ impl State {
         acc
     }
 
+    #[inline]
     fn digest64(&self) -> u64 {
         if self.total_len > MIDSIZE_MAX {
             let acc = self.digest_long(AccWidth::Acc64Bits);
@@ -910,6 +974,7 @@ impl State {
         }
     }
 
+    #[inline]
     fn digest128(&self) -> u128 {
         let secret_limit = self.secret_limit();
 
@@ -1170,14 +1235,17 @@ fn hash_len_129to240_128bits(data: &[u8], secret: &[u8], seed: u64) -> u128 {
     u128::from(avalanche(low64)) + (u128::from(0u64.wrapping_sub(avalanche(high64))) << 64)
 }
 
+#[inline]
 fn hash_long_128bits_with_default_secret(data: &[u8]) -> u128 {
     hash_long_128bits_internal(data, &SECRET)
 }
 
+#[inline]
 fn hash_long_128bits_with_secret(data: &[u8], secret: &[u8]) -> u128 {
     hash_long_128bits_internal(data, secret)
 }
 
+#[inline]
 fn hash_long_128bits_with_seed(data: &[u8], seed: u64) -> u128 {
     if seed == 0 {
         hash_long_128bits_with_default_secret(data)
@@ -1241,7 +1309,7 @@ mod tests {
     }
 
     #[test]
-    fn xxh3_hash_64bits_sanity_check() {
+    fn hash_64bits_sanity_check() {
         let buf = sanity_buffer();
 
         let test_cases = vec![
@@ -1351,7 +1419,7 @@ mod tests {
     }
 
     #[test]
-    fn xxh3_hash_64bits_with_secret_sanity_check() {
+    fn hash_64bits_with_secret_sanity_check() {
         let buf = sanity_buffer();
         let secret = &buf[7..7 + SECRET_SIZE_MIN + 11];
 
@@ -1426,7 +1494,7 @@ mod tests {
     }
 
     #[test]
-    fn xxh3_hash_128bits_sanity_check() {
+    fn hash_128bits_sanity_check() {
         let buf = sanity_buffer();
 
         let test_cases = vec![
