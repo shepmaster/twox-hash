@@ -54,6 +54,40 @@ pub fn hash64_with_secret(data: &[u8], secret: &[u8]) -> u64 {
     }
 }
 
+pub fn hash128(data: &[u8]) -> u128 {
+    hash128_with_seed(data, 0)
+}
+
+pub fn hash128_with_seed(data: &[u8], seed: u64) -> u128 {
+    let len = data.len();
+
+    if len <= 16 {
+        hash_len_0to16_128bits(data, &SECRET, seed)
+    } else if len <= 128 {
+        hash_len_17to128_128bits(data, &SECRET, seed)
+    } else if len <= MIDSIZE_MAX {
+        hash_len_129to240_128bits(data, &SECRET, seed)
+    } else {
+        hash_long_128bits_with_seed(data, seed)
+    }
+}
+
+pub fn hash128_with_secret(data: &[u8], secret: &[u8]) -> u128 {
+    debug_assert!(secret.len() >= SECRET_SIZE_MIN);
+
+    let len = data.len();
+
+    if len <= 16 {
+        hash_len_0to16_128bits(data, secret, 0)
+    } else if len <= 128 {
+        hash_len_17to128_128bits(data, secret, 0)
+    } else if len <= MIDSIZE_MAX {
+        hash_len_129to240_128bits(data, secret, 0)
+    } else {
+        hash_long_128bits_with_secret(data, secret)
+    }
+}
+
 /* ==========================================
  * XXH3 default settings
  * ========================================== */
@@ -258,10 +292,12 @@ fn hash_len_1to3_64bits(data: &[u8], key: &[u8], seed: u64) -> u64 {
     avalanche(mixed)
 }
 
-fn hash_len_17to128_64bits(data: &[u8], key: &[u8], seed: u64) -> u64 {
+#[inline(always)]
+fn hash_len_17to128_64bits(data: &[u8], secret: &[u8], seed: u64) -> u64 {
     let len = data.len();
 
     debug_assert!((17..=128).contains(&len));
+    debug_assert!(secret.len() >= SECRET_SIZE_MIN);
 
     let mut acc = PRIME64_1.wrapping_mul(len as u64);
 
@@ -269,22 +305,22 @@ fn hash_len_17to128_64bits(data: &[u8], key: &[u8], seed: u64) -> u64 {
         if len > 64 {
             if len > 96 {
                 acc = acc
-                    .wrapping_add(mix_16bytes(&data[48..], &key[96..], seed))
-                    .wrapping_add(mix_16bytes(&data[len - 64..], &key[112..], seed));
+                    .wrapping_add(mix_16bytes(&data[48..], &secret[96..], seed))
+                    .wrapping_add(mix_16bytes(&data[len - 64..], &secret[112..], seed));
             }
             acc = acc
-                .wrapping_add(mix_16bytes(&data[32..], &key[64..], seed))
-                .wrapping_add(mix_16bytes(&data[len - 48..], &key[80..], seed));
+                .wrapping_add(mix_16bytes(&data[32..], &secret[64..], seed))
+                .wrapping_add(mix_16bytes(&data[len - 48..], &secret[80..], seed));
         }
 
         acc = acc
-            .wrapping_add(mix_16bytes(&data[16..], &key[32..], seed))
-            .wrapping_add(mix_16bytes(&data[len - 32..], &key[48..], seed));
+            .wrapping_add(mix_16bytes(&data[16..], &secret[32..], seed))
+            .wrapping_add(mix_16bytes(&data[len - 32..], &secret[48..], seed));
     }
 
     acc = acc
-        .wrapping_add(mix_16bytes(data, &key[..], seed))
-        .wrapping_add(mix_16bytes(&data[len - 16..], &key[16..], seed));
+        .wrapping_add(mix_16bytes(data, &secret[..], seed))
+        .wrapping_add(mix_16bytes(&data[len - 16..], &secret[16..], seed));
 
     avalanche(acc)
 }
@@ -293,14 +329,16 @@ const MIDSIZE_MAX: usize = 240;
 const MIDSIZE_STARTOFFSET: usize = 3;
 const MIDSIZE_LASTOFFSET: usize = 17;
 
-fn hash_len_129to240_64bits(data: &[u8], key: &[u8], seed: u64) -> u64 {
+#[inline(always)]
+fn hash_len_129to240_64bits(data: &[u8], secret: &[u8], seed: u64) -> u64 {
     let len = data.len();
 
     debug_assert!((129..=MIDSIZE_MAX).contains(&len));
+    debug_assert!(secret.len() >= SECRET_SIZE_MIN);
 
     let acc = (len as u64).wrapping_mul(PRIME64_1);
     let acc = (0..8).fold(acc, |acc, i| {
-        acc.wrapping_add(mix_16bytes(&data[16 * i..], &key[16 * i..], seed))
+        acc.wrapping_add(mix_16bytes(&data[16 * i..], &secret[16 * i..], seed))
     });
     let acc = avalanche(acc);
 
@@ -310,14 +348,14 @@ fn hash_len_129to240_64bits(data: &[u8], key: &[u8], seed: u64) -> u64 {
     let acc = (8..nb_rounds).fold(acc, |acc, i| {
         acc.wrapping_add(mix_16bytes(
             &data[16 * i..],
-            &key[16 * (i - 8) + MIDSIZE_STARTOFFSET..],
+            &secret[16 * (i - 8) + MIDSIZE_STARTOFFSET..],
             seed,
         ))
     });
 
     avalanche(acc.wrapping_add(mix_16bytes(
         &data[len - 16..],
-        &key[SECRET_SIZE_MIN - MIDSIZE_LASTOFFSET..],
+        &secret[SECRET_SIZE_MIN - MIDSIZE_LASTOFFSET..],
         seed,
     )))
 }
@@ -676,14 +714,17 @@ impl State {
         Self::new(0, With::Ref(secret))
     }
 
+    #[inline(always)]
     fn secret_limit(&self) -> usize {
         self.secret.len() - STRIPE_LEN
     }
 
+    #[inline(always)]
     fn nb_stripes_per_block(&self) -> usize {
         self.secret_limit() / SECRET_CONSUME_RATE
     }
 
+    #[inline(always)]
     fn update(&mut self, mut input: &[u8], acc_width: AccWidth) {
         let len = input.len();
 
@@ -739,6 +780,7 @@ impl State {
         self.buf.extend_from_slice(chunks.remainder())
     }
 
+    #[inline(always)]
     fn digest_long(&self, acc: &mut [u64], acc_width: AccWidth) {
         let secret_limit = self.secret_limit();
 
@@ -812,6 +854,7 @@ impl State {
     }
 }
 
+#[inline(always)]
 fn consume_stripes(
     acc: &mut [u64],
     nb_stripes_so_far: usize,
@@ -915,108 +958,323 @@ impl HasherExt for Hasher128 {
     }
 }
 
+/* ==========================================
+ * XXH3 128 bits (=> XXH128)
+ * ========================================== */
+
+#[inline(always)]
+fn hash_len_0to16_128bits(data: &[u8], secret: &[u8], seed: u64) -> u128 {
+    let len = data.len();
+
+    debug_assert!(len <= 16);
+
+    if len > 8 {
+        hash_len_9to16_128bits(data, secret, seed)
+    } else if len >= 4 {
+        hash_len_4to8_128bits(data, secret, seed)
+    } else if len > 0 {
+        hash_len_1to3_128bits(data, secret, seed)
+    } else {
+        0
+    }
+}
+
+#[inline(always)]
+fn hash_len_1to3_128bits(data: &[u8], key: &[u8], seed: u64) -> u128 {
+    let len = data.len();
+
+    debug_assert!((1..=3).contains(&len));
+
+    let c1 = u32::from(data[0]);
+    let c2 = u32::from(data[len >> 1]);
+    let c3 = u32::from(data[len - 1]);
+    let combinedl = c1 + (c2 << 8) + (c3 << 16) + ((len as u32) << 24);
+    let combinedh = combinedl.swap_bytes();
+    let keyedl = u64::from(combinedl) ^ u64::from(key.read_u32_le()).wrapping_add(seed);
+    let keyedh = u64::from(combinedh) ^ u64::from(key[4..].read_u32_le()).wrapping_sub(seed);
+    let mixedl = keyedl.wrapping_mul(PRIME64_1);
+    let mixedh = keyedh.wrapping_mul(PRIME64_2);
+
+    u128::from(avalanche(mixedl)) + (u128::from(avalanche(mixedh)) << 64)
+}
+
+#[inline(always)]
+fn hash_len_4to8_128bits(data: &[u8], key: &[u8], seed: u64) -> u128 {
+    let len = data.len();
+
+    debug_assert!((4..=8).contains(&len));
+
+    let in1 = u64::from(data.read_u32_le());
+    let in2 = u64::from(data[len - 4..].read_u32_le());
+    let in64l = in1.wrapping_add(in2 << 32);
+    let in64h = in64l.swap_bytes();
+    let keyedl = in64l ^ key.read_u64_le().wrapping_add(seed);
+    let keyedh = in64h ^ key[8..].read_u64_le().wrapping_sub(seed);
+    let mix64l1 =
+        (len as u64).wrapping_add((keyedl ^ (keyedl >> 51)).wrapping_mul(u64::from(PRIME32_1)));
+    let mix64l2 = (mix64l1 ^ (mix64l1 >> 47)).wrapping_mul(PRIME64_2);
+    let mix64h1 = (keyedh ^ (keyedh >> 47))
+        .wrapping_mul(PRIME64_1)
+        .wrapping_sub(len as u64);
+    let mix64h2 = (mix64h1 ^ (mix64h1 >> 43)).wrapping_mul(PRIME64_4);
+
+    u128::from(avalanche(mix64l2)) + (u128::from(avalanche(mix64h2)) << 64)
+}
+
+#[inline(always)]
+fn hash_len_9to16_128bits(data: &[u8], key: &[u8], seed64: u64) -> u128 {
+    let len = data.len();
+
+    debug_assert!((9..=16).contains(&len));
+
+    let ll1 = data.read_u64_le() ^ key.read_u64_le().wrapping_add(seed64);
+    let ll2 = data[len - 8..].read_u64_le() ^ key[8..].read_u64_le().wrapping_sub(seed64);
+    let inlow = ll1 ^ ll2;
+
+    let m128 = u128::from(inlow).wrapping_mul(u128::from(PRIME64_1));
+    let high64 = ((m128 >> 64) as u64).wrapping_add(ll2.wrapping_mul(PRIME64_1));
+    let low64 = (m128 as u64) ^ (high64 >> 32);
+
+    let h128 = u128::from(low64).wrapping_mul(u128::from(PRIME64_2));
+    let high64 = ((h128 >> 64) as u64).wrapping_add(high64.wrapping_mul(PRIME64_2));
+    let low64 = h128 as u64;
+
+    u128::from(avalanche(low64)) + (u128::from(avalanche(high64)) << 64)
+}
+
+#[inline(always)]
+fn hash_len_17to128_128bits(data: &[u8], secret: &[u8], seed: u64) -> u128 {
+    let len = data.len();
+
+    debug_assert!((17..=128).contains(&len));
+    debug_assert!(secret.len() >= SECRET_SIZE_MIN);
+
+    let mut acc1 = PRIME64_1.wrapping_mul(len as u64);
+    let mut acc2 = 0u64;
+
+    if len > 32 {
+        if len > 64 {
+            if len > 96 {
+                acc1 = acc1.wrapping_add(mix_16bytes(&data[48..], &secret[96..], seed));
+                acc2 = acc2.wrapping_add(mix_16bytes(&data[len - 64..], &secret[112..], seed));
+            }
+            acc1 = acc1.wrapping_add(mix_16bytes(&data[32..], &secret[64..], seed));
+            acc2 = acc2.wrapping_add(mix_16bytes(&data[len - 48..], &secret[80..], seed));
+        }
+
+        acc1 = acc1.wrapping_add(mix_16bytes(&data[16..], &secret[32..], seed));
+        acc2 = acc2.wrapping_add(mix_16bytes(&data[len - 32..], &secret[48..], seed));
+    }
+
+    acc1 = acc1.wrapping_add(mix_16bytes(data, &secret[..], seed));
+    acc2 = acc2.wrapping_add(mix_16bytes(&data[len - 16..], &secret[16..], seed));
+
+    let low64 = acc1.wrapping_add(acc2);
+    let high64 = acc1
+        .wrapping_mul(PRIME64_1)
+        .wrapping_add(acc2.wrapping_mul(PRIME64_4))
+        .wrapping_add((len as u64).wrapping_sub(seed).wrapping_mul(PRIME64_2));
+
+    u128::from(avalanche(low64)) + (u128::from(0u64.wrapping_sub(avalanche(high64))) << 64)
+}
+
+#[inline(always)]
+fn hash_len_129to240_128bits(data: &[u8], secret: &[u8], seed: u64) -> u128 {
+    let len = data.len();
+
+    debug_assert!((129..=MIDSIZE_MAX).contains(&len));
+    debug_assert!(secret.len() >= SECRET_SIZE_MIN);
+
+    let acc1 = (len as u64).wrapping_mul(PRIME64_1);
+    let acc2 = 0u64;
+
+    let (acc1, acc2) = (0..4).fold((acc1, acc2), |(acc1, acc2), i| {
+        (
+            acc1.wrapping_add(mix_16bytes(&data[32 * i..], &secret[32 * i..], seed)),
+            acc2.wrapping_add(mix_16bytes(
+                &data[32 * i + 16..],
+                &secret[32 * i + 16..],
+                0u64.wrapping_sub(seed),
+            )),
+        )
+    });
+    let acc1 = avalanche(acc1);
+    let acc2 = avalanche(acc2);
+
+    let nb_rounds = len / 32;
+    debug_assert!(nb_rounds >= 4);
+
+    let (acc1, acc2) = (4..nb_rounds).fold((acc1, acc2), |(acc1, acc2), i| {
+        (
+            acc1.wrapping_add(mix_16bytes(
+                &data[32 * i..],
+                &secret[32 * (i - 4) + MIDSIZE_STARTOFFSET..],
+                seed,
+            )),
+            acc2.wrapping_add(mix_16bytes(
+                &data[32 * i + 16..],
+                &secret[32 * (i - 4) + 16 + MIDSIZE_STARTOFFSET..],
+                0u64.wrapping_sub(seed),
+            )),
+        )
+    });
+
+    // last bytes
+    let acc1 = acc1.wrapping_add(mix_16bytes(
+        &data[len - 16..],
+        &secret[SECRET_SIZE_MIN - MIDSIZE_LASTOFFSET..],
+        seed,
+    ));
+    let acc2 = acc2.wrapping_add(mix_16bytes(
+        &data[len - 32..],
+        &secret[SECRET_SIZE_MIN - MIDSIZE_LASTOFFSET - 16..],
+        0u64.wrapping_sub(seed),
+    ));
+
+    let low64 = acc1.wrapping_add(acc2);
+    let high64 = acc1
+        .wrapping_mul(PRIME64_1)
+        .wrapping_add(acc2.wrapping_mul(PRIME64_4))
+        .wrapping_add((len as u64).wrapping_sub(seed).wrapping_mul(PRIME64_2));
+
+    u128::from(avalanche(low64)) + (u128::from(0u64.wrapping_sub(avalanche(high64))) << 64)
+}
+
+fn hash_long_128bits_with_default_secret(data: &[u8]) -> u128 {
+    hash_long_128bits_internal(data, &SECRET)
+}
+
+fn hash_long_128bits_with_secret(data: &[u8], secret: &[u8]) -> u128 {
+    hash_long_128bits_internal(data, secret)
+}
+
+fn hash_long_128bits_with_seed(data: &[u8], seed: u64) -> u128 {
+    if seed == 0 {
+        hash_long_128bits_with_default_secret(data)
+    } else {
+        let secret = Secret::with_seed(seed);
+
+        hash_long_128bits_internal(data, &secret)
+    }
+}
+
+#[inline(always)]
+fn hash_long_128bits_internal(data: &[u8], secret: &[u8]) -> u128 {
+    let mut acc = Acc::default();
+
+    hash_long_internal_loop(&mut acc, data, secret, AccWidth::Acc128Bits);
+
+    debug_assert!(secret.len() >= acc.len() + SECRET_MERGEACCS_START);
+
+    let len = data.len() as u64;
+
+    let low64 = merge_accs(
+        &acc,
+        &secret[SECRET_MERGEACCS_START..],
+        len.wrapping_mul(PRIME64_1),
+    );
+    let high64 = merge_accs(
+        &acc,
+        &secret[secret.len() - mem::size_of::<Acc>() - SECRET_MERGEACCS_START..],
+        !len.wrapping_mul(PRIME64_2),
+    );
+
+    u128::from(low64) + (u128::from(high64) << 64)
+}
+
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
 
+    const PRIME: u64 = 2654435761;
+    const PRIME64: u64 = 11400714785074694797;
     const SANITY_BUFFER_SIZE: usize = 2243;
 
-    #[test]
-    fn sanity_check() {
-        let prime64 = 11400714785074694797;
+    fn sanity_buffer() -> [u8; SANITY_BUFFER_SIZE] {
         let mut buf = [0; SANITY_BUFFER_SIZE];
-        let mut byte_gen: u64 = 2654435761;
+        let mut byte_gen: u64 = PRIME;
 
         for i in 0..SANITY_BUFFER_SIZE {
             buf[i] = (byte_gen >> 56) as u8;
-            byte_gen = byte_gen.wrapping_mul(prime64);
+            byte_gen = byte_gen.wrapping_mul(PRIME64);
         }
 
-        test_xxh3(b"", 0, 0); /* zero-length hash is always 0 */
-        test_xxh3(b"", prime64, 0);
-        test_xxh3(&buf[..1], 0, 0x7198D737CFE7F386); /*  1 -  3 */
-        test_xxh3(&buf[..1], prime64, 0xB70252DB7161C2BD); /*  1 -  3 */
-        test_xxh3(&buf[..6], 0, 0x22CBF5F3E1F6257C); /*  4 -  8 */
-        test_xxh3(&buf[..6], prime64, 0x6398631C12AB94CE); /*  4 -  8 */
-        test_xxh3(&buf[..12], 0, 0xD5361CCEEBB5A0CC); /*  9 - 16 */
-        test_xxh3(&buf[..12], prime64, 0xC4C125E75A808C3D); /*  9 - 16 */
-        test_xxh3(&buf[..24], 0, 0x46796F3F78B20F6B); /* 17 - 32 */
-        test_xxh3(&buf[..24], prime64, 0x60171A7CD0A44C10); /* 17 - 32 */
-        test_xxh3(&buf[..48], 0, 0xD8D4D3590D136E11); /* 33 - 64 */
-        test_xxh3(&buf[..48], prime64, 0x05441F2AEC2A1296); /* 33 - 64 */
-        test_xxh3(&buf[..80], 0, 0xA1DC8ADB3145B86A); /* 65 - 96 */
-        test_xxh3(&buf[..80], prime64, 0xC9D55256965B7093); /* 65 - 96 */
-        test_xxh3(&buf[..112], 0, 0xE43E5717A61D3759); /* 97 -128 */
-        test_xxh3(&buf[..112], prime64, 0x5A5F89A3FECE44A5); /* 97 -128 */
-        test_xxh3(&buf[..195], 0, 0x6F747739CBAC22A5); /* 129-240 */
-        test_xxh3(&buf[..195], prime64, 0x33368E23C7F95810); /* 129-240 */
-
-        test_xxh3(&buf[..403], 0, 0x4834389B15D981E8); /* one block, last stripe is overlapping */
-        test_xxh3(&buf[..403], prime64, 0x85CE5DFFC7B07C87); /* one block, last stripe is overlapping */
-        test_xxh3(&buf[..512], 0, 0x6A1B982631F059A8); /* one block, finishing at stripe boundary */
-        test_xxh3(&buf[..512], prime64, 0x10086868CF0ADC99); /* one block, finishing at stripe boundary */
-
-        test_xxh3(&buf[..2048], 0, 0xEFEFD4449323CDD4); /* 2 blocks, finishing at block boundary */
-        test_xxh3(&buf[..2048], prime64, 0x01C85E405ECA3F6E); /* 2 blocks, finishing at block boundary */
-        test_xxh3(&buf[..2240], 0, 0x998C0437486672C7); /* 3 blocks, finishing at stripe boundary */
-        test_xxh3(&buf[..2240], prime64, 0x4ED38056B87ABC7F); /* 3 blocks, finishing at stripe boundary */
-        test_xxh3(&buf[..2243], 0, 0xA559D20581D742D3); /* 3 blocks, last stripe is overlapping */
-        test_xxh3(&buf[..2243], prime64, 0x96E051AB57F21FC8); /* 3 blocks, last stripe is overlapping */
-
-        let secret = &buf[7..7 + SECRET_SIZE_MIN + 11];
-
-        test_xxh3_with_secret(b"", secret, 0); /* zero-length hash is always 0 */
-        test_xxh3_with_secret(&buf[..1], secret, 0x7F69735D618DB3F0); /*  1 -  3 */
-        test_xxh3_with_secret(&buf[..6], secret, 0xBFCC7CB1B3554DCE); /*  6 -  8 */
-        test_xxh3_with_secret(&buf[..12], secret, 0x8C50DC90AC9206FC); /*  9 - 16 */
-        test_xxh3_with_secret(&buf[..24], secret, 0x1CD2C2EE9B9A0928); /* 17 - 32 */
-        test_xxh3_with_secret(&buf[..48], secret, 0xA785256D9D65D514); /* 33 - 64 */
-        test_xxh3_with_secret(&buf[..80], secret, 0x6F3053360D21BBB7); /* 65 - 96 */
-        test_xxh3_with_secret(&buf[..112], secret, 0x560E82D25684154C); /* 97 -128 */
-        test_xxh3_with_secret(&buf[..195], secret, 0xBA5BDDBC5A767B11); /* 129-240 */
-
-        test_xxh3_with_secret(&buf[..403], secret, 0xFC3911BBA656DB58); /* one block, last stripe is overlapping */
-        test_xxh3_with_secret(&buf[..512], secret, 0x306137DD875741F1); /* one block, finishing at stripe boundary */
-        test_xxh3_with_secret(&buf[..2048], secret, 0x2836B83880AD3C0C); /* > one block, at least one scrambling */
-        test_xxh3_with_secret(&buf[..2243], secret, 0x3446E248A00CB44A); /* > one block, at least one scrambling, last stripe unaligned */
+        buf
     }
 
-    fn test_xxh3(buf: &[u8], seed: u64, result: u64) {
-        let hash = hash64_with_seed(buf, seed);
+    #[test]
+    fn xxh3_hash_64bits_sanity_check() {
+        let buf = sanity_buffer();
 
-        assert_eq!(
-            hash,
-            result,
-            "hash64_with_seed(&buf[..{}], seed={}) failed, got 0x{:X}, expected 0x{:X}",
-            buf.len(),
-            seed,
-            hash,
-            result
-        );
+        let test_cases = vec![
+            (&[][..], 0, 0), /* zero-length hash is always 0 */
+            (&[][..], PRIME64, 0),
+            (&buf[..1], 0, 0x7198D737CFE7F386),       /*  1 -  3 */
+            (&buf[..1], PRIME64, 0xB70252DB7161C2BD), /*  1 -  3 */
+            (&buf[..6], 0, 0x22CBF5F3E1F6257C),       /*  4 -  8 */
+            (&buf[..6], PRIME64, 0x6398631C12AB94CE), /*  4 -  8 */
+            (&buf[..12], 0, 0xD5361CCEEBB5A0CC),      /*  9 - 16 */
+            (&buf[..12], PRIME64, 0xC4C125E75A808C3D), /*  9 - 16 */
+            (&buf[..24], 0, 0x46796F3F78B20F6B),      /* 17 - 32 */
+            (&buf[..24], PRIME64, 0x60171A7CD0A44C10), /* 17 - 32 */
+            (&buf[..48], 0, 0xD8D4D3590D136E11),      /* 33 - 64 */
+            (&buf[..48], PRIME64, 0x05441F2AEC2A1296), /* 33 - 64 */
+            (&buf[..80], 0, 0xA1DC8ADB3145B86A),      /* 65 - 96 */
+            (&buf[..80], PRIME64, 0xC9D55256965B7093), /* 65 - 96 */
+            (&buf[..112], 0, 0xE43E5717A61D3759),     /* 97 -128 */
+            (&buf[..112], PRIME64, 0x5A5F89A3FECE44A5), /* 97 -128 */
+            (&buf[..195], 0, 0x6F747739CBAC22A5),     /* 129-240 */
+            (&buf[..195], PRIME64, 0x33368E23C7F95810), /* 129-240 */
+            (&buf[..403], 0, 0x4834389B15D981E8),     /* one block, last stripe is overlapping */
+            (&buf[..403], PRIME64, 0x85CE5DFFC7B07C87), /* one block, last stripe is overlapping */
+            (&buf[..512], 0, 0x6A1B982631F059A8),     /* one block, finishing at stripe boundary */
+            (&buf[..512], PRIME64, 0x10086868CF0ADC99), /* one block, finishing at stripe boundary */
+            (&buf[..2048], 0, 0xEFEFD4449323CDD4),      /* 2 blocks, finishing at block boundary */
+            (&buf[..2048], PRIME64, 0x01C85E405ECA3F6E), /* 2 blocks, finishing at block boundary */
+            (&buf[..2240], 0, 0x998C0437486672C7),      /* 3 blocks, finishing at stripe boundary */
+            (&buf[..2240], PRIME64, 0x4ED38056B87ABC7F), /* 3 blocks, finishing at stripe boundary */
+            (&buf[..2243], 0, 0xA559D20581D742D3),       /* 3 blocks, last stripe is overlapping */
+            (&buf[..2243], PRIME64, 0x96E051AB57F21FC8), /* 3 blocks, last stripe is overlapping */
+        ];
 
-        // streaming API test
-        let mut hasher = Hasher64::with_seed(seed);
-        hasher.write(buf);
-        let hash = hasher.finish();
+        for (buf, seed, result) in test_cases {
+            let hash = hash64_with_seed(buf, seed);
 
-        assert_eq!(
-            hash,
-            result,
-            "Hasher64::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
-            buf.len(),
-            seed,
-            hash,
-            result
-        );
+            assert_eq!(
+                hash,
+                result,
+                "hash64_with_seed(&buf[..{}], seed={}) failed, got 0x{:X}, expected 0x{:X}",
+                buf.len(),
+                seed,
+                hash,
+                result
+            );
 
-        if buf.len() > 3 {
-            // 2 ingestions
+            // streaming API test
             let mut hasher = Hasher64::with_seed(seed);
-            hasher.write(&buf[..3]);
-            hasher.write(&buf[3..]);
+            hasher.write(buf);
             let hash = hasher.finish();
 
             assert_eq!(
+                hash,
+                result,
+                "Hasher64::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                buf.len(),
+                seed,
+                hash,
+                result
+            );
+
+            if buf.len() > 3 {
+                // 2 ingestions
+                let mut hasher = Hasher64::with_seed(seed);
+                hasher.write(&buf[..3]);
+                hasher.write(&buf[3..]);
+                let hash = hasher.finish();
+
+                assert_eq!(
                 hash,
                 result,
                 "Hasher64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
@@ -1025,16 +1283,16 @@ mod tests {
                 hash,
                 result
             );
-        }
+            }
 
-        // byte by byte ingestion
-        let mut hasher = Hasher64::with_seed(seed);
+            // byte by byte ingestion
+            let mut hasher = Hasher64::with_seed(seed);
 
-        for chunk in buf.chunks(1) {
-            hasher.write(chunk);
-        }
+            for chunk in buf.chunks(1) {
+                hasher.write(chunk);
+            }
 
-        assert_eq!(
+            assert_eq!(
             hash,
             result,
             "Hasher64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
@@ -1043,41 +1301,63 @@ mod tests {
             hash,
             result
         );
+        }
     }
 
-    fn test_xxh3_with_secret(buf: &[u8], secret: &[u8], result: u64) {
-        let hash = hash64_with_secret(buf, secret);
+    #[test]
+    fn xxh3_hash_64bits_with_secret_sanity_check() {
+        let buf = sanity_buffer();
+        let secret = &buf[7..7 + SECRET_SIZE_MIN + 11];
 
-        assert_eq!(
-            hash,
-            result,
-            "hash64_with_secret(&buf[..{}], secret) failed, got 0x{:X}, expected 0x{:X}",
-            buf.len(),
-            hash,
-            result
-        );
+        let test_cases = vec![
+            (&[][..], secret, 0),                       /* zero-length hash is always 0 */
+            (&buf[..1], secret, 0x7F69735D618DB3F0),    /*  1 -  3 */
+            (&buf[..6], secret, 0xBFCC7CB1B3554DCE),    /*  6 -  8 */
+            (&buf[..12], secret, 0x8C50DC90AC9206FC),   /*  9 - 16 */
+            (&buf[..24], secret, 0x1CD2C2EE9B9A0928),   /* 17 - 32 */
+            (&buf[..48], secret, 0xA785256D9D65D514),   /* 33 - 64 */
+            (&buf[..80], secret, 0x6F3053360D21BBB7),   /* 65 - 96 */
+            (&buf[..112], secret, 0x560E82D25684154C),  /* 97 -128 */
+            (&buf[..195], secret, 0xBA5BDDBC5A767B11),  /* 129-240 */
+            (&buf[..403], secret, 0xFC3911BBA656DB58),  /* one block, last stripe is overlapping */
+            (&buf[..512], secret, 0x306137DD875741F1), /* one block, finishing at stripe boundary */
+            (&buf[..2048], secret, 0x2836B83880AD3C0C), /* > one block, at least one scrambling */
+            (&buf[..2243], secret, 0x3446E248A00CB44A), /* > one block, at least one scrambling, last stripe unaligned */
+        ];
 
-        let mut hasher = Hasher64::with_secret(secret);
-        hasher.write(buf);
-        let hash = hasher.finish();
+        for (buf, secret, result) in test_cases {
+            let hash = hash64_with_secret(buf, secret);
 
-        assert_eq!(
-            hash,
-            result,
-            "Hasher64::update(&buf[..{}]) with secret failed, got 0x{:X}, expected 0x{:X}",
-            buf.len(),
-            hash,
-            result
-        );
+            assert_eq!(
+                hash,
+                result,
+                "hash64_with_secret(&buf[..{}], secret) failed, got 0x{:X}, expected 0x{:X}",
+                buf.len(),
+                hash,
+                result
+            );
 
-        // byte by byte ingestion
-        let mut hasher = Hasher64::with_secret(secret);
+            let mut hasher = Hasher64::with_secret(secret);
+            hasher.write(buf);
+            let hash = hasher.finish();
 
-        for chunk in buf.chunks(1) {
-            hasher.write(chunk);
-        }
+            assert_eq!(
+                hash,
+                result,
+                "Hasher64::update(&buf[..{}]) with secret failed, got 0x{:X}, expected 0x{:X}",
+                buf.len(),
+                hash,
+                result
+            );
 
-        assert_eq!(
+            // byte by byte ingestion
+            let mut hasher = Hasher64::with_secret(secret);
+
+            for chunk in buf.chunks(1) {
+                hasher.write(chunk);
+            }
+
+            assert_eq!(
             hash,
             result,
             "Hasher64::update(&buf[..{}].chunks(1)) with secret failed, got 0x{:X}, expected 0x{:X}",
@@ -1085,5 +1365,59 @@ mod tests {
             hash,
             result
         );
+        }
+    }
+
+    #[test]
+    fn xxh3_hash_128bits_sanity_check() {
+        let buf = sanity_buffer();
+
+        let test_cases = vec![
+            (&[][..], 0, 0u64, 0u64), /* zero-length hash is { seed, -seed } by default */
+            (&[][..], PRIME, 0, 0),
+            (&buf[..1], 0, 0x7198D737CFE7F386, 0x3EE70EA338F3F1E8), /* 1-3 */
+            (&buf[..1], PRIME, 0x8E05996EC27C0F46, 0x90DFC659A8BDCC0C), /* 1-3 */
+            (&buf[..6], 0, 0x22CBF5F3E1F6257C, 0xD4E6C2B94FFC3BFA), /* 4-8 */
+            (&buf[..6], PRIME, 0x97B28D3079F8541F, 0xEFC0B954298E6555), /* 4-8 */
+            (&buf[..12], 0, 0x0E0CD01F05AC2F0D, 0x2B55C95951070D4B), /* 9-16 */
+            (&buf[..12], PRIME, 0xA9DE561CA04CDF37, 0x609E31FDC00A43C9), /* 9-16 */
+            (&buf[..24], 0, 0x46796F3F78B20F6B, 0x58FF55C3926C13FA), /* 17-32 */
+            (&buf[..24], PRIME, 0x30D5C4E9EB415C55, 0x8868344B3A4645D0), /* 17-32 */
+            (&buf[..48], 0, 0xD8D4D3590D136E11, 0x5527A42843020A62), /* 33-64 */
+            (&buf[..48], PRIME, 0x1D8834E1A5407A1C, 0x44375B9FB060F541), /* 33-64 */
+            (&buf[..81], 0, 0x4B9B448ED8DFD3DD, 0xE805A6D1A43D70E5), /* 65-96 */
+            (&buf[..81], PRIME, 0xD2D6B075945617BA, 0xE58BE5736F6E7550), /* 65-96 */
+            (&buf[..103], 0, 0xC5A9F97B29EFA44E, 0x254DB7BE881E125C), /* 97-128 */
+            (&buf[..103], PRIME, 0xFA2086367CDB177F, 0x0AEDEA68C988B0C0), /* 97-128 */
+            (&buf[..192], 0, 0xC3142FDDD9102A3F, 0x06F1747E77185F97), /* 129-240 */
+            (&buf[..192], PRIME, 0xA89F07B35987540F, 0xCF1B35FB2C557F54), /* 129-240 */
+            (&buf[..222], 0, 0xA61AC4EB3295F86B, 0x33FA7B7598C28A07), /* 129-240 */
+            (&buf[..222], PRIME, 0x54135EB88AD8B75E, 0xBC45CE6AE50BCF53), /* 129-240 */
+            (&buf[..403], 0, 0xB0C48E6D18E9D084, 0xB16FC17E992FF45D), /* one block, last stripe is overlapping */
+            (&buf[..403], PRIME64, 0x0A1D320C9520871D, 0xCE11CB376EC93252), /* one block, last stripe is overlapping */
+            (&buf[..512], 0, 0xA03428558AC97327, 0x4ECF51281BA406F7), /* one block, finishing at stripe boundary */
+            (&buf[..512], PRIME64, 0xAF67A482D6C893F2, 0x1382D92F25B84D90), /* one block, finishing at stripe boundary */
+            (&buf[..2048], 0, 0x21901B416B3B9863, 0x212AF8E6326F01E0), /* two blocks, finishing at block boundary */
+            (&buf[..2048], PRIME, 0xBDBB2282577DADEC, 0xF78CDDC2C9A9A692), /* two blocks, finishing at block boundary */
+            (&buf[..2240], 0, 0x00AD52FA9385B6FE, 0xC705BAD3356CE302), /* two blocks, ends at stripe boundary */
+            (&buf[..2240], PRIME, 0x10FD0072EC68BFAA, 0xE1312F3458817F15), /* two blocks, ends at stripe boundary */
+            (&buf[..2237], 0, 0x970C91411533862C, 0x4BBD06FF7BFF0AB1), /* two blocks, ends at stripe boundary */
+            (&buf[..2237], PRIME, 0xD80282846D814431, 0x14EBB157B84D9785), /* two blocks, ends at stripe boundary */
+        ];
+
+        for (buf, seed, lo, hi) in test_cases {
+            let hash = hash128_with_seed(buf, seed);
+            let result = u128::from(lo) + (u128::from(hi) << 64);
+
+            assert_eq!(
+                hash,
+                result,
+                "hash128_with_seed(&buf[..{}], seed={}) failed, got 0x{:X}, expected 0x{:X}",
+                buf.len(),
+                seed,
+                hash,
+                result
+            );
+        }
     }
 }
