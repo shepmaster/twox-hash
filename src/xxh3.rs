@@ -582,6 +582,7 @@ cfg_if! {
         }
     } else if #[cfg(any(target_feature = "sse2", feature = "sse2"))] {
         #[target_feature(enable = "sse2")]
+        #[allow(clippy::cast_ptr_alignment)]
         unsafe fn accumulate512(acc: &mut [u64], data: &[u8], keys: &[u8], acc_width: AccWidth) {
             let xacc = acc.as_mut_ptr() as *mut __m128i;
             let xdata = data.as_ptr() as *const __m128i;
@@ -605,6 +606,7 @@ cfg_if! {
         }
 
         #[target_feature(enable = "sse2")]
+        #[allow(clippy::cast_ptr_alignment)]
         unsafe fn scramble_acc(acc: &mut [u64], key: &[u8]) {
             let xacc = acc.as_mut_ptr() as *mut __m128i;
             let xkey = key.as_ptr() as *const __m128i;
