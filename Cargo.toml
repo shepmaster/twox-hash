@@ -16,6 +16,7 @@ license = "MIT"
 
 [dependencies]
 cfg-if = "0.1"
+static_assertions = "0.3"
 rand = { version = ">= 0.3.10, < 0.8", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true}
 digest = { version = "0.8", default-features = false, optional = true  }

@@ -1,6 +1,10 @@
+use alloc::vec::Vec;
+
 use core::convert::TryInto;
+use core::hash::Hasher;
 use core::mem;
 use core::ops::{Deref, DerefMut};
+use core::slice;
 
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
@@ -8,6 +12,7 @@ use core::arch::x86::*;
 use core::arch::x86_64::*;
 
 use cfg_if::cfg_if;
+use static_assertions::{const_assert, const_assert_eq};
 
 use crate::sixty_four::{
     PRIME_1 as PRIME64_1, PRIME_2 as PRIME64_2, PRIME_3 as PRIME64_3, PRIME_4 as PRIME64_4,
@@ -72,7 +77,10 @@ const SECRET: Secret = Secret([
 ]);
 
 #[repr(align(64))]
+#[derive(Clone)]
 struct Secret([u8; SECRET_DEFAULT_SIZE]);
+
+const_assert_eq!(secret_size; mem::size_of::<Secret>() % 16, 0);
 
 impl Default for Secret {
     fn default() -> Self {
@@ -104,15 +112,20 @@ impl Secret {
 cfg_if! {
     if #[cfg(any(target_feature = "avx2", feature = "avx2"))] {
         #[repr(align(32))]
+        #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     } else if #[cfg(any(target_feature = "sse2", feature = "sse2"))] {
         #[repr(align(16))]
+        #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     } else {
         #[repr(align(8))]
+        #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     }
 }
+
+const_assert_eq!(acc_size; mem::size_of::<Acc>(), 64);
 
 impl Default for Acc {
     fn default() -> Self {
@@ -596,6 +609,312 @@ fn avalanche(mut h64: u64) -> u64 {
     h64 ^ (h64 >> 32)
 }
 
+/* ===   XXH3 streaming   === */
+
+const INTERNAL_BUFFER_SIZE: usize = 256;
+const INTERNAL_BUFFER_STRIPES: usize = INTERNAL_BUFFER_SIZE / STRIPE_LEN;
+
+const_assert!(internal_buffer_size; INTERNAL_BUFFER_SIZE >= MIDSIZE_MAX);
+const_assert_eq!(clean_multiple; INTERNAL_BUFFER_SIZE % STRIPE_LEN, 0);
+
+#[repr(align(64))]
+#[derive(Clone)]
+struct State {
+    acc: Acc,
+    secret: With,
+    buf: Vec<u8>,
+    seed: u64,
+    total_len: usize,
+    nb_stripes_so_far: usize,
+}
+
+#[derive(Clone)]
+enum With {
+    Default(Secret),
+    Custom(Secret),
+    Ref(Vec<u8>),
+}
+
+impl Deref for With {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            With::Default(secret) | With::Custom(secret) => &secret.0[..],
+            With::Ref(secret) => secret,
+        }
+    }
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self::new(0, With::Default(Secret::default()))
+    }
+}
+
+impl State {
+    fn new(seed: u64, secret: With) -> Self {
+        State {
+            acc: Acc::default(),
+            secret,
+            buf: Vec::with_capacity(INTERNAL_BUFFER_SIZE),
+            seed,
+            total_len: 0,
+            nb_stripes_so_far: 0,
+        }
+    }
+
+    fn with_seed(seed: u64) -> Self {
+        Self::new(seed, With::Custom(Secret::with_seed(seed)))
+    }
+
+    fn with_secret<S: Into<Vec<u8>>>(secret: S) -> State {
+        let secret = secret.into();
+
+        debug_assert!(secret.len() >= SECRET_SIZE_MIN);
+
+        Self::new(0, With::Ref(secret))
+    }
+
+    fn secret_limit(&self) -> usize {
+        self.secret.len() - STRIPE_LEN
+    }
+
+    fn nb_stripes_per_block(&self) -> usize {
+        self.secret_limit() / SECRET_CONSUME_RATE
+    }
+
+    fn update(&mut self, mut input: &[u8], acc_width: AccWidth) {
+        let len = input.len();
+
+        if len == 0 {
+            return;
+        }
+
+        self.total_len += len;
+
+        if self.buf.len() + len <= self.buf.capacity() {
+            self.buf.extend_from_slice(input);
+            return;
+        }
+
+        let nb_stripes_per_block = self.nb_stripes_per_block();
+        let secret_limit = self.secret_limit();
+
+        if !self.buf.is_empty() {
+            // some data within internal buffer: fill then consume it
+            let (load, rest) = input.split_at(self.buf.capacity() - self.buf.len());
+            self.buf.extend_from_slice(load);
+            input = rest;
+            self.nb_stripes_so_far = consume_stripes(
+                &mut self.acc,
+                self.nb_stripes_so_far,
+                nb_stripes_per_block,
+                &self.buf,
+                INTERNAL_BUFFER_STRIPES,
+                &self.secret,
+                secret_limit,
+                acc_width,
+            );
+            self.buf.clear();
+        }
+
+        // consume input by full buffer quantities
+        let mut chunks = input.chunks_exact(INTERNAL_BUFFER_SIZE);
+
+        for chunk in &mut chunks {
+            self.nb_stripes_so_far = consume_stripes(
+                &mut self.acc,
+                self.nb_stripes_so_far,
+                nb_stripes_per_block,
+                chunk,
+                INTERNAL_BUFFER_STRIPES,
+                &self.secret,
+                secret_limit,
+                acc_width,
+            );
+        }
+
+        // some remaining input data : buffer it
+        self.buf.extend_from_slice(chunks.remainder())
+    }
+
+    fn digest_long(&self, acc: &mut [u64], acc_width: AccWidth) {
+        let secret_limit = self.secret_limit();
+
+        if self.buf.len() >= STRIPE_LEN {
+            // digest locally, state remains unaltered, and can continue ingesting more data afterwards
+            let total_nb_stripes = self.buf.len() / STRIPE_LEN;
+            let _nb_stripes_so_far = consume_stripes(
+                acc,
+                self.nb_stripes_so_far,
+                self.nb_stripes_per_block(),
+                &self.buf,
+                total_nb_stripes,
+                &self.secret,
+                secret_limit,
+                acc_width,
+            );
+            if (self.buf.len() % STRIPE_LEN) != 0 {
+                unsafe {
+                    accumulate512(
+                        acc,
+                        &self.buf[self.buf.len() - STRIPE_LEN..],
+                        &self.secret[secret_limit - SECRET_LASTACC_START..],
+                        acc_width,
+                    );
+                }
+            }
+        } else if !self.buf.is_empty() {
+            // one last stripe
+            let mut last_stripe = [0u8; STRIPE_LEN];
+            let catchup_size = STRIPE_LEN - self.buf.len();
+
+            last_stripe[..catchup_size].copy_from_slice(unsafe {
+                slice::from_raw_parts(
+                    self.buf.as_ptr().add(self.buf.capacity() - catchup_size),
+                    catchup_size,
+                )
+            });
+            last_stripe[catchup_size..].copy_from_slice(&self.buf);
+
+            unsafe {
+                accumulate512(
+                    acc,
+                    &last_stripe[..],
+                    &self.secret[secret_limit - SECRET_LASTACC_START..],
+                    acc_width,
+                );
+            }
+        }
+    }
+
+    fn digest64(&self) -> u64 {
+        if self.total_len > MIDSIZE_MAX {
+            let mut acc = self.acc.clone();
+
+            self.digest_long(&mut acc, AccWidth::Acc64Bits);
+
+            merge_accs(
+                &acc,
+                &self.secret[SECRET_MERGEACCS_START..],
+                (self.total_len as u64).wrapping_mul(PRIME64_1),
+            )
+        } else if self.seed != 0 {
+            hash64_with_seed(&self.buf, self.seed)
+        } else {
+            hash64_with_secret(&self.buf, &self.secret[..self.secret_limit() + STRIPE_LEN])
+        }
+    }
+
+    fn digest128(&self) -> u128 {
+        0
+    }
+}
+
+fn consume_stripes(
+    acc: &mut [u64],
+    nb_stripes_so_far: usize,
+    nb_stripes_per_block: usize,
+    data: &[u8],
+    total_stripes: usize,
+    secret: &[u8],
+    secret_limit: usize,
+    acc_width: AccWidth,
+) -> usize {
+    debug_assert!(nb_stripes_so_far < nb_stripes_per_block);
+
+    if nb_stripes_per_block - nb_stripes_so_far <= total_stripes {
+        let nb_stripes = nb_stripes_per_block - nb_stripes_so_far;
+
+        accumulate(
+            acc,
+            data,
+            &secret[nb_stripes_so_far * SECRET_CONSUME_RATE..],
+            nb_stripes,
+            acc_width,
+        );
+        unsafe {
+            scramble_acc(acc, &secret[secret_limit..]);
+        }
+        accumulate(
+            acc,
+            &data[nb_stripes * STRIPE_LEN..],
+            secret,
+            total_stripes - nb_stripes,
+            acc_width,
+        );
+
+        total_stripes - nb_stripes
+    } else {
+        accumulate(
+            acc,
+            data,
+            &secret[nb_stripes_so_far * SECRET_CONSUME_RATE..],
+            total_stripes,
+            acc_width,
+        );
+
+        nb_stripes_so_far + total_stripes
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct Hasher64(State);
+
+impl Hasher64 {
+    pub fn with_seed(seed: u64) -> Self {
+        Self(State::with_seed(seed))
+    }
+
+    pub fn with_secret<S: Into<Vec<u8>>>(secret: S) -> Self {
+        Self(State::with_secret(secret))
+    }
+}
+
+impl Hasher for Hasher64 {
+    fn finish(&self) -> u64 {
+        self.0.digest64()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.update(bytes, AccWidth::Acc64Bits)
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct Hasher128(State);
+
+impl Hasher128 {
+    pub fn with_seed(seed: u64) -> Self {
+        Self(State::with_seed(seed))
+    }
+
+    pub fn with_secret<S: Into<Vec<u8>>>(secret: S) -> Self {
+        Self(State::with_secret(secret))
+    }
+}
+
+impl Hasher for Hasher128 {
+    fn finish(&self) -> u64 {
+        self.0.digest128() as u64
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.update(bytes, AccWidth::Acc128Bits)
+    }
+}
+
+pub trait HasherExt: Hasher {
+    fn finish_ext(&self) -> u128;
+}
+
+impl HasherExt for Hasher128 {
+    fn finish_ext(&self) -> u128 {
+        self.0.digest128()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -636,6 +955,7 @@ mod tests {
         test_xxh3(&buf[..403], prime64, 0x85CE5DFFC7B07C87); /* one block, last stripe is overlapping */
         test_xxh3(&buf[..512], 0, 0x6A1B982631F059A8); /* one block, finishing at stripe boundary */
         test_xxh3(&buf[..512], prime64, 0x10086868CF0ADC99); /* one block, finishing at stripe boundary */
+
         test_xxh3(&buf[..2048], 0, 0xEFEFD4449323CDD4); /* 2 blocks, finishing at block boundary */
         test_xxh3(&buf[..2048], prime64, 0x01C85E405ECA3F6E); /* 2 blocks, finishing at block boundary */
         test_xxh3(&buf[..2240], 0, 0x998C0437486672C7); /* 3 blocks, finishing at stripe boundary */
@@ -673,6 +993,56 @@ mod tests {
             hash,
             result
         );
+
+        // streaming API test
+        let mut hasher = Hasher64::with_seed(seed);
+        hasher.write(buf);
+        let hash = hasher.finish();
+
+        assert_eq!(
+            hash,
+            result,
+            "Hasher64::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+            buf.len(),
+            seed,
+            hash,
+            result
+        );
+
+        if buf.len() > 3 {
+            // 2 ingestions
+            let mut hasher = Hasher64::with_seed(seed);
+            hasher.write(&buf[..3]);
+            hasher.write(&buf[3..]);
+            let hash = hasher.finish();
+
+            assert_eq!(
+                hash,
+                result,
+                "Hasher64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                buf.len(),
+                seed,
+                hash,
+                result
+            );
+        }
+
+        // byte by byte ingestion
+        let mut hasher = Hasher64::with_seed(seed);
+
+        for chunk in buf.chunks(1) {
+            hasher.write(chunk);
+        }
+
+        assert_eq!(
+            hash,
+            result,
+            "Hasher64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+            buf.len(),
+            seed,
+            hash,
+            result
+        );
     }
 
     fn test_xxh3_with_secret(buf: &[u8], secret: &[u8], result: u64) {
@@ -682,6 +1052,35 @@ mod tests {
             hash,
             result,
             "hash64_with_secret(&buf[..{}], secret) failed, got 0x{:X}, expected 0x{:X}",
+            buf.len(),
+            hash,
+            result
+        );
+
+        let mut hasher = Hasher64::with_secret(secret);
+        hasher.write(buf);
+        let hash = hasher.finish();
+
+        assert_eq!(
+            hash,
+            result,
+            "Hasher64::update(&buf[..{}]) with secret failed, got 0x{:X}, expected 0x{:X}",
+            buf.len(),
+            hash,
+            result
+        );
+
+        // byte by byte ingestion
+        let mut hasher = Hasher64::with_secret(secret);
+
+        for chunk in buf.chunks(1) {
+            hasher.write(chunk);
+        }
+
+        assert_eq!(
+            hash,
+            result,
+            "Hasher64::update(&buf[..{}].chunks(1)) with secret failed, got 0x{:X}, expected 0x{:X}",
             buf.len(),
             hash,
             result
