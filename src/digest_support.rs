@@ -2,13 +2,13 @@ use core::hash::Hasher;
 
 use digest::{
     generic_array::{
-        typenum::consts::{U4, U8, U16},
+        typenum::consts::{U16, U4, U8},
         GenericArray,
     },
     Digest,
 };
 
-use crate::{XxHash32, XxHash64, xxh3};
+use crate::{xxh3, XxHash32, XxHash64};
 
 impl Digest for XxHash32 {
     type OutputSize = U4;

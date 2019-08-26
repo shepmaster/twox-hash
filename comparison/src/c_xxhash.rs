@@ -44,7 +44,9 @@ pub fn xxh3_hash64(data: &[u8], seed: u64) -> u64 {
 }
 
 pub fn xxh3_hash128(data: &[u8], seed: u64) -> u128 {
-    let hash = unsafe { ffi::XXH3_128bits_withSeed(data.as_ptr() as *const libc::c_void, data.len(), seed) };
+    let hash = unsafe {
+        ffi::XXH3_128bits_withSeed(data.as_ptr() as *const libc::c_void, data.len(), seed)
+    };
 
     u128::from(hash.low64) + (u128::from(hash.high64) << 64)
 }
