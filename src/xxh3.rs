@@ -23,6 +23,9 @@ use crate::sixty_four::{
 };
 use crate::thirty_two::{PRIME_1 as PRIME32_1, PRIME_2 as PRIME32_2, PRIME_3 as PRIME32_3};
 
+#[cfg(feature = "std")]
+pub use crate::std_support::xxh3::{RandomHashBuilder64, RandomHashBuilder128};
+
 pub fn hash64(data: &[u8]) -> u64 {
     hash64_with_seed(data, 0)
 }
