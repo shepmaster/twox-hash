@@ -1,7 +1,7 @@
 #![deny(rust_2018_idioms)]
 
 use comparison::{
-    c_xxhash::{hash32, hash64},
+    c_xxhash::{hash32, hash64, xxh3_hash128, xxh3_hash64},
     hash_once,
 };
 use criterion::{
@@ -11,7 +11,7 @@ use criterion::{
 use fnv::FnvHasher;
 use rand::{distributions::Standard, rngs::StdRng, Rng, SeedableRng};
 use std::{collections::hash_map::DefaultHasher, env, fmt, hash::Hasher, ops};
-use twox_hash::{XxHash32, XxHash64};
+use twox_hash::{xxh3, XxHash32, XxHash64};
 
 const INPUT_SIZES: &[usize] = &[0, 1, 4, 16, 23, 32, 47, 128, 256, 512, 1024, 1024 * 1024];
 const OFFSETS: &[usize] = &[0, 1];
@@ -49,8 +49,12 @@ fn bench_everything(c: &mut Criterion) {
     let bench =
         ParameterizedBenchmark::new("XxHash64", bench_hasher(|| XxHash64::with_seed(0)), data)
             .with_function("XxHash32", bench_hasher(|| XxHash32::with_seed(0)))
+            .with_function("Xxh3Hash64", bench_hasher(|| xxh3::Hash64::with_seed(0)))
+            .with_function("Xxh3Hash128", bench_hasher(|| xxh3::Hash128::with_seed(0)))
             .with_function("XxHash64 (C)", bench_c(|d| hash64(d, 0)))
             .with_function("XxHash32 (C)", bench_c(|d| hash32(d, 0)))
+            .with_function("Xxh3Hash64 (C)", bench_c(|d| xxh3_hash64(d, 0)))
+            .with_function("Xxh3Hash128 (C)", bench_c(|d| xxh3_hash128(d, 0)))
             .with_function("DefaultHasher", bench_hasher(|| DefaultHasher::new()))
             .with_function("FnvHasher", bench_hasher(|| FnvHasher::default()))
             .throughput(|data| Throughput::Elements(data.0.len() as u32))
