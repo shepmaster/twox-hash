@@ -94,9 +94,9 @@ pub fn hash128_with_secret(data: &[u8], secret: &[u8]) -> u128 {
 /// Calculates the 64-bit hash.
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Clone, Default)]
-pub struct Hasher64(State);
+pub struct Hash64(State);
 
-impl Hasher64 {
+impl Hash64 {
     pub fn with_seed(seed: u64) -> Self {
         Self(State::with_seed(seed))
     }
@@ -106,7 +106,7 @@ impl Hasher64 {
     }
 }
 
-impl Hasher for Hasher64 {
+impl Hasher for Hash64 {
     fn finish(&self) -> u64 {
         self.0.digest64()
     }
@@ -119,9 +119,9 @@ impl Hasher for Hasher64 {
 /// Calculates the 128-bit hash.
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Clone, Default)]
-pub struct Hasher128(State);
+pub struct Hash128(State);
 
-impl Hasher128 {
+impl Hash128 {
     pub fn with_seed(seed: u64) -> Self {
         Self(State::with_seed(seed))
     }
@@ -131,7 +131,7 @@ impl Hasher128 {
     }
 }
 
-impl Hasher for Hasher128 {
+impl Hasher for Hash128 {
     fn finish(&self) -> u64 {
         self.0.digest128() as u64
     }
@@ -145,7 +145,7 @@ pub trait HasherExt: Hasher {
     fn finish_ext(&self) -> u128;
 }
 
-impl HasherExt for Hasher128 {
+impl HasherExt for Hash128 {
     fn finish_ext(&self) -> u128 {
         self.0.digest128()
     }
@@ -715,10 +715,10 @@ cfg_if! {
             for i in 0..ACC_NB {
                 let key64 = key[8*i].read_u64_le();
                 let mut acc64 = acc[i];
-                 acc64 ^= acc64 >> 47;
-                  acc64 ^=key64;
-                  acc64 = acc64.wrapping_mul(u64::from(PRIME32_1));
-                  acc[i] = acc64;
+                acc64 ^= acc64 >> 47;
+                acc64 ^=key64;
+                acc64 = acc64.wrapping_mul(u64::from(PRIME32_1));
+                acc[i] = acc64;
             }
         }
     }
@@ -1362,14 +1362,14 @@ mod tests {
 
             // single ingestio
             {
-                let mut hasher = Hasher64::with_seed(seed);
+                let mut hasher = Hash64::with_seed(seed);
                 hasher.write(buf);
                 let hash = hasher.finish();
 
                 assert_eq!(
                     hash,
                     result,
-                    "Hasher64::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    "Hash64::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
                     buf.len(),
                     seed,
                     hash,
@@ -1379,7 +1379,7 @@ mod tests {
 
             if buf.len() > 3 {
                 // 2 ingestions
-                let mut hasher = Hasher64::with_seed(seed);
+                let mut hasher = Hash64::with_seed(seed);
                 hasher.write(&buf[..3]);
                 hasher.write(&buf[3..]);
                 let hash = hasher.finish();
@@ -1387,7 +1387,7 @@ mod tests {
                 assert_eq!(
                     hash,
                     result,
-                    "Hasher64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    "Hash64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
                     buf.len(),
                     seed,
                     hash,
@@ -1397,7 +1397,7 @@ mod tests {
 
             // byte by byte ingestion
             {
-                let mut hasher = Hasher64::with_seed(seed);
+                let mut hasher = Hash64::with_seed(seed);
 
                 for chunk in buf.chunks(1) {
                     hasher.write(chunk);
@@ -1408,7 +1408,7 @@ mod tests {
                 assert_eq!(
                     hash,
                     result,
-                    "Hasher64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    "Hash64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
                     buf.len(),
                     seed,
                     hash,
@@ -1457,14 +1457,14 @@ mod tests {
 
             // single ingestio
             {
-                let mut hasher = Hasher64::with_secret(secret);
+                let mut hasher = Hash64::with_secret(secret);
                 hasher.write(buf);
                 let hash = hasher.finish();
 
                 assert_eq!(
                     hash,
                     result,
-                    "Hasher64::update(&buf[..{}]) with secret failed, got 0x{:X}, expected 0x{:X}",
+                    "Hash64::update(&buf[..{}]) with secret failed, got 0x{:X}, expected 0x{:X}",
                     buf.len(),
                     hash,
                     result
@@ -1473,7 +1473,7 @@ mod tests {
 
             // byte by byte ingestion
             {
-                let mut hasher = Hasher64::with_secret(secret);
+                let mut hasher = Hash64::with_secret(secret);
 
                 for chunk in buf.chunks(1) {
                     hasher.write(chunk);
@@ -1484,7 +1484,7 @@ mod tests {
                 assert_eq!(
                     hash,
                     result,
-                    "Hasher64::update(&buf[..{}].chunks(1)) with secret failed, got 0x{:X}, expected 0x{:X}",
+                    "Hash64::update(&buf[..{}].chunks(1)) with secret failed, got 0x{:X}, expected 0x{:X}",
                     buf.len(),
                     hash,
                     result
@@ -1551,14 +1551,14 @@ mod tests {
 
             // single ingestio
             {
-                let mut hasher = Hasher128::with_seed(seed);
+                let mut hasher = Hash128::with_seed(seed);
                 hasher.write(buf);
                 let hash = hasher.finish_ext();
 
                 assert_eq!(
                     hash,
                     result,
-                    "Hasher128::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    "Hash128::update(&buf[..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
                     buf.len(),
                     seed,
                     hash,
@@ -1568,7 +1568,7 @@ mod tests {
 
             if buf.len() > 3 {
                 // 2 ingestions
-                let mut hasher = Hasher128::with_seed(seed);
+                let mut hasher = Hash128::with_seed(seed);
                 hasher.write(&buf[..3]);
                 hasher.write(&buf[3..]);
                 let hash = hasher.finish_ext();
@@ -1576,7 +1576,7 @@ mod tests {
                 assert_eq!(
                     hash,
                     result,
-                    "Hasher64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    "Hash64::update(&buf[..3], &buf[3..{}]) with seed={} failed, got 0x{:X}, expected 0x{:X}",
                     buf.len(),
                     seed,
                     hash,
@@ -1586,7 +1586,7 @@ mod tests {
 
             // byte by byte ingestion
             {
-                let mut hasher = Hasher128::with_seed(seed);
+                let mut hasher = Hash128::with_seed(seed);
 
                 for chunk in buf.chunks(1) {
                     hasher.write(chunk);
@@ -1597,7 +1597,7 @@ mod tests {
                 assert_eq!(
                     hash,
                     result,
-                    "Hasher64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
+                    "Hash64::update(&buf[..{}].chunks(1)) with seed={} failed, got 0x{:X}, expected 0x{:X}",
                     buf.len(),
                     seed,
                     hash,

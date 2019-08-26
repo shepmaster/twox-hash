@@ -44,12 +44,18 @@ mod std_support;
 pub use std_support::sixty_four::RandomXxHashBuilder64;
 #[cfg(feature = "std")]
 pub use std_support::thirty_two::RandomXxHashBuilder32;
+#[cfg(feature = "std")]
+pub use std_support::xxh3::{
+    RandomHashBuilder128 as RandomXxh3HashBuilder128,
+    RandomHashBuilder64 as RandomXxh3HashBuilder64,
+};
 
 #[cfg(feature = "digest")]
 mod digest_support;
 
 pub use crate::sixty_four::XxHash64;
 pub use crate::thirty_two::XxHash32;
+pub use crate::xxh3::{Hash128 as Xxh3Hash128, Hash64 as Xxh3Hash64};
 
 /// A backwards compatibility type alias. Consider directly using
 /// `XxHash64` instead.
