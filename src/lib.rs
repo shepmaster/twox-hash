@@ -68,12 +68,65 @@ struct UnalignedBuffer<'a, T> {
 ///
 /// The intent is to use this with only primitive integer types (and
 /// tightly-packed arrays of those integers).
-unsafe trait UnalignedItem {}
+unsafe trait UnalignedItem {
+    // xxhash specifies the data it processes should be little endian
+    // which means information ingested on big-endian platforms needs
+    // to have its contents byte-swapped prior to being digested.
+    fn correct_endian(self) -> Self;
+}
 
-unsafe impl UnalignedItem for [u64; 4] {}
-unsafe impl UnalignedItem for [u32; 4] {}
-unsafe impl UnalignedItem for u64 {}
-unsafe impl UnalignedItem for u32 {}
+unsafe impl UnalignedItem for [u64; 4] {
+    #[inline]
+    fn correct_endian(self) -> Self {
+        #[allow(unused_mut)]
+        let mut result = self;
+        #[cfg(target_endian = "big")]
+        {
+            for ptr in result.iter_mut() {
+                *ptr = (*ptr).byte_swap();
+            }
+        }
+        result
+    }
+}
+unsafe impl UnalignedItem for [u32; 4] {
+    #[inline]
+    fn correct_endian(self) -> Self {
+        #[allow(unused_mut)]
+        let mut result = self;
+        #[cfg(target_endian = "big")]
+        {
+            for ptr in result.iter_mut() {
+                *ptr = (*ptr).byte_swap();
+            }
+        }
+        result
+    }
+}
+unsafe impl UnalignedItem for u64 {
+    #[inline]
+    fn correct_endian(self) -> Self {
+        #[allow(unused_mut)]
+        let mut result = self;
+        #[cfg(target_endian = "big")]
+        {
+            result = result.byte_swap();
+        }
+        result
+    }
+}
+unsafe impl UnalignedItem for u32 {
+    #[inline]
+    fn correct_endian(self) -> Self {
+        #[allow(unused_mut)]
+        let mut result = self;
+        #[cfg(target_endian = "big")]
+        {
+            result = result.byte_swap();
+        }
+        result
+    }
+}
 
 impl<'a, T: UnalignedItem> UnalignedBuffer<'a, T> {
     #[inline]
@@ -99,7 +152,7 @@ impl<'a, T: UnalignedItem> Iterator for UnalignedBuffer<'a, T> {
             // `self.buf` has at least `size` bytes that can be read as `T`.
             let result = unsafe { (self.buf.as_ptr() as *const T).read_unaligned() };
             self.buf = remaining;
-            result
+            result.correct_endian()
         })
     }
 }
