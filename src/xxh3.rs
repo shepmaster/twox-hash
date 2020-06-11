@@ -1343,8 +1343,8 @@ mod tests {
         let mut buf = [0; SANITY_BUFFER_SIZE];
         let mut byte_gen: u64 = PRIME;
 
-        for i in 0..SANITY_BUFFER_SIZE {
-            buf[i] = (byte_gen >> 56) as u8;
+        for b in buf.iter_mut() {
+            *b = (byte_gen >> 56) as u8;
             byte_gen = byte_gen.wrapping_mul(PRIME64);
         }
 
