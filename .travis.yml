@@ -6,7 +6,7 @@ rust:
   - nightly
 matrix:
   include:
-    - rust: 1.32.0
+    - rust: 1.36.0
 before_script: |
   set -e
   if [[ $TRAVIS_RUST_VERSION = 'stable' ]]; then
