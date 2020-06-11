@@ -6,11 +6,11 @@ use serde::{Deserialize, Serialize};
 
 const CHUNK_SIZE: usize = 16;
 
-const PRIME_1: u32 = 2_654_435_761;
-const PRIME_2: u32 = 2_246_822_519;
-const PRIME_3: u32 = 3_266_489_917;
-const PRIME_4: u32 = 668_265_263;
-const PRIME_5: u32 = 374_761_393;
+pub const PRIME_1: u32 = 2_654_435_761;
+pub const PRIME_2: u32 = 2_246_822_519;
+pub const PRIME_3: u32 = 3_266_489_917;
+pub const PRIME_4: u32 = 668_265_263;
+pub const PRIME_5: u32 = 374_761_393;
 
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Copy, Clone, PartialEq)]

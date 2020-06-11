@@ -1,6 +1,6 @@
 #![deny(rust_2018_idioms)]
 
-use proptest::{prelude::*, collection::vec as propvec};
+use proptest::{collection::vec as propvec, prelude::*};
 use std::hash::Hasher;
 #[cfg(test)]
 use twox_hash::{XxHash32, XxHash64};
