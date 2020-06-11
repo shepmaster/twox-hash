@@ -30,7 +30,7 @@ struct XxCore {
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct XxHash32 {
-    total_len: u32,
+    total_len: u64,
     seed: u32,
     core: XxCore,
     #[cfg_attr(feature = "serialize", serde(flatten))]
@@ -177,7 +177,7 @@ impl XxHash32 {
             self.core.ingest_chunks(&mut remaining);
             self.buffer.set_data(remaining.remaining());
         }
-        self.total_len += bytes.len() as u32;
+        self.total_len += bytes.len() as u64;
     }
 
     // Consume bytes and try to make `self.buffer` empty.
@@ -199,14 +199,14 @@ impl XxHash32 {
     }
 
     pub(crate) fn finish(&self) -> u32 {
-        let mut hash = if self.total_len >= CHUNK_SIZE as u32 {
+        let mut hash = if self.total_len >= CHUNK_SIZE as u64 {
             // We have processed at least one full chunk
             self.core.finish()
         } else {
             self.seed.wrapping_add(PRIME_5)
         };
 
-        hash = hash.wrapping_add(self.total_len);
+        hash = hash.wrapping_add(self.total_len as u32);
 
         let mut buffered_u32s = UnalignedBuffer::<u32>::new(self.buffer.data());
         for buffered_u32 in &mut buffered_u32s {
@@ -238,7 +238,14 @@ impl XxHash32 {
         self.seed
     }
 
+    /// Get the total number of bytes hashed, truncated to 32 bits.
+    /// For the full 64-bit byte count, use `total_len_64`
     pub fn total_len(&self) -> u32 {
+        self.total_len as u32
+    }
+
+    /// Get the total number of bytes hashed.
+    pub fn total_len_64(&self) -> u64 {
         self.total_len
     }
 }
@@ -385,4 +392,24 @@ mod test {
         assert_eq!(hasher, unserialized);
         Ok(())
     }
+
+    // This test validates wraparound/truncation behavior for very large inputs
+    // of a 32-bit hash, but runs very slowly in the normal "cargo test"
+    // build config since it hashes 4.3GB of data. It runs reasonably quick
+    // under "cargo test --release".
+    /*
+    #[test]
+    fn len_overflow_32bit() {
+        // Hash 4.3 billion (4_300_000_000) bytes, which overflows a u32.
+        let bytes200: Vec<u8> = (0..200).collect();
+        let mut hasher = XxHash32::with_seed(0);
+        for _ in 0..(4_300_000_000u64 / 200u64) {
+            hasher.write(&bytes200);
+        }
+        assert_eq!(hasher.total_len_64(), 0x0000_0001_004c_cb00);
+        assert_eq!(hasher.total_len(), 0x004c_cb00);
+        // retult is tested against the C implementation
+        assert_eq!(hasher.finish(), 0x1522_4ca7);
+    }
+    */
 }
