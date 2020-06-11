@@ -1062,6 +1062,7 @@ impl State {
 }
 
 #[inline(always)]
+#[allow(clippy::too_many_arguments)]
 fn consume_stripes(
     acc: &mut [u64],
     nb_stripes_so_far: usize,
