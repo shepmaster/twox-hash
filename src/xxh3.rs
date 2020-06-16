@@ -1,3 +1,17 @@
+//! The in-progress XXH3 algorithm.
+//!
+//! Please read [the notes in original implementation][warning] to
+//! learn about when to use these algorithms. Specifically, the
+//! version of code this crate reproduces says:
+//!
+//! > The algorithm is currently in development, meaning its return
+//!   values might still change in future versions. However, the API
+//!   is stable, and can be used in production, typically for
+//!   generation of ephemeral hashes (produced and consumed in same
+//!   session).
+//!
+//! [warning]: https://github.com/Cyan4973/xxHash#new-hash-algorithms
+
 use alloc::vec::Vec;
 
 use core::convert::TryInto;
