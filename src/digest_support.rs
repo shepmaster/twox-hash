@@ -17,24 +17,24 @@ impl Digest for XxHash32 {
         Self::default()
     }
 
-    fn input<B: AsRef<[u8]>>(&mut self, data: B) {
+    fn update(&mut self, data: impl AsRef<[u8]>) {
         self.write(data.as_ref());
     }
 
-    fn chain<B: AsRef<[u8]>>(mut self, data: B) -> Self
+    fn chain(mut self, data: impl AsRef<[u8]>) -> Self
     where
         Self: Sized,
     {
-        self.input(data);
+        self.update(data);
         self
     }
 
-    fn result(self) -> GenericArray<u8, Self::OutputSize> {
+    fn finalize(self) -> GenericArray<u8, Self::OutputSize> {
         self.finish().to_be_bytes().into()
     }
 
-    fn result_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
-        let result = self.clone().result();
+    fn finalize_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
+        let result = self.clone().finalize();
         self.reset();
         result
     }
@@ -48,7 +48,7 @@ impl Digest for XxHash32 {
     }
 
     fn digest(data: &[u8]) -> GenericArray<u8, Self::OutputSize> {
-        Self::new().chain(data).result()
+        Self::new().chain(data).finalize()
     }
 }
 
@@ -59,24 +59,24 @@ impl Digest for XxHash64 {
         Self::default()
     }
 
-    fn input<B: AsRef<[u8]>>(&mut self, data: B) {
+    fn update(&mut self, data: impl AsRef<[u8]>) {
         self.write(data.as_ref());
     }
 
-    fn chain<B: AsRef<[u8]>>(mut self, data: B) -> Self
+    fn chain(mut self, data: impl AsRef<[u8]>) -> Self
     where
         Self: Sized,
     {
-        self.input(data);
+        self.update(data);
         self
     }
 
-    fn result(self) -> GenericArray<u8, Self::OutputSize> {
+    fn finalize(self) -> GenericArray<u8, Self::OutputSize> {
         self.finish().to_be_bytes().into()
     }
 
-    fn result_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
-        let result = self.clone().result();
+    fn finalize_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
+        let result = self.clone().finalize();
         self.reset();
         result
     }
@@ -90,7 +90,7 @@ impl Digest for XxHash64 {
     }
 
     fn digest(data: &[u8]) -> GenericArray<u8, Self::OutputSize> {
-        Self::new().chain(data).result()
+        Self::new().chain(data).finalize()
     }
 }
 
@@ -101,24 +101,24 @@ impl Digest for xxh3::Hash64 {
         Self::default()
     }
 
-    fn input<B: AsRef<[u8]>>(&mut self, data: B) {
+    fn update(&mut self, data: impl AsRef<[u8]>) {
         self.write(data.as_ref());
     }
 
-    fn chain<B: AsRef<[u8]>>(mut self, data: B) -> Self
+    fn chain(mut self, data: impl AsRef<[u8]>) -> Self
     where
         Self: Sized,
     {
-        self.input(data);
+        self.update(data);
         self
     }
 
-    fn result(self) -> GenericArray<u8, Self::OutputSize> {
+    fn finalize(self) -> GenericArray<u8, Self::OutputSize> {
         self.finish().to_be_bytes().into()
     }
 
-    fn result_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
-        let result = self.clone().result();
+    fn finalize_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
+        let result = self.clone().finalize();
         self.reset();
         result
     }
@@ -132,7 +132,7 @@ impl Digest for xxh3::Hash64 {
     }
 
     fn digest(data: &[u8]) -> GenericArray<u8, Self::OutputSize> {
-        Self::new().chain(data).result()
+        Self::new().chain(data).finalize()
     }
 }
 
@@ -143,24 +143,24 @@ impl Digest for xxh3::Hash128 {
         Self::default()
     }
 
-    fn input<B: AsRef<[u8]>>(&mut self, data: B) {
+    fn update(&mut self, data: impl AsRef<[u8]>) {
         self.write(data.as_ref());
     }
 
-    fn chain<B: AsRef<[u8]>>(mut self, data: B) -> Self
+    fn chain(mut self, data: impl AsRef<[u8]>) -> Self
     where
         Self: Sized,
     {
-        self.input(data);
+        self.update(data);
         self
     }
 
-    fn result(self) -> GenericArray<u8, Self::OutputSize> {
+    fn finalize(self) -> GenericArray<u8, Self::OutputSize> {
         xxh3::HasherExt::finish_ext(&self).to_be_bytes().into()
     }
 
-    fn result_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
-        let result = self.clone().result();
+    fn finalize_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
+        let result = self.clone().finalize();
         self.reset();
         result
     }
@@ -174,7 +174,7 @@ impl Digest for xxh3::Hash128 {
     }
 
     fn digest(data: &[u8]) -> GenericArray<u8, Self::OutputSize> {
-        Self::new().chain(data).result()
+        Self::new().chain(data).finalize()
     }
 }
 
@@ -189,27 +189,33 @@ mod test {
 
         let mut byte_by_byte = XxHash64::new();
         for byte in bytes.chunks(1) {
-            byte_by_byte.input(byte);
+            byte_by_byte.update(byte);
         }
 
         let mut one_chunk = XxHash64::new();
-        one_chunk.input(&bytes);
+        one_chunk.update(&bytes);
 
-        assert_eq!(byte_by_byte.result(), one_chunk.result());
+        assert_eq!(byte_by_byte.finalize(), one_chunk.finalize());
     }
 
     #[test]
     fn hash_of_nothing_matches_c_implementation_64() {
         let mut hasher = XxHash64::new();
-        hasher.input(&[]);
-        assert_eq!(hasher.result()[..], 0xef46_db37_51d8_e999_u64.to_be_bytes());
+        hasher.update(&[]);
+        assert_eq!(
+            hasher.finalize()[..],
+            0xef46_db37_51d8_e999_u64.to_be_bytes()
+        );
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation_64() {
         let mut hasher = XxHash64::new();
-        hasher.input(&[42]);
-        assert_eq!(hasher.result()[..], 0x0a9e_dece_beb0_3ae4_u64.to_be_bytes());
+        hasher.update(&[42]);
+        assert_eq!(
+            hasher.finalize()[..],
+            0x0a9e_dece_beb0_3ae4_u64.to_be_bytes()
+        );
     }
 
     #[test]
@@ -232,16 +238,22 @@ mod test {
     #[test]
     fn hash_with_different_seed_matches_c_implementation_64() {
         let mut hasher = XxHash64::with_seed(0xae05_4331_1b70_2d91);
-        hasher.input(&[]);
-        assert_eq!(hasher.result()[..], 0x4b6a_04fc_df7a_4672_u64.to_be_bytes());
+        hasher.update(&[]);
+        assert_eq!(
+            hasher.finalize()[..],
+            0x4b6a_04fc_df7a_4672_u64.to_be_bytes()
+        );
     }
 
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation_64() {
         let bytes: Vec<_> = (0..100).collect();
         let mut hasher = XxHash64::with_seed(0xae05_4331_1b70_2d91);
-        hasher.input(&bytes);
-        assert_eq!(hasher.result()[..], 0x567e_355e_0682_e1f1_u64.to_be_bytes());
+        hasher.update(&bytes);
+        assert_eq!(
+            hasher.finalize()[..],
+            0x567e_355e_0682_e1f1_u64.to_be_bytes()
+        );
     }
 
     #[test]
@@ -250,27 +262,27 @@ mod test {
 
         let mut byte_by_byte = XxHash32::new();
         for byte in bytes.chunks(1) {
-            byte_by_byte.input(byte);
+            byte_by_byte.update(byte);
         }
 
         let mut one_chunk = XxHash32::new();
-        one_chunk.input(&bytes);
+        one_chunk.update(&bytes);
 
-        assert_eq!(byte_by_byte.result(), one_chunk.result());
+        assert_eq!(byte_by_byte.finalize(), one_chunk.finalize());
     }
 
     #[test]
     fn hash_of_nothing_matches_c_implementation_32() {
         let mut hasher = XxHash32::new();
-        hasher.input(&[]);
-        assert_eq!(hasher.result()[..], 0x02cc_5d05_u32.to_be_bytes());
+        hasher.update(&[]);
+        assert_eq!(hasher.finalize()[..], 0x02cc_5d05_u32.to_be_bytes());
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation_32() {
         let mut hasher = XxHash32::new();
-        hasher.input(&[42]);
-        assert_eq!(hasher.result()[..], 0xe0fe_705f_u32.to_be_bytes());
+        hasher.update(&[42]);
+        assert_eq!(hasher.finalize()[..], 0xe0fe_705f_u32.to_be_bytes());
     }
 
     #[test]
@@ -290,15 +302,15 @@ mod test {
     #[test]
     fn hash_with_different_seed_matches_c_implementation_32() {
         let mut hasher = XxHash32::with_seed(0x42c9_1977);
-        hasher.input(&[]);
-        assert_eq!(hasher.result()[..], 0xd6bf_8459_u32.to_be_bytes());
+        hasher.update(&[]);
+        assert_eq!(hasher.finalize()[..], 0xd6bf_8459_u32.to_be_bytes());
     }
 
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation_32() {
         let bytes: Vec<_> = (0..100).collect();
         let mut hasher = XxHash32::with_seed(0x42c9_1977);
-        hasher.input(&bytes);
-        assert_eq!(hasher.result()[..], 0x6d2f_6c17_u32.to_be_bytes());
+        hasher.update(&bytes);
+        assert_eq!(hasher.finalize()[..], 0x6d2f_6c17_u32.to_be_bytes());
     }
 }
