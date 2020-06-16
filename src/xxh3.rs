@@ -191,7 +191,7 @@ const SECRET: Secret = Secret([
 #[derive(Clone)]
 struct Secret([u8; SECRET_DEFAULT_SIZE]);
 
-const_assert_eq!(secret_size; mem::size_of::<Secret>() % 16, 0);
+const_assert_eq!(mem::size_of::<Secret>() % 16, 0);
 
 impl Default for Secret {
     #[inline(always)]
@@ -291,7 +291,7 @@ cfg_if! {
 
 const ACC_SIZE: usize = mem::size_of::<Acc>();
 
-const_assert_eq!(acc_size; ACC_SIZE, 64);
+const_assert_eq!(ACC_SIZE, 64);
 
 impl Default for Acc {
     #[inline(always)]
@@ -829,8 +829,8 @@ fn avalanche(mut h64: u64) -> u64 {
 const INTERNAL_BUFFER_SIZE: usize = 256;
 const INTERNAL_BUFFER_STRIPES: usize = INTERNAL_BUFFER_SIZE / STRIPE_LEN;
 
-const_assert!(internal_buffer_size; INTERNAL_BUFFER_SIZE >= MIDSIZE_MAX);
-const_assert_eq!(clean_multiple; INTERNAL_BUFFER_SIZE % STRIPE_LEN, 0);
+const_assert!(INTERNAL_BUFFER_SIZE >= MIDSIZE_MAX);
+const_assert_eq!(INTERNAL_BUFFER_SIZE % STRIPE_LEN, 0);
 
 #[repr(align(64))]
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
