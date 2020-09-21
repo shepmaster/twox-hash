@@ -58,9 +58,13 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+          target: thumbv6m-none-eabi
           override: true
 
-      - run: ./ci/check-no-std.sh
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --no-default-features --target thumbv6m-none-eabi --lib
 
   compatibility-tests:
     runs-on: ubuntu-latest
