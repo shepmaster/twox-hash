@@ -53,6 +53,9 @@ pub use std_support::xxh3::{
 #[cfg(feature = "digest")]
 mod digest_support;
 
+#[cfg(feature = "digest_0_9")]
+mod digest_0_9_support;
+
 pub use crate::sixty_four::XxHash64;
 pub use crate::thirty_two::XxHash32;
 pub use crate::xxh3::{Hash128 as Xxh3Hash128, Hash64 as Xxh3Hash64};
