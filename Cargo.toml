@@ -4,9 +4,9 @@ version = "1.5.0"
 authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 edition = "2018"
 
-description = "A Rust implementation of the XXHash algorithm"
+description = "A Rust implementation of the XXHash and XXH3 algorithms"
 readme = "README.md"
-keywords = ["hash"]
+keywords = ["hash", "xxhash", "xxh3"]
 categories = ["algorithms"]
 
 repository = "https://github.com/shepmaster/twox-hash"
