@@ -6,7 +6,7 @@ edition = "2018"
 
 description = "A Rust implementation of the XXHash and XXH3 algorithms"
 readme = "README.md"
-keywords = ["hash", "xxhash", "xxh3"]
+keywords = ["hash", "hasher", "xxhash", "xxh3"]
 categories = ["algorithms"]
 
 repository = "https://github.com/shepmaster/twox-hash"
