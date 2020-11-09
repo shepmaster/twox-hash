@@ -3,13 +3,19 @@
 use proptest::{collection::vec as propvec, prelude::*};
 use std::hash::Hasher;
 #[cfg(test)]
-use twox_hash::{XxHash32, XxHash64};
+use twox_hash::{xxh3, HasherExt, XxHash32, XxHash64};
 
 pub mod c_xxhash;
 
 pub fn hash_once(mut hasher: impl Hasher, data: &[u8]) -> u64 {
     hasher.write(&data);
     hasher.finish()
+}
+
+#[cfg(test)]
+pub fn hash_once_ext(mut hasher: impl HasherExt, data: &[u8]) -> u128 {
+    hasher.write(&data);
+    hasher.finish_ext()
 }
 
 #[cfg(test)]
@@ -21,6 +27,17 @@ fn hash_by_chunks(mut hasher: impl Hasher, mut data: &[u8], chunk_sizes: &[usize
     }
 
     hasher.finish()
+}
+
+#[cfg(test)]
+fn hash_by_chunks_ext(mut hasher: impl HasherExt, mut data: &[u8], chunk_sizes: &[usize]) -> u128 {
+    for &chunk_size in chunk_sizes {
+        let (this_chunk, remaining) = data.split_at(chunk_size);
+        hasher.write(this_chunk);
+        data = remaining;
+    }
+
+    hasher.finish_ext()
 }
 
 prop_compose! {
@@ -81,6 +98,41 @@ proptest! {
 
         prop_assert_eq!(our_result, their_result as u64);
     }
+
+    #[test]
+    fn same_results_as_c_for_xxh3_64_bit(seed: u64, data: Vec<u8>) {
+        let our_result = hash_once(xxh3::Hash64::with_seed(seed), &data);
+        let their_result = c_xxhash::xxh3_hash64(&data, seed);
+
+        prop_assert_eq!(our_result, their_result);
+    }
+
+    #[test]
+    fn same_results_as_c_with_offset_for_xxh3_64_bit(seed: u64, (data, offset) in data_and_offset()) {
+        let data = &data[offset..];
+        let our_result = hash_once(xxh3::Hash64::with_seed(seed), data);
+        let their_result = c_xxhash::xxh3_hash64(data, seed);
+
+        prop_assert_eq!(our_result, their_result);
+    }
+
+    #[test]
+    fn same_results_as_c_for_xxh3_128_bit(seed: u64, data: Vec<u8>) {
+        let our_result = hash_once_ext(xxh3::Hash128::with_seed(seed), &data);
+        let their_result = c_xxhash::xxh3_hash128(&data, seed);
+
+        prop_assert_eq!(our_result, their_result);
+    }
+
+    #[test]
+    fn same_results_as_c_with_offset_for_xxh3_128_bit(seed: u64, (data, offset) in data_and_offset()) {
+        let data = &data[offset..];
+        let our_result = hash_once_ext(xxh3::Hash128::with_seed(seed), data);
+        let their_result = c_xxhash::xxh3_hash128(data, seed);
+
+        prop_assert_eq!(our_result, their_result);
+    }
+
 }
 
 proptest! {
@@ -101,4 +153,21 @@ proptest! {
 
         prop_assert_eq!(chunked_result, monolithic_result);
     }
+
+    #[test]
+    fn same_results_with_many_chunks_as_one_for_xxh3_64_bit(seed: u64, (data, chunk_sizes) in data_and_chunk_sizes()) {
+        let chunked_result = hash_by_chunks(xxh3::Hash64::with_seed(seed), &data, &chunk_sizes);
+        let monolithic_result = hash_once(xxh3::Hash64::with_seed(seed), &data);
+
+        prop_assert_eq!(chunked_result, monolithic_result);
+    }
+
+    #[test]
+    fn same_results_with_many_chunks_as_one_for_xxh3_128_bit(seed: u64, (data, chunk_sizes) in data_and_chunk_sizes()) {
+        let chunked_result = hash_by_chunks_ext(xxh3::Hash128::with_seed(seed), &data, &chunk_sizes);
+        let monolithic_result = hash_once_ext(xxh3::Hash128::with_seed(seed), &data);
+
+        prop_assert_eq!(chunked_result, monolithic_result);
+    }
+
 }

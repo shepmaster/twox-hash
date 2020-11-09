@@ -16,17 +16,17 @@ mod ffi {
     }
 
     extern "C" {
-        pub fn XXH32(input: *const c_void, length: size_t, seed: u32) -> XXH32_hash_t;
-        pub fn XXH64(input: *const c_void, length: size_t, seed: u64) -> XXH64_hash_t;
+        pub fn XXH32(input: *const c_void, length: size_t, seed: XXH32_hash_t) -> XXH32_hash_t;
+        pub fn XXH64(input: *const c_void, length: size_t, seed: XXH64_hash_t) -> XXH64_hash_t;
         pub fn XXH3_64bits_withSeed(
-            data: *const ::std::os::raw::c_void,
-            len: usize,
-            seed: ::std::os::raw::c_ulonglong,
+            data: *const c_void,
+            len: size_t,
+            seed: XXH64_hash_t,
         ) -> XXH64_hash_t;
         pub fn XXH3_128bits_withSeed(
-            data: *const ::std::os::raw::c_void,
-            len: usize,
-            seed: ::std::os::raw::c_ulonglong,
+            data: *const c_void,
+            len: size_t,
+            seed: XXH64_hash_t,
         ) -> XXH128_hash_t;
     }
 }
