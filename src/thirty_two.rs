@@ -58,7 +58,7 @@ impl XxCore {
             current_value = current_value.wrapping_add(value);
             current_value = current_value.rotate_left(13);
             current_value.wrapping_mul(PRIME_1)
-        };
+        }
 
         // By drawing these out, we can avoid going back and forth to
         // memory. It only really helps for large files, when we need
