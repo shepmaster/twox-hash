@@ -463,7 +463,7 @@ fn hash_len_17to128_64bits(data: &[u8], len: usize, secret: &[u8], seed: u64) ->
     }
 
     acc = acc
-        .wrapping_add(mix_16bytes(data, &secret[..], seed))
+        .wrapping_add(mix_16bytes(data, secret, seed))
         .wrapping_add(mix_16bytes(&data[len - 16..], &secret[16..], seed));
 
     avalanche(acc)
@@ -1222,7 +1222,7 @@ fn hash_len_17to128_128bits(data: &[u8], len: usize, secret: &[u8], seed: u64) -
         acc2 = acc2.wrapping_add(mix_16bytes(&data[len - 32..], &secret[48..], seed));
     }
 
-    acc1 = acc1.wrapping_add(mix_16bytes(data, &secret[..], seed));
+    acc1 = acc1.wrapping_add(mix_16bytes(data, secret, seed));
     acc2 = acc2.wrapping_add(mix_16bytes(&data[len - 16..], &secret[16..], seed));
 
     let low64 = acc1.wrapping_add(acc2);
