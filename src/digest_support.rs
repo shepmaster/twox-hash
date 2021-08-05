@@ -34,7 +34,7 @@ impl Digest for XxHash32 {
     }
 
     fn result_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
-        let result = self.clone().result();
+        let result = self.result();
         self.reset();
         result
     }
@@ -76,7 +76,7 @@ impl Digest for XxHash64 {
     }
 
     fn result_reset(&mut self) -> GenericArray<u8, Self::OutputSize> {
-        let result = self.clone().result();
+        let result = self.result();
         self.reset();
         result
     }
