@@ -89,6 +89,7 @@ impl XxCore {
         // here, presumably because this method is not called in a
         // tight loop.
 
+        #[allow(unknown_lints, clippy::needless_late_init)] // keeping things parallel
         let mut hash;
 
         hash = self.v1.rotate_left(1);

@@ -80,6 +80,7 @@ struct UnalignedBuffer<'a, T> {
 ///
 /// The intent is to use this with only primitive integer types (and
 /// tightly-packed arrays of those integers).
+#[allow(clippy::missing_safety_doc)]
 unsafe trait UnalignedItem {}
 
 unsafe impl UnalignedItem for [u64; 4] {}
