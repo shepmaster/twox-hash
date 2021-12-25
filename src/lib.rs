@@ -56,6 +56,9 @@ mod digest_support;
 #[cfg(feature = "digest_0_9")]
 mod digest_0_9_support;
 
+#[cfg(feature = "digest_0_10")]
+mod digest_0_10_support;
+
 pub use crate::sixty_four::XxHash64;
 pub use crate::thirty_two::XxHash32;
 pub use crate::xxh3::{Hash128 as Xxh3Hash128, Hash64 as Xxh3Hash64};
@@ -80,6 +83,7 @@ struct UnalignedBuffer<'a, T> {
 ///
 /// The intent is to use this with only primitive integer types (and
 /// tightly-packed arrays of those integers).
+#[allow(clippy::missing_safety_doc)]
 unsafe trait UnalignedItem {}
 
 unsafe impl UnalignedItem for [u64; 4] {}
