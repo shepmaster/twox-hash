@@ -70,10 +70,10 @@ impl XxCore {
         let mut v4 = self.v4;
 
         for [n1, n2, n3, n4] in values {
-            v1 = ingest_one_number(v1, n1);
-            v2 = ingest_one_number(v2, n2);
-            v3 = ingest_one_number(v3, n3);
-            v4 = ingest_one_number(v4, n4);
+            v1 = ingest_one_number(v1, n1.to_le());
+            v2 = ingest_one_number(v2, n2.to_le());
+            v3 = ingest_one_number(v3, n3.to_le());
+            v4 = ingest_one_number(v4, n4.to_le());
         }
 
         self.v1 = v1;
@@ -211,7 +211,7 @@ impl XxHash32 {
 
         let mut buffered_u32s = UnalignedBuffer::<u32>::new(self.buffer.data());
         for buffered_u32 in &mut buffered_u32s {
-            let k1 = buffered_u32.wrapping_mul(PRIME_3);
+            let k1 = buffered_u32.to_le().wrapping_mul(PRIME_3);
             hash = hash.wrapping_add(k1);
             hash = hash.rotate_left(17);
             hash = hash.wrapping_mul(PRIME_4);

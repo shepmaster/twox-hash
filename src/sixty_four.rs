@@ -65,10 +65,10 @@ impl XxCore {
         let mut v4 = self.v4;
 
         for [n1, n2, n3, n4] in values {
-            v1 = ingest_one_number(v1, n1);
-            v2 = ingest_one_number(v2, n2);
-            v3 = ingest_one_number(v3, n3);
-            v4 = ingest_one_number(v4, n4);
+            v1 = ingest_one_number(v1, n1.to_le());
+            v2 = ingest_one_number(v2, n2.to_le());
+            v3 = ingest_one_number(v3, n3.to_le());
+            v4 = ingest_one_number(v4, n4.to_le());
         }
 
         self.v1 = v1;
@@ -221,7 +221,7 @@ impl XxHash64 {
 
         let mut buffered_u64s = UnalignedBuffer::<u64>::new(self.buffer.data());
         for buffered_u64 in &mut buffered_u64s {
-            let mut k1 = buffered_u64.wrapping_mul(PRIME_2);
+            let mut k1 = buffered_u64.to_le().wrapping_mul(PRIME_2);
             k1 = k1.rotate_left(31);
             k1 = k1.wrapping_mul(PRIME_1);
             hash ^= k1;
@@ -232,7 +232,7 @@ impl XxHash64 {
 
         let mut buffered_u32s = UnalignedBuffer::<u32>::new(buffered_u64s.remaining());
         for buffered_u32 in &mut buffered_u32s {
-            let k1 = u64::from(buffered_u32).wrapping_mul(PRIME_1);
+            let k1 = u64::from(buffered_u32.to_le()).wrapping_mul(PRIME_1);
             hash ^= k1;
             hash = hash.rotate_left(23);
             hash = hash.wrapping_mul(PRIME_2);
