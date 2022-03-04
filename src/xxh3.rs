@@ -754,7 +754,7 @@ mod generic {
             let data_key1 = key1 ^ in1;
             let data_key2 = key2 ^ in2;
             acc[i] = acc[i].wrapping_add(mul32_to64(data_key1, data_key1 >> 32));
-            acc[i + 1] = acc[i].wrapping_add(mul32_to64(data_key2, data_key2 >> 32));
+            acc[i + 1] = acc[i + 1].wrapping_add(mul32_to64(data_key2, data_key2 >> 32));
 
             if acc_width == AccWidth::Acc128Bits {
                 acc[i] = acc[i].wrapping_add(in2);
