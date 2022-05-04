@@ -87,3 +87,21 @@ jobs:
         with:
           command: test
           args: --manifest-path "compatibility-tests/${{ matrix.test }}/Cargo.toml"
+
+  big_endian:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+        with:
+          platforms: s390x
+
+      - name: Cross test
+        uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: test
+          args: --target s390x-unknown-linux-gnu
