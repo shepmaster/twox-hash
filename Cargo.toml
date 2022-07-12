@@ -15,11 +15,11 @@ documentation = "https://docs.rs/twox-hash/"
 license = "MIT"
 
 [dependencies]
-cfg-if = { version = ">= 0.1, < 2", default-features = false }
+cfg-if = { version = "1.0", default-features = false }
 static_assertions = { version = "1.0", default-features = false }
 rand = { version = ">= 0.3.10, < 0.9", optional = true }
-serde = { version = "1.0", features = ["derive"], optional = true}
-digest = { package = "digest", version = "0.8", default-features = false, optional = true  }
+serde = { version = "1.0", features = ["derive"], optional = true }
+digest = { package = "digest", version = "0.8", default-features = false, optional = true }
 digest_0_9 = { package = "digest", version = "0.9", default-features = false, optional = true }
 digest_0_10 = { package = "digest", version = "0.10", default-features = false, optional = true }
 
