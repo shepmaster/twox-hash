@@ -1,0 +1,9 @@
+[package]
+name = "compare"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proptest = "1.5.0"
+xx-renu = { path = ".." }
+xx_hash-sys = { path = "xx_hash-sys" }

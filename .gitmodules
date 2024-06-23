@@ -1,0 +1,6 @@
+[submodule "xxHash"]
+	path = compare/xxHash
+	url = git@github.com:Cyan4973/xxHash.git
+[submodule "compare/xx_hash-sys/xxHash"]
+	path = compare/xx_hash-sys/xxHash
+	url = git@github.com:Cyan4973/xxHash.git

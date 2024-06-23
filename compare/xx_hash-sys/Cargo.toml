@@ -1,0 +1,8 @@
+[package]
+name = "xx_hash-sys"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+libc = { version = "0.2.155", default-features = false }
