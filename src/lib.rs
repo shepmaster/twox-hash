@@ -67,6 +67,12 @@ pub struct XxHash64 {
 }
 
 impl XxHash64 {
+    pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
+        let mut this = Self::with_seed(seed);
+        this.write(data);
+        this.finish()
+    }
+
     pub fn with_seed(seed: u64) -> Self {
         // Step 1. Initialize internal accumulators
         let accumulators = [

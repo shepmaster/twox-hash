@@ -24,13 +24,13 @@ extern "C" {
     fn XXH64_freeState(state: *mut XXH64_state_t);
 }
 
-pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
-    unsafe { XXH64(data.as_ptr().cast(), data.len(), seed) }
-}
-
 pub struct Stream(*mut XXH64_state_t);
 
 impl Stream {
+    pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
+        unsafe { XXH64(data.as_ptr().cast(), data.len(), seed) }
+    }
+
     pub fn with_seed(seed: u64) -> Self {
         let state = unsafe {
             let state = XXH64_createState();

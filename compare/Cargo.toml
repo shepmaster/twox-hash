@@ -3,7 +3,13 @@ name = "compare"
 version = "0.1.0"
 edition = "2021"
 
+[[bench]]
+name = "benchmark"
+harness = false
+
 [dependencies]
+criterion = "0.5.1"
 proptest = "1.5.0"
+rand = "0.8.5"
 xx-renu = { path = ".." }
 xx_hash-sys = { path = "xx_hash-sys" }
