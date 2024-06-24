@@ -1,3 +1,4 @@
+#![no_std]
 #![deny(rust_2018_idioms)]
 
 use core::mem;
@@ -8,24 +9,33 @@ const PRIME64_3: u64 = 0x165667B19E3779F9;
 const PRIME64_4: u64 = 0x85EBCA77C2B2AE63;
 const PRIME64_5: u64 = 0x27D4EB2F165667C5;
 
-#[derive(Default)]
 #[repr(align(32))]
 struct AlignedData([u8; 32]);
 
 impl AlignedData {
+    const fn new() -> Self {
+        Self([0; 32])
+    }
+
     const fn as_u64s(&self) -> &[u64; 4] {
         // SAFETY: We are guaranteed to be aligned
         unsafe { mem::transmute(&self.0) }
     }
 }
 
-#[derive(Default)]
 struct Buffer {
     offset: usize,
     data: AlignedData,
 }
 
 impl Buffer {
+    const fn new() -> Self {
+        Self {
+            offset: 0,
+            data: AlignedData::new(),
+        }
+    }
+
     fn extend<'d>(&mut self, data: &'d [u8]) -> (Option<&[u64; 4]>, &'d [u8]) {
         if self.offset == 0 {
             return (None, data);
@@ -49,7 +59,9 @@ impl Buffer {
 
     fn set(&mut self, data: &[u8]) {
         let n_to_copy = data.len();
+
         debug_assert!(n_to_copy < self.data.0.len());
+
         self.data.0[..n_to_copy].copy_from_slice(data);
         self.offset = data.len();
     }
@@ -125,13 +137,13 @@ impl XxHash64 {
         this.finish()
     }
 
-    pub fn with_seed(seed: u64) -> Self {
+    pub const fn with_seed(seed: u64) -> Self {
         // Step 1. Initialize internal accumulators
 
         Self {
             seed,
             accumulators: Accumulators::new(seed),
-            buffer: Buffer::default(),
+            buffer: Buffer::new(),
             length: 0,
         }
     }
