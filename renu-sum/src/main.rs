@@ -3,7 +3,7 @@ use std::{
     fs::File,
     io::Read,
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::mpsc::{self, SendError},
     thread,
 };
 use xx_renu::XxHash64;
@@ -41,63 +41,66 @@ impl Config {
 fn main() -> Result<()> {
     let config = Config::from_env();
 
+    let mut buffer = vec![0; config.buffer_count * config.buffer_size];
+
     for path in env::args_os().skip(1) {
         let path = PathBuf::from(path);
-        let hash = hash_one_file(&config, &path)?;
+        let hash = hash_one_file(&config, &path, &mut buffer)?;
         eprintln!("{hash:x}  {}", path.display());
     }
 
     Ok(())
 }
 
-fn hash_one_file(config: &Config, path: &Path) -> Result<u64> {
+fn hash_one_file(config: &Config, path: &Path, buffer: &mut [u8]) -> Result<u64> {
     let mut file = File::open(path)?;
     let mut hasher = XxHash64::with_seed(0);
 
-    let (tx, rx) = mpsc::sync_channel(config.buffer_count);
-    let (tx2, rx2) = mpsc::sync_channel(config.buffer_count);
+    let (tx_empty, rx_empty) = mpsc::channel();
+    let (tx_filled, rx_filled) = mpsc::channel();
 
-    for _ in 0..config.buffer_count {
-        tx.send(vec![0; config.buffer_size])
+    for buffer in buffer.chunks_mut(config.buffer_size) {
+        tx_empty
+            .send(buffer)
             .expect("Must be able to populate initial buffers");
     }
 
     thread::scope(|scope| {
-        let t1 = scope.spawn(move || {
-            while let Ok(mut buffer) = rx.recv() {
-                let n_bytes = file.read(&mut buffer)?;
+        let thread_reader = scope.spawn(move || {
+            while let Ok(buffer) = rx_empty.recv() {
+                let n_bytes = file.read(buffer)?;
 
                 if n_bytes == 0 {
                     break;
                 }
 
-                tx2.send((buffer, n_bytes))?;
+                tx_filled
+                    .send((buffer, n_bytes))
+                    .map_err(|_| SendError(()))?;
             }
 
             Ok::<_, Error>(())
         });
 
-        let t2 = scope.spawn({
-            let hasher = &mut hasher;
-            move || {
-                while let Ok((buffer, n_bytes)) = rx2.recv() {
-                    let valid = &buffer[..n_bytes];
+        let hasher = &mut hasher;
+        let thread_hasher = scope.spawn(move || {
+            while let Ok((buffer, n_bytes)) = rx_filled.recv() {
+                let valid = &buffer[..n_bytes];
 
-                    hasher.write(valid);
+                hasher.write(valid);
 
-                    if tx.send(buffer).is_err() {
-                        // The reading thread has exited and there's
-                        // nowhere to return this buffer to.
-                        continue;
-                    }
+                if tx_empty.send(buffer).is_err() {
+                    // The reading thread has exited and there's
+                    // nowhere to return this buffer to.
+                    continue;
                 }
-
-                Ok::<_, Error>(())
             }
+
+            Ok::<_, Error>(())
         });
 
-        t1.join().unwrap()?;
-        t2.join().unwrap()?;
+        thread_reader.join().unwrap()?;
+        thread_hasher.join().unwrap()?;
 
         Ok::<_, Error>(())
     })?;
