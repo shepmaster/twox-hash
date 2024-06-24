@@ -10,11 +10,17 @@ const PRIME64_4: u64 = 0x85EBCA77C2B2AE63;
 const PRIME64_5: u64 = 0x27D4EB2F165667C5;
 
 #[repr(align(32))]
-struct AlignedData([u8; 32]);
+struct AlignedData([u8; Self::LEN]);
 
 impl AlignedData {
+    const LEN: usize = 32;
+
     const fn new() -> Self {
-        Self([0; 32])
+        Self([0; Self::LEN])
+    }
+
+    const fn len(&self) -> usize {
+        Self::LEN
     }
 
     const fn as_u64s(&self) -> &[u64; 4] {
@@ -37,20 +43,34 @@ impl Buffer {
     }
 
     fn extend<'d>(&mut self, data: &'d [u8]) -> (Option<&[u64; 4]>, &'d [u8]) {
+        // Most of the slice methods we use here have `_unchecked` variants, but
+        //
+        // 1. this method is called one time per `XxHash64::write` call
+        // 2. this method early exits if we don't have anything in the buffer
+        //
+        // Because of this, removing the panics via `unsafe` doesn't
+        // have much benefit other than reducing code size by a tiny
+        // bit.
+
+        debug_assert!(self.offset <= self.data.len());
+
         if self.offset == 0 {
             return (None, data);
         };
 
-        let (_filled, empty) = self.data.0.split_at_mut(self.offset); // todo unchecked?
+        let empty = &mut self.data.0[self.offset..];
         let n_to_copy = usize::min(empty.len(), data.len());
 
         let dst = &mut empty[..n_to_copy];
+
         let (src, rest) = data.split_at(n_to_copy);
 
         dst.copy_from_slice(src);
         self.offset += n_to_copy;
 
-        if self.offset == self.data.0.len() {
+        debug_assert!(self.offset <= self.data.len());
+
+        if self.offset == self.data.len() {
             (Some(self.data.as_u64s()), rest)
         } else {
             (None, rest)
@@ -58,9 +78,11 @@ impl Buffer {
     }
 
     fn set(&mut self, data: &[u8]) {
+        debug_assert!([0, self.data.len()].contains(&self.offset));
+
         let n_to_copy = data.len();
 
-        debug_assert!(n_to_copy < self.data.0.len());
+        debug_assert!(n_to_copy < self.data.len());
 
         self.data.0[..n_to_copy].copy_from_slice(data);
         self.offset = data.len();
