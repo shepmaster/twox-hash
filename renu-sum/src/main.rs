@@ -11,28 +11,54 @@ use xx_renu::XxHash64;
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 type Result<T, E = Error> = std::result::Result<T, E>;
 
-const BUFFER_SIZE: usize = 16 * 1024;
+const BUFFER_SIZE: usize = 128 * 1024;
 const BUFFER_COUNT: usize = 8;
 
+struct Config {
+    buffer_size: usize,
+    buffer_count: usize,
+}
+
+impl Config {
+    fn from_env() -> Self {
+        let buffer_size = env::var("BUFFER_SIZE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(BUFFER_SIZE);
+
+        let buffer_count = env::var("BUFFER_COUNT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(BUFFER_COUNT);
+
+        Self {
+            buffer_size,
+            buffer_count,
+        }
+    }
+}
+
 fn main() -> Result<()> {
+    let config = Config::from_env();
+
     for path in env::args_os().skip(1) {
         let path = PathBuf::from(path);
-        let hash = hash_one_file(&path)?;
+        let hash = hash_one_file(&config, &path)?;
         eprintln!("{hash:x}  {}", path.display());
     }
 
     Ok(())
 }
 
-fn hash_one_file(path: &Path) -> Result<u64> {
+fn hash_one_file(config: &Config, path: &Path) -> Result<u64> {
     let mut file = File::open(path)?;
     let mut hasher = XxHash64::with_seed(0);
 
-    let (tx, rx) = mpsc::sync_channel(BUFFER_COUNT);
-    let (tx2, rx2) = mpsc::sync_channel(BUFFER_COUNT);
+    let (tx, rx) = mpsc::sync_channel(config.buffer_count);
+    let (tx2, rx2) = mpsc::sync_channel(config.buffer_count);
 
-    for _ in 0..BUFFER_COUNT {
-        tx.send(vec![0; BUFFER_SIZE])
+    for _ in 0..config.buffer_count {
+        tx.send(vec![0; config.buffer_size])
             .expect("Must be able to populate initial buffers");
     }
 
