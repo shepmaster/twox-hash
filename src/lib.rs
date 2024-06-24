@@ -3,6 +3,7 @@
 
 use core::mem;
 
+// Keeping these constants in this form to match the C code.
 const PRIME64_1: u64 = 0x9E3779B185EBCA87;
 const PRIME64_2: u64 = 0xC2B2AE3D27D4EB4F;
 const PRIME64_3: u64 = 0x165667B19E3779F9;
@@ -153,12 +154,14 @@ pub struct XxHash64 {
 }
 
 impl XxHash64 {
+    #[must_use]
     pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
         let mut this = Self::with_seed(seed);
         this.write(data);
         this.finish()
     }
 
+    #[must_use]
     pub const fn with_seed(seed: u64) -> Self {
         // Step 1. Initialize internal accumulators
 
