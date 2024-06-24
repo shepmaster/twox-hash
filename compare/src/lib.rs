@@ -4,17 +4,35 @@ use proptest::{num, prelude::*, test_runner::TestCaseResult};
 
 proptest! {
     #[test]
-    fn it_works(seed: u64, data: Vec<u8>) {
-        it_works_impl(seed, &data)?;
+    fn oneshot(seed: u64, data: Vec<u8>) {
+        oneshot_impl(seed, &data)?;
     }
 
     #[test]
-    fn it_works_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
-        it_works_impl(seed, &data[offset..])?;
+    fn oneshot_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        oneshot_impl(seed, &data[offset..])?;
+    }
+
+    #[test]
+    fn streaming_one_chunk(seed: u64, data: Vec<u8>) {
+        streaming_one_chunk_impl(seed, &data)?;
+    }
+
+    #[test]
+    fn streaming_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        streaming_one_chunk_impl(seed, &data[offset..])?;
     }
 }
 
-fn it_works_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+fn oneshot_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+    let native = xx_hash_sys::Stream::oneshot(seed, data);
+    let rust = xx_renu::XxHash64::oneshot(seed, data);
+
+    prop_assert_eq!(native, rust);
+    Ok(())
+}
+
+fn streaming_one_chunk_impl(seed: u64, data: &[u8]) -> TestCaseResult {
     let native = {
         let mut hasher = xx_hash_sys::Stream::with_seed(seed);
         hasher.write(data);
