@@ -1,6 +1,8 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, RngCore, SeedableRng};
+use std::hash::Hasher;
 use std::{hint::black_box, iter};
+use twox_hash::XxHash64 as Old;
 use xx_hash_sys::Stream;
 use xx_renu::XxHash64;
 
@@ -54,6 +56,16 @@ fn streaming_one_chunk(c: &mut Criterion) {
         g.bench_function(id, |b| {
             b.iter(|| {
                 let mut hasher = XxHash64::with_seed(seed);
+                hasher.write(&data);
+                let hash = hasher.finish();
+                black_box(hash);
+            })
+        });
+
+        let id = format!("twox-hash/{size}");
+        g.bench_function(id, |b| {
+            b.iter(|| {
+                let mut hasher = Old::with_seed(seed);
                 hasher.write(&data);
                 let hash = hasher.finish();
                 black_box(hash);
