@@ -4,7 +4,7 @@
 #[cfg(test)]
 extern crate std;
 
-use core::{fmt, mem, hash::Hasher};
+use core::{fmt, hash::Hasher, mem};
 
 // Keeping these constants in this form to match the C code.
 const PRIME64_1: u64 = 0x9E3779B185EBCA87;
@@ -132,6 +132,17 @@ impl Accumulators {
         *acc4 = round(*acc4, lane4);
     }
 
+    fn write_many<'d>(&mut self, mut data: &'d [u8]) -> &'d [u8] {
+        while let Some((chunk, rest)) = data.split_first_chunk::<32>() {
+            // SAFETY: We have the right number of bytes and are
+            // handling the unaligned case.
+            let lanes = unsafe { chunk.as_ptr().cast::<[u64; 4]>().read_unaligned() };
+            self.write(lanes);
+            data = rest;
+        }
+        data
+    }
+
     const fn finish(&self) -> u64 {
         let [acc1, acc2, acc3, acc4] = self.0;
 
@@ -181,12 +192,22 @@ pub struct XxHash64 {
     length: u64,
 }
 
+impl Default for XxHash64 {
+    fn default() -> Self {
+        Self::with_seed(0)
+    }
+}
+
 impl XxHash64 {
     #[must_use]
     pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
-        let mut this = Self::with_seed(seed);
-        this.write(data);
-        this.finish()
+        let len = data.len();
+
+        let mut accumulators = Accumulators::new(seed);
+
+        let data = accumulators.write_many(data);
+
+        Self::finish_with(seed, len.into_u64(), &accumulators, data)
     }
 
     #[must_use]
@@ -200,49 +221,19 @@ impl XxHash64 {
             length: 0,
         }
     }
-}
 
-impl Hasher for XxHash64 {
-    fn write(&mut self, data: &[u8]) {
-        let len = data.len();
-
-        // Step 2. Process stripes
-        let (buffered_lanes, data) = self.buffer.extend(data);
-
-        if let Some(&lanes) = buffered_lanes {
-            self.accumulators.write(lanes);
-        }
-
-        let mut data = data;
-        while let Some((chunk, rest)) = data.split_first_chunk::<32>() {
-            // SAFETY: We have the right number of bytes and are
-            // handling the unaligned case.
-            let lanes = unsafe { chunk.as_ptr().cast::<[u64; 4]>().read_unaligned() };
-            self.accumulators.write(lanes);
-            data = rest;
-        }
-        let data = data;
-
-        self.buffer.set(data);
-
-        self.length += len.into_u64();
-    }
-
-    #[must_use]
-    fn finish(&self) -> u64 {
+    fn finish_with(seed: u64, len: u64, accumulators: &Accumulators, mut remaining: &[u8]) -> u64 {
         // Step 3. Accumulator convergence
-        let mut acc = if self.length < 32 {
-            self.seed.wrapping_add(PRIME64_5)
+        let mut acc = if len < 32 {
+            seed.wrapping_add(PRIME64_5)
         } else {
-            self.accumulators.finish()
+            accumulators.finish()
         };
 
         // Step 4. Add input length
-        acc += self.length;
+        acc += len;
 
         // Step 5. Consume remaining input
-        let mut remaining = self.buffer.remaining();
-
         while let Some((chunk, rest)) = remaining.split_first_chunk::<8>() {
             let lane = u64::from_ne_bytes(*chunk);
             // todo: little-endian
@@ -281,6 +272,35 @@ impl Hasher for XxHash64 {
         acc ^= acc >> 32;
 
         acc
+    }
+}
+
+impl Hasher for XxHash64 {
+    fn write(&mut self, data: &[u8]) {
+        let len = data.len();
+
+        // Step 2. Process stripes
+        let (buffered_lanes, data) = self.buffer.extend(data);
+
+        if let Some(&lanes) = buffered_lanes {
+            self.accumulators.write(lanes);
+        }
+
+        let data = self.accumulators.write_many(data);
+
+        self.buffer.set(data);
+
+        self.length += len.into_u64();
+    }
+
+    #[must_use]
+    fn finish(&self) -> u64 {
+        Self::finish_with(
+            self.seed,
+            self.length,
+            &self.accumulators,
+            self.buffer.remaining(),
+        )
     }
 }
 

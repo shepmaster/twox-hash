@@ -1,8 +1,19 @@
 #![cfg(test)]
 
 use proptest::{num, prelude::*, test_runner::TestCaseResult};
+use std::hash::Hasher;
 
 proptest! {
+    #[test]
+    fn oneshot_same_as_one_chunk(seed: u64, data: Vec<u8>) {
+        oneshot_same_as_one_chunk_impl(seed, &data)?;
+    }
+
+    #[test]
+    fn oneshot_same_as_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        oneshot_same_as_one_chunk_impl(seed, &data[offset..])?;
+    }
+
     #[test]
     fn oneshot(seed: u64, data: Vec<u8>) {
         oneshot_impl(seed, &data)?;
@@ -22,6 +33,18 @@ proptest! {
     fn streaming_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
         streaming_one_chunk_impl(seed, &data[offset..])?;
     }
+}
+
+fn oneshot_same_as_one_chunk_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+    let oneshot = xx_renu::XxHash64::oneshot(seed, data);
+    let one_chunk = {
+        let mut hasher = xx_renu::XxHash64::with_seed(seed);
+        hasher.write(data);
+        hasher.finish()
+    };
+
+    prop_assert_eq!(oneshot, one_chunk);
+    Ok(())
 }
 
 fn oneshot_impl(seed: u64, data: &[u8]) -> TestCaseResult {
