@@ -199,9 +199,15 @@ impl Default for XxHash64 {
 }
 
 impl XxHash64 {
+    /// Hash all data at once. If you can use this function, you may
+    /// see noticable speed gains for certain types of input.
     #[must_use]
     pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
         let len = data.len();
+
+        // Notably, since we know that there's no more data coming, we
+        // don't need to construct the intermediate buffers or copy
+        // data to / from them.
 
         let mut accumulators = Accumulators::new(seed);
 
@@ -213,7 +219,6 @@ impl XxHash64 {
     #[must_use]
     pub const fn with_seed(seed: u64) -> Self {
         // Step 1. Initialize internal accumulators
-
         Self {
             seed,
             accumulators: Accumulators::new(seed),
@@ -222,6 +227,8 @@ impl XxHash64 {
         }
     }
 
+    #[must_use]
+    #[inline(always)]
     fn finish_with(seed: u64, len: u64, accumulators: &Accumulators, mut remaining: &[u8]) -> u64 {
         // Step 3. Accumulator convergence
         let mut acc = if len < 32 {
