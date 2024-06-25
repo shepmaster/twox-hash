@@ -1,7 +1,10 @@
 #![no_std]
 #![deny(rust_2018_idioms)]
 
-use core::mem;
+#[cfg(test)]
+extern crate std;
+
+use core::{fmt, mem, hash::Hasher};
 
 // Keeping these constants in this form to match the C code.
 const PRIME64_1: u64 = 0x9E3779B185EBCA87;
@@ -30,6 +33,13 @@ impl AlignedData {
     }
 }
 
+impl fmt::Debug for AlignedData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.0.iter()).finish()
+    }
+}
+
+#[derive(Debug)]
 struct Buffer {
     offset: usize,
     data: AlignedData,
@@ -72,6 +82,7 @@ impl Buffer {
         debug_assert!(self.offset <= self.data.len());
 
         if self.offset == self.data.len() {
+            self.offset = 0;
             (Some(self.data.as_u64s()), rest)
         } else {
             (None, rest)
@@ -79,7 +90,11 @@ impl Buffer {
     }
 
     fn set(&mut self, data: &[u8]) {
-        debug_assert!([0, self.data.len()].contains(&self.offset));
+        if data.is_empty() {
+            return;
+        }
+
+        debug_assert_eq!(self.offset, 0);
 
         let n_to_copy = data.len();
 
@@ -146,6 +161,19 @@ impl Accumulators {
     }
 }
 
+impl fmt::Debug for Accumulators {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [acc1, acc2, acc3, acc4] = self.0;
+        f.debug_struct("Accumulators")
+            .field("acc1", &acc1)
+            .field("acc2", &acc2)
+            .field("acc3", &acc3)
+            .field("acc4", &acc4)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct XxHash64 {
     seed: u64,
     accumulators: Accumulators,
@@ -172,8 +200,10 @@ impl XxHash64 {
             length: 0,
         }
     }
+}
 
-    pub fn write(&mut self, data: &[u8]) {
+impl Hasher for XxHash64 {
+    fn write(&mut self, data: &[u8]) {
         let len = data.len();
 
         // Step 2. Process stripes
@@ -198,7 +228,8 @@ impl XxHash64 {
         self.length += len.into_u64();
     }
 
-    pub fn finish(&mut self) -> u64 {
+    #[must_use]
+    fn finish(&self) -> u64 {
         // Step 3. Accumulator convergence
         let mut acc = if self.length < 32 {
             self.seed.wrapping_add(PRIME64_5)
@@ -284,7 +315,26 @@ impl IntoU64 for usize {
 
 #[cfg(test)]
 mod test {
+    use core::array;
+
     use super::*;
+
+    #[test]
+    fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
+        let bytes = [0x9c; 32];
+
+        let mut byte_by_byte = XxHash64::with_seed(0);
+        for byte in bytes.chunks(1) {
+            byte_by_byte.write(byte);
+        }
+        let byte_by_byte = byte_by_byte.finish();
+
+        let mut one_chunk = XxHash64::with_seed(0);
+        one_chunk.write(&bytes);
+        let one_chunk = one_chunk.finish();
+
+        assert_eq!(byte_by_byte, one_chunk);
+    }
 
     #[test]
     fn hash_of_nothing_matches_c_implementation() {
@@ -301,9 +351,32 @@ mod test {
     }
 
     #[test]
-    fn hash_of_exactly_32_bytes() {
+    fn hash_of_multiple_bytes_matches_c_implementation() {
         let mut hasher = XxHash64::with_seed(0);
-        hasher.write(&[0; 32]);
-        assert_eq!(hasher.finish(), 0xf6e9_be5d_7063_2cf5);
+        hasher.write(b"Hello, world!\0");
+        assert_eq!(hasher.finish(), 0x7b06_c531_ea43_e89f);
+    }
+
+    #[test]
+    fn hash_of_multiple_chunks_matches_c_implementation() {
+        let bytes: [u8; 100] = array::from_fn(|i| i as u8);
+        let mut hasher = XxHash64::with_seed(0);
+        hasher.write(&bytes);
+        assert_eq!(hasher.finish(), 0x6ac1_e580_3216_6597);
+    }
+
+    #[test]
+    fn hash_with_different_seed_matches_c_implementation() {
+        let mut hasher = XxHash64::with_seed(0xae05_4331_1b70_2d91);
+        hasher.write(&[]);
+        assert_eq!(hasher.finish(), 0x4b6a_04fc_df7a_4672);
+    }
+
+    #[test]
+    fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation() {
+        let bytes: [u8; 100] = array::from_fn(|i| i as u8);
+        let mut hasher = XxHash64::with_seed(0xae05_4331_1b70_2d91);
+        hasher.write(&bytes);
+        assert_eq!(hasher.finish(), 0x567e_355e_0682_e1f1);
     }
 }
