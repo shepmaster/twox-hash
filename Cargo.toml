@@ -9,3 +9,17 @@ members = [
     "renu-sum",
     "xx_hash-sys",
 ]
+
+[features]
+default = ["std"]
+
+std = ["dep:rand"]
+
+serialize = ["dep:serde"]
+
+[dependencies]
+rand = { version = "0.8.0", optional = true, default-features = false, features = ["std", "std_rng"] }
+serde = { version = "1.0.0", optional = true, default-features = false, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = "1.0.117"

@@ -13,6 +13,7 @@ const PRIME64_3: u64 = 0x165667B19E3779F9;
 const PRIME64_4: u64 = 0x85EBCA77C2B2AE63;
 const PRIME64_5: u64 = 0x27D4EB2F165667C5;
 
+#[derive(PartialEq)]
 #[repr(align(32))]
 struct AlignedData([u8; Self::LEN]);
 
@@ -39,7 +40,7 @@ impl fmt::Debug for AlignedData {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Buffer {
     offset: usize,
     data: AlignedData,
@@ -109,6 +110,7 @@ impl Buffer {
     }
 }
 
+#[derive(PartialEq)]
 struct Accumulators([u64; 4]);
 
 impl Accumulators {
@@ -183,7 +185,7 @@ impl fmt::Debug for Accumulators {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct XxHash64 {
     seed: u64,
     accumulators: Accumulators,
@@ -402,5 +404,182 @@ mod test {
         let mut hasher = XxHash64::with_seed(0xae05_4331_1b70_2d91);
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x567e_355e_0682_e1f1);
+    }
+}
+
+#[cfg(feature = "std")]
+mod std_impl {
+    use core::hash::BuildHasher;
+
+    use super::*;
+
+    pub struct RandomXxHashBuilder64(u64);
+
+    impl Default for RandomXxHashBuilder64 {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl RandomXxHashBuilder64 {
+        fn new() -> Self {
+            Self(rand::random())
+        }
+    }
+
+    impl BuildHasher for RandomXxHashBuilder64 {
+        type Hasher = XxHash64;
+
+        fn build_hasher(&self) -> Self::Hasher {
+            XxHash64::with_seed(self.0)
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use core::hash::BuildHasherDefault;
+        use std::collections::HashMap;
+
+        use super::*;
+
+        #[test]
+        fn can_be_used_in_a_hashmap_with_a_default_seed() {
+            let mut hash: HashMap<_, _, BuildHasherDefault<XxHash64>> = Default::default();
+            hash.insert(42, "the answer");
+            assert_eq!(hash.get(&42), Some(&"the answer"));
+        }
+
+        #[test]
+        fn can_be_used_in_a_hashmap_with_a_random_seed() {
+            let mut hash: HashMap<_, _, RandomXxHashBuilder64> = Default::default();
+            hash.insert(42, "the answer");
+            assert_eq!(hash.get(&42), Some(&"the answer"));
+        }
+    }
+}
+
+#[cfg(feature = "serialize")]
+mod serialize_impl {
+    use serde::{Deserialize, Serialize};
+
+    use super::*;
+
+    impl<'de> Deserialize<'de> for XxHash64 {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let shim = Deserialize::deserialize(deserializer)?;
+
+            let Shim {
+                total_len,
+                seed,
+                core,
+                buffer,
+                buffer_usage,
+            } = shim;
+            let Core { v1, v2, v3, v4 } = core;
+
+            Ok(XxHash64 {
+                seed,
+                accumulators: Accumulators([v1, v2, v3, v4]),
+                buffer: Buffer {
+                    offset: buffer_usage,
+                    data: AlignedData(buffer),
+                },
+                length: total_len,
+            })
+        }
+    }
+
+    impl Serialize for XxHash64 {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let XxHash64 {
+                seed,
+                ref accumulators,
+                ref buffer,
+                length,
+            } = *self;
+            let [v1, v2, v3, v4] = accumulators.0;
+            let Buffer { offset, ref data } = *buffer;
+
+            let shim = Shim {
+                total_len: length,
+                seed,
+                core: Core { v1, v2, v3, v4 },
+                buffer: data.0,
+                buffer_usage: offset,
+            };
+
+            shim.serialize(serializer)
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Shim {
+        total_len: u64,
+        seed: u64,
+        core: Core,
+        buffer: [u8; 32],
+        buffer_usage: usize,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Core {
+        v1: u64,
+        v2: u64,
+        v3: u64,
+        v4: u64,
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+
+        type Result<T = (), E = serde_json::Error> = core::result::Result<T, E>;
+
+        #[test]
+        fn test_serialization_cycle() -> Result {
+            let mut hasher = XxHash64::with_seed(0);
+            hasher.write(b"Hello, world!\0");
+            hasher.finish();
+
+            let serialized = serde_json::to_string(&hasher)?;
+            let unserialized: XxHash64 = serde_json::from_str(&serialized)?;
+            assert_eq!(hasher, unserialized);
+            Ok(())
+        }
+
+        #[test]
+        fn test_serialization_stability() -> Result {
+            let mut hasher = XxHash64::with_seed(0);
+            hasher.write(b"Hello, world!\0");
+            hasher.finish();
+
+            let serialized = r#"{
+                    "total_len": 14,
+                    "seed": 0,
+                    "core": {
+                      "v1": 6983438078262162902,
+                      "v2": 14029467366897019727,
+                      "v3": 0,
+                      "v4": 7046029288634856825
+                    },
+                    "buffer": [
+                      72,  101, 108, 108, 111, 44, 32, 119,
+                      111, 114, 108, 100, 33,  0,  0,  0,
+                      0,   0,   0,   0,   0,   0,  0,  0,
+                      0,   0,   0,   0,   0,   0,  0,  0
+                    ],
+                    "buffer_usage": 14
+                }"#;
+
+            let unserialized: XxHash64 = serde_json::from_str(serialized).unwrap();
+            assert_eq!(hasher, unserialized);
+            Ok(())
+        }
     }
 }
