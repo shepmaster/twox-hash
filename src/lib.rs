@@ -124,12 +124,11 @@ impl Accumulators {
     fn write(&mut self, lanes: [u64; 4]) {
         let [acc1, acc2, acc3, acc4] = &mut self.0;
         let [lane1, lane2, lane3, lane4] = lanes;
-        // todo: little-endian transform
 
-        *acc1 = round(*acc1, lane1);
-        *acc2 = round(*acc2, lane2);
-        *acc3 = round(*acc3, lane3);
-        *acc4 = round(*acc4, lane4);
+        *acc1 = round(*acc1, lane1.to_le());
+        *acc2 = round(*acc2, lane2.to_le());
+        *acc3 = round(*acc3, lane3.to_le());
+        *acc4 = round(*acc4, lane4.to_le());
     }
 
     fn write_many<'d>(&mut self, mut data: &'d [u8]) -> &'d [u8] {
@@ -242,8 +241,7 @@ impl XxHash64 {
 
         // Step 5. Consume remaining input
         while let Some((chunk, rest)) = remaining.split_first_chunk::<8>() {
-            let lane = u64::from_ne_bytes(*chunk);
-            // todo: little-endian
+            let lane = u64::from_ne_bytes(*chunk).to_le();
 
             acc ^= round(0, lane);
             acc = acc.rotate_left(27).wrapping_mul(PRIME64_1);
@@ -252,8 +250,7 @@ impl XxHash64 {
         }
 
         while let Some((chunk, rest)) = remaining.split_first_chunk::<4>() {
-            let lane = u32::from_ne_bytes(*chunk).into_u64();
-            // todo: little-endian
+            let lane = u32::from_ne_bytes(*chunk).to_le().into_u64();
 
             acc ^= lane.wrapping_mul(PRIME64_1);
             acc = acc.rotate_left(23).wrapping_mul(PRIME64_2);
