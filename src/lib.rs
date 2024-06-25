@@ -14,7 +14,7 @@ const PRIME64_4: u64 = 0x85EBCA77C2B2AE63;
 const PRIME64_5: u64 = 0x27D4EB2F165667C5;
 
 #[derive(PartialEq)]
-#[repr(align(32))]
+#[repr(align(8))]
 struct AlignedData([u8; Self::LEN]);
 
 impl AlignedData {
@@ -203,12 +203,13 @@ impl XxHash64 {
     /// Hash all data at once. If you can use this function, you may
     /// see noticable speed gains for certain types of input.
     #[must_use]
+    #[inline]
     pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
         let len = data.len();
 
-        // Notably, since we know that there's no more data coming, we
-        // don't need to construct the intermediate buffers or copy
-        // data to / from them.
+        // Since we know that there's no more data coming, we don't
+        // need to construct the intermediate buffers or copy data to
+        // or from the buffers.
 
         let mut accumulators = Accumulators::new(seed);
 
@@ -457,6 +458,9 @@ mod std_impl {
         }
     }
 }
+
+#[cfg(feature = "std")]
+pub use std_impl::RandomXxHashBuilder64;
 
 #[cfg(feature = "serialize")]
 mod serialize_impl {
