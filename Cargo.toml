@@ -11,11 +11,13 @@ members = [
 ]
 
 [features]
-default = ["std"]
+default = ["std", "xxhash64"]
 
 std = ["dep:rand"]
 
 serialize = ["dep:serde"]
+
+xxhash64 = []
 
 [dependencies]
 rand = { version = "0.8.0", optional = true, default-features = false, features = ["std", "std_rng"] }
