@@ -15,6 +15,11 @@ proptest! {
     }
 
     #[test]
+    fn oneshot_same_as_many_chunks(seed: u64, (data, chunks) in data_and_chunks()) {
+        oneshot_same_as_many_chunks_impl(seed, &data, &chunks)?;
+    }
+
+    #[test]
     fn oneshot(seed: u64, data: Vec<u8>) {
         oneshot_impl(seed, &data)?;
     }
@@ -47,6 +52,20 @@ fn oneshot_same_as_one_chunk_impl(seed: u64, data: &[u8]) -> TestCaseResult {
     Ok(())
 }
 
+fn oneshot_same_as_many_chunks_impl(seed: u64, data: &[u8], chunks: &[Vec<u8>]) -> TestCaseResult {
+    let oneshot = xx_renu::XxHash64::oneshot(seed, data);
+    let many_chunks = {
+        let mut hasher = xx_renu::XxHash64::with_seed(seed);
+        for chunk in chunks {
+            hasher.write(chunk);
+        }
+        hasher.finish()
+    };
+
+    prop_assert_eq!(oneshot, many_chunks);
+    Ok(())
+}
+
 fn oneshot_impl(seed: u64, data: &[u8]) -> TestCaseResult {
     let native = xx_hash_sys::Stream::oneshot(seed, data);
     let rust = xx_renu::XxHash64::oneshot(seed, data);
@@ -76,5 +95,12 @@ fn vec_and_index() -> impl Strategy<Value = (Vec<u8>, usize)> {
     prop::collection::vec(num::u8::ANY, 0..=32 * 1024).prop_flat_map(|vec| {
         let len = vec.len();
         (Just(vec), 0..len)
+    })
+}
+
+fn data_and_chunks() -> impl Strategy<Value = (Vec<u8>, Vec<Vec<u8>>)> {
+    prop::collection::vec(prop::collection::vec(num::u8::ANY, 90..=100), 90..=100).prop_map(|vs| {
+        let data = vs.iter().flatten().copied().collect();
+        (data, vs)
     })
 }

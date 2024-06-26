@@ -14,27 +14,27 @@ const PRIME64_4: u64 = 0x85EBCA77C2B2AE63;
 const PRIME64_5: u64 = 0x27D4EB2F165667C5;
 
 #[derive(PartialEq)]
-#[repr(align(8))]
-struct AlignedData([u8; Self::LEN]);
+struct BufferData([u64; 4]);
 
-impl AlignedData {
-    const LEN: usize = 32;
-
+impl BufferData {
     const fn new() -> Self {
-        Self([0; Self::LEN])
+        Self([0; 4])
     }
 
-    const fn len(&self) -> usize {
-        Self::LEN
+    fn bytes(&self) -> &[u8; 32] {
+        const { assert!(mem::align_of::<u8>() <= mem::align_of::<u64>()) }
+        // SAFETY[bytes]: The alignment of `u64` is at least that of
+        // `u8` and all the values are initialized.
+        unsafe { &*self.0.as_ptr().cast() }
     }
 
-    const fn as_u64s(&self) -> &[u64; 4] {
-        // SAFETY: We are guaranteed to be aligned
-        unsafe { mem::transmute(&self.0) }
+    fn bytes_mut(&mut self) -> &mut [u8; 32] {
+        // SAFETY: See SAFETY[bytes]
+        unsafe { &mut *self.0.as_mut_ptr().cast() }
     }
 }
 
-impl fmt::Debug for AlignedData {
+impl fmt::Debug for BufferData {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.0.iter()).finish()
     }
@@ -43,14 +43,14 @@ impl fmt::Debug for AlignedData {
 #[derive(Debug, PartialEq)]
 struct Buffer {
     offset: usize,
-    data: AlignedData,
+    data: BufferData,
 }
 
 impl Buffer {
     const fn new() -> Self {
         Self {
             offset: 0,
-            data: AlignedData::new(),
+            data: BufferData::new(),
         }
     }
 
@@ -64,13 +64,14 @@ impl Buffer {
         // have much benefit other than reducing code size by a tiny
         // bit.
 
-        debug_assert!(self.offset <= self.data.len());
-
         if self.offset == 0 {
             return (None, data);
         };
 
-        let empty = &mut self.data.0[self.offset..];
+        let bytes = self.data.bytes_mut();
+        debug_assert!(self.offset <= bytes.len());
+
+        let empty = &mut bytes[self.offset..];
         let n_to_copy = usize::min(empty.len(), data.len());
 
         let dst = &mut empty[..n_to_copy];
@@ -80,11 +81,11 @@ impl Buffer {
         dst.copy_from_slice(src);
         self.offset += n_to_copy;
 
-        debug_assert!(self.offset <= self.data.len());
+        debug_assert!(self.offset <= bytes.len());
 
-        if self.offset == self.data.len() {
+        if self.offset == bytes.len() {
             self.offset = 0;
-            (Some(self.data.as_u64s()), rest)
+            (Some(&self.data.0), rest)
         } else {
             (None, rest)
         }
@@ -99,14 +100,15 @@ impl Buffer {
 
         let n_to_copy = data.len();
 
-        debug_assert!(n_to_copy < self.data.len());
+        let bytes = self.data.bytes_mut();
+        debug_assert!(n_to_copy < bytes.len());
 
-        self.data.0[..n_to_copy].copy_from_slice(data);
+        bytes[..n_to_copy].copy_from_slice(data);
         self.offset = data.len();
     }
 
     fn remaining(&self) -> &[u8] {
-        &self.data.0[..self.offset]
+        &self.data.bytes()[..self.offset]
     }
 }
 
@@ -203,6 +205,10 @@ impl XxHash64 {
     /// Hash all data at once. If you can use this function, you may
     /// see noticable speed gains for certain types of input.
     #[must_use]
+    // RATIONALE[inline]: In one case [1], this `inline` helps unlock a
+    // speedup from ~900µs to ~200µs.
+    //
+    // [1]: https://github.com/apache/datafusion-comet/pull/575
     #[inline]
     pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
         let len = data.len();
@@ -230,6 +236,7 @@ impl XxHash64 {
     }
 
     #[must_use]
+    // RATIONALE: See RATIONALE[inline]
     #[inline(always)]
     fn finish_with(seed: u64, len: u64, accumulators: &Accumulators, mut remaining: &[u8]) -> u64 {
         // Step 3. Accumulator convergence
