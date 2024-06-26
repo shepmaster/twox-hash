@@ -22,7 +22,7 @@ impl BufferData {
     }
 
     fn bytes(&self) -> &[u8; 32] {
-        const { assert!(mem::align_of::<u8>() <= mem::align_of::<u64>()) }
+        const _: () = assert!(mem::align_of::<u8>() <= mem::align_of::<u64>());
         // SAFETY[bytes]: The alignment of `u64` is at least that of
         // `u8` and all the values are initialized.
         unsafe { &*self.0.as_ptr().cast() }
