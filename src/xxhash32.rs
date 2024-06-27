@@ -114,6 +114,7 @@ impl Buffer {
     }
 }
 
+#[derive(PartialEq)]
 struct Accumulators(Lanes);
 
 impl Accumulators {
@@ -161,6 +162,19 @@ impl Accumulators {
     }
 }
 
+impl fmt::Debug for Accumulators {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let [acc1, acc2, acc3, acc4] = self.0;
+        f.debug_struct("Accumulators")
+            .field("acc1", &acc1)
+            .field("acc2", &acc2)
+            .field("acc3", &acc3)
+            .field("acc4", &acc4)
+            .finish()
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct XxHash32 {
     seed: u32,
     accumulators: Accumulators,
@@ -168,7 +182,35 @@ pub struct XxHash32 {
     length: u64,
 }
 
+impl Default for XxHash32 {
+    fn default() -> Self {
+        Self::with_seed(0)
+    }
+}
+
 impl XxHash32 {
+    /// Hash all data at once. If you can use this function, you may
+    /// see noticable speed gains for certain types of input.
+    #[must_use]
+    // RATIONALE[inline]: Keeping parallel to the XxHash64
+    // implementation, even though the performance gains for XxHash32
+    // haven't been tested.
+    #[inline]
+    pub fn oneshot(seed: u32, data: &[u8]) -> u32 {
+        let len = data.len();
+
+        // Since we know that there's no more data coming, we don't
+        // need to construct the intermediate buffers or copy data to
+        // or from the buffers.
+
+        let mut accumulators = Accumulators::new(seed);
+
+        let data = accumulators.write_many(data);
+
+        Self::finish_with(seed, len.into_u64(), &accumulators, data)
+    }
+
+    #[must_use]
     pub const fn with_seed(seed: u32) -> Self {
         // Step 1. Initialize internal accumulators
         Self {
@@ -182,7 +224,7 @@ impl XxHash32 {
     #[must_use]
     // RATIONALE: See RATIONALE[inline]
     #[inline(always)]
-    fn finish_32(&self) -> u32 {
+    pub fn finish_32(&self) -> u32 {
         Self::finish_with(
             self.seed,
             self.length,
@@ -257,6 +299,7 @@ impl Hasher for XxHash32 {
         self.length += len.into_u64();
     }
 
+    #[must_use]
     fn finish(&self) -> u64 {
         XxHash32::finish_32(self).into()
     }
@@ -282,11 +325,11 @@ mod test {
         for byte in bytes.chunks(1) {
             byte_by_byte.write(byte);
         }
-        let byte_by_byte = byte_by_byte.finish_32();
+        let byte_by_byte = byte_by_byte.finish();
 
         let mut one_chunk = XxHash32::with_seed(0);
         one_chunk.write(&bytes);
-        let one_chunk = one_chunk.finish_32();
+        let one_chunk = one_chunk.finish();
 
         assert_eq!(byte_by_byte, one_chunk);
     }
@@ -295,21 +338,21 @@ mod test {
     fn hash_of_nothing_matches_c_implementation() {
         let mut hasher = XxHash32::with_seed(0);
         hasher.write(&[]);
-        assert_eq!(hasher.finish_32(), 0x02cc_5d05);
+        assert_eq!(hasher.finish(), 0x02cc_5d05);
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation() {
         let mut hasher = XxHash32::with_seed(0);
         hasher.write(&[42]);
-        assert_eq!(hasher.finish_32(), 0xe0fe_705f);
+        assert_eq!(hasher.finish(), 0xe0fe_705f);
     }
 
     #[test]
     fn hash_of_multiple_bytes_matches_c_implementation() {
         let mut hasher = XxHash32::with_seed(0);
         hasher.write(b"Hello, world!\0");
-        assert_eq!(hasher.finish_32(), 0x9e5e_7e93);
+        assert_eq!(hasher.finish(), 0x9e5e_7e93);
     }
 
     #[test]
@@ -317,14 +360,14 @@ mod test {
         let bytes: [u8; 100] = array::from_fn(|i| i as u8);
         let mut hasher = XxHash32::with_seed(0);
         hasher.write(&bytes);
-        assert_eq!(hasher.finish_32(), 0x7f89_ba44);
+        assert_eq!(hasher.finish(), 0x7f89_ba44);
     }
 
     #[test]
     fn hash_with_different_seed_matches_c_implementation() {
         let mut hasher = XxHash32::with_seed(0x42c9_1977);
         hasher.write(&[]);
-        assert_eq!(hasher.finish_32(), 0xd6bf_8459);
+        assert_eq!(hasher.finish(), 0xd6bf_8459);
     }
 
     #[test]
@@ -332,6 +375,6 @@ mod test {
         let bytes: [u8; 100] = array::from_fn(|i| i as u8);
         let mut hasher = XxHash32::with_seed(0x42c9_1977);
         hasher.write(&bytes);
-        assert_eq!(hasher.finish_32(), 0x6d2f_6c17);
+        assert_eq!(hasher.finish(), 0x6d2f_6c17);
     }
 }

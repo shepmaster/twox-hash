@@ -23,7 +23,7 @@ impl BufferData {
         Self([0; 4])
     }
 
-    fn bytes(&self) -> &Bytes {
+    const fn bytes(&self) -> &Bytes {
         const _: () = assert!(mem::align_of::<u8>() <= mem::align_of::<Lane>());
         // SAFETY[bytes]: The alignment of `u64` is at least that of
         // `u8` and all the values are initialized.
@@ -138,7 +138,7 @@ impl Accumulators {
     }
 
     fn write_many<'d>(&mut self, mut data: &'d [u8]) -> &'d [u8] {
-        while let Some((chunk, rest)) = data.split_first_chunk::<32>() {
+        while let Some((chunk, rest)) = data.split_first_chunk::<BYTES_IN_LANE>() {
             // SAFETY: We have the right number of bytes and are
             // handling the unaligned case.
             let lanes = unsafe { chunk.as_ptr().cast::<Lanes>().read_unaligned() };
@@ -252,7 +252,7 @@ impl XxHash64 {
         acc += len;
 
         // Step 5. Consume remaining input
-        while let Some((chunk, rest)) = remaining.split_first_chunk::<8>() {
+        while let Some((chunk, rest)) = remaining.split_first_chunk::<{ mem::size_of::<u64>() }>() {
             let lane = u64::from_ne_bytes(*chunk).to_le();
 
             acc ^= round(0, lane);
@@ -261,7 +261,7 @@ impl XxHash64 {
             remaining = rest;
         }
 
-        while let Some((chunk, rest)) = remaining.split_first_chunk::<4>() {
+        while let Some((chunk, rest)) = remaining.split_first_chunk::<{ mem::size_of::<u32>() }>() {
             let lane = u32::from_ne_bytes(*chunk).to_le().into_u64();
 
             acc ^= lane.wrapping_mul(PRIME64_1);
@@ -271,7 +271,7 @@ impl XxHash64 {
             remaining = rest;
         }
 
-        while let Some((chunk, rest)) = remaining.split_first_chunk::<1>() {
+        while let Some((chunk, rest)) = remaining.split_first_chunk::<{ mem::size_of::<u8>() }>() {
             let lane = chunk[0].into_u64();
 
             acc ^= lane.wrapping_mul(PRIME64_5);
