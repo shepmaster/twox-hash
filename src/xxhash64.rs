@@ -127,6 +127,11 @@ impl Accumulators {
         ])
     }
 
+    // RATIONALE[inline2]: Inspecting the disassembly showed that
+    // these helper functions were not being inlined. Avoiding a few
+    // function calls wins us the tiniest performance increase, just
+    // enough so that we are neck-and-neck with the C code.
+    #[inline]
     fn write(&mut self, lanes: Lanes) {
         let [acc1, acc2, acc3, acc4] = &mut self.0;
         let [lane1, lane2, lane3, lane4] = lanes;
@@ -137,6 +142,8 @@ impl Accumulators {
         *acc4 = round(*acc4, lane4.to_le());
     }
 
+    // RATIONALE: See RATIONALE[inline2]
+    #[inline]
     fn write_many<'d>(&mut self, mut data: &'d [u8]) -> &'d [u8] {
         while let Some((chunk, rest)) = data.split_first_chunk::<BYTES_IN_LANE>() {
             // SAFETY: We have the right number of bytes and are
@@ -148,6 +155,8 @@ impl Accumulators {
         data
     }
 
+    // RATIONALE: See RATIONALE[inline2]
+    #[inline]
     const fn finish(&self) -> u64 {
         let [acc1, acc2, acc3, acc4] = self.0;
 
@@ -170,6 +179,8 @@ impl Accumulators {
         acc
     }
 
+    // RATIONALE: See RATIONALE[inline2]
+    #[inline]
     const fn merge_accumulator(mut acc: u64, acc_n: u64) -> u64 {
         acc ^= round(0, acc_n);
         acc = acc.wrapping_mul(PRIME64_1);
@@ -320,6 +331,8 @@ impl Hasher for XxHash64 {
     }
 }
 
+// RATIONALE: See RATIONALE[inline2]
+#[inline]
 const fn round(mut acc: u64, lane: u64) -> u64 {
     acc = acc.wrapping_add(lane.wrapping_mul(PRIME64_2));
     acc = acc.rotate_left(31);
