@@ -1,5 +1,7 @@
 use core::{fmt, hash::Hasher, mem};
 
+use crate::IntoU64;
+
 // Keeping these constants in this form to match the C code.
 const PRIME64_1: u64 = 0x9E3779B185EBCA87;
 const PRIME64_2: u64 = 0xC2B2AE3D27D4EB4F;
@@ -7,22 +9,28 @@ const PRIME64_3: u64 = 0x165667B19E3779F9;
 const PRIME64_4: u64 = 0x85EBCA77C2B2AE63;
 const PRIME64_5: u64 = 0x27D4EB2F165667C5;
 
+type Lane = u64;
+type Lanes = [Lane; 4];
+type Bytes = [u8; 32];
+
+const BYTES_IN_LANE: usize = mem::size_of::<Bytes>();
+
 #[derive(PartialEq)]
-struct BufferData([u64; 4]);
+struct BufferData(Lanes);
 
 impl BufferData {
     const fn new() -> Self {
         Self([0; 4])
     }
 
-    fn bytes(&self) -> &[u8; 32] {
-        const _: () = assert!(mem::align_of::<u8>() <= mem::align_of::<u64>());
+    fn bytes(&self) -> &Bytes {
+        const _: () = assert!(mem::align_of::<u8>() <= mem::align_of::<Lane>());
         // SAFETY[bytes]: The alignment of `u64` is at least that of
         // `u8` and all the values are initialized.
         unsafe { &*self.0.as_ptr().cast() }
     }
 
-    fn bytes_mut(&mut self) -> &mut [u8; 32] {
+    fn bytes_mut(&mut self) -> &mut Bytes {
         // SAFETY: See SAFETY[bytes]
         unsafe { &mut *self.0.as_mut_ptr().cast() }
     }
@@ -48,7 +56,7 @@ impl Buffer {
         }
     }
 
-    fn extend<'d>(&mut self, data: &'d [u8]) -> (Option<&[u64; 4]>, &'d [u8]) {
+    fn extend<'d>(&mut self, data: &'d [u8]) -> (Option<&Lanes>, &'d [u8]) {
         // Most of the slice methods we use here have `_unchecked` variants, but
         //
         // 1. this method is called one time per `XxHash64::write` call
@@ -107,7 +115,7 @@ impl Buffer {
 }
 
 #[derive(PartialEq)]
-struct Accumulators([u64; 4]);
+struct Accumulators(Lanes);
 
 impl Accumulators {
     const fn new(seed: u64) -> Self {
@@ -119,7 +127,7 @@ impl Accumulators {
         ])
     }
 
-    fn write(&mut self, lanes: [u64; 4]) {
+    fn write(&mut self, lanes: Lanes) {
         let [acc1, acc2, acc3, acc4] = &mut self.0;
         let [lane1, lane2, lane3, lane4] = lanes;
 
@@ -133,7 +141,7 @@ impl Accumulators {
         while let Some((chunk, rest)) = data.split_first_chunk::<32>() {
             // SAFETY: We have the right number of bytes and are
             // handling the unaligned case.
-            let lanes = unsafe { chunk.as_ptr().cast::<[u64; 4]>().read_unaligned() };
+            let lanes = unsafe { chunk.as_ptr().cast::<Lanes>().read_unaligned() };
             self.write(lanes);
             data = rest;
         }
@@ -234,7 +242,7 @@ impl XxHash64 {
     #[inline(always)]
     fn finish_with(seed: u64, len: u64, accumulators: &Accumulators, mut remaining: &[u8]) -> u64 {
         // Step 3. Accumulator convergence
-        let mut acc = if len < 32 {
+        let mut acc = if len < BYTES_IN_LANE.into_u64() {
             seed.wrapping_add(PRIME64_5)
         } else {
             accumulators.finish()
@@ -316,29 +324,6 @@ const fn round(mut acc: u64, lane: u64) -> u64 {
     acc = acc.wrapping_add(lane.wrapping_mul(PRIME64_2));
     acc = acc.rotate_left(31);
     acc.wrapping_mul(PRIME64_1)
-}
-
-trait IntoU64 {
-    fn into_u64(self) -> u64;
-}
-
-impl IntoU64 for u8 {
-    fn into_u64(self) -> u64 {
-        self.into()
-    }
-}
-
-impl IntoU64 for u32 {
-    fn into_u64(self) -> u64 {
-        self.into()
-    }
-}
-
-#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
-impl IntoU64 for usize {
-    fn into_u64(self) -> u64 {
-        self as u64
-    }
 }
 
 #[cfg(test)]
