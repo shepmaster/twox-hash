@@ -413,21 +413,21 @@ mod std_impl {
 
     use super::*;
 
-    pub struct RandomXxHashBuilder64(u64);
+    pub struct RandomXxHash64Builder(u64);
 
-    impl Default for RandomXxHashBuilder64 {
+    impl Default for RandomXxHash64Builder {
         fn default() -> Self {
             Self::new()
         }
     }
 
-    impl RandomXxHashBuilder64 {
+    impl RandomXxHash64Builder {
         fn new() -> Self {
             Self(rand::random())
         }
     }
 
-    impl BuildHasher for RandomXxHashBuilder64 {
+    impl BuildHasher for RandomXxHash64Builder {
         type Hasher = XxHash64;
 
         fn build_hasher(&self) -> Self::Hasher {
@@ -451,7 +451,7 @@ mod std_impl {
 
         #[test]
         fn can_be_used_in_a_hashmap_with_a_random_seed() {
-            let mut hash: HashMap<_, _, RandomXxHashBuilder64> = Default::default();
+            let mut hash: HashMap<_, _, RandomXxHash64Builder> = Default::default();
             hash.insert(42, "the answer");
             assert_eq!(hash.get(&42), Some(&"the answer"));
         }
@@ -459,7 +459,7 @@ mod std_impl {
 }
 
 #[cfg(feature = "std")]
-pub use std_impl::RandomXxHashBuilder64;
+pub use std_impl::RandomXxHash64Builder;
 
 #[cfg(feature = "serialize")]
 mod serialize_impl {
@@ -566,7 +566,7 @@ mod serialize_impl {
             hasher.write(b"Hello, world!\0");
             hasher.finish();
 
-            let serialized = r#"{
+            let expected_serialized = r#"{
                     "total_len": 14,
                     "seed": 0,
                     "core": {
@@ -584,8 +584,13 @@ mod serialize_impl {
                     "buffer_usage": 14
                 }"#;
 
-            let unserialized: XxHash64 = serde_json::from_str(serialized).unwrap();
+            let unserialized: XxHash64 = serde_json::from_str(expected_serialized)?;
             assert_eq!(hasher, unserialized);
+
+            let expected_value: serde_json::Value = serde_json::from_str(expected_serialized)?;
+            let actual_value = serde_json::to_value(&hasher)?;
+            assert_eq!(expected_value, actual_value);
+
             Ok(())
         }
     }
