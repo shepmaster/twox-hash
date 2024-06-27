@@ -1,10 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, RngCore, SeedableRng};
-use std::hash::Hasher;
-use std::{hint::black_box, iter};
-use twox_hash::XxHash64 as Old;
-use xx_hash_sys::Stream;
-use xx_renu::XxHash64;
+use std::{hash::Hasher, hint::black_box, iter};
+
+use xx_hash_sys as c;
+use xx_renu as rust;
 
 const TINY_DATA_SIZE: usize = 32;
 const BIG_DATA_SIZE: usize = 100 * 1024 * 1024;
@@ -17,19 +16,19 @@ fn tiny_data(c: &mut Criterion) {
         let data = &data[..size];
         g.throughput(Throughput::Bytes(data.len() as _));
 
-        let id = format!("xxHash/oneshot/{size}");
+        let id = format!("c/oneshot/{size}");
         g.bench_function(id, |b| {
             b.iter(|| {
-                let hash = Stream::oneshot(seed, data);
+                let hash = c::XxHash64::oneshot(seed, data);
                 black_box(hash);
             })
         });
 
-        let id = format!("xxHash/streaming/{size}");
+        let id = format!("c/streaming/{size}");
         g.bench_function(id, |b| {
             b.iter(|| {
                 let hash = {
-                    let mut hasher = Stream::with_seed(seed);
+                    let mut hasher = c::XxHash64::with_seed(seed);
                     hasher.write(data);
                     hasher.finish()
                 };
@@ -37,19 +36,19 @@ fn tiny_data(c: &mut Criterion) {
             })
         });
 
-        let id = format!("renu/oneshot/{size}");
+        let id = format!("rust/oneshot/{size}");
         g.bench_function(id, |b| {
             b.iter(|| {
-                let hash = XxHash64::oneshot(seed, data);
+                let hash = rust::XxHash64::oneshot(seed, data);
                 black_box(hash);
             })
         });
 
-        let id = format!("renu/streaming/{size}");
+        let id = format!("rust/streaming/{size}");
         g.bench_function(id, |b| {
             b.iter(|| {
                 let hash = {
-                    let mut hasher = XxHash64::with_seed(seed);
+                    let mut hasher = rust::XxHash64::with_seed(seed);
                     hasher.write(data);
                     hasher.finish()
                 };
@@ -69,18 +68,18 @@ fn oneshot(c: &mut Criterion) {
         let data = &data[..size];
         g.throughput(Throughput::Bytes(data.len() as _));
 
-        let id = format!("xxHash/{size}");
+        let id = format!("c/{size}");
         g.bench_function(id, |b| {
             b.iter(|| {
-                let hash = Stream::oneshot(seed, data);
+                let hash = c::XxHash64::oneshot(seed, data);
                 black_box(hash);
             })
         });
 
-        let id = format!("renu/{size}");
+        let id = format!("rust/{size}");
         g.bench_function(id, |b| {
             b.iter(|| {
-                let hash = XxHash64::oneshot(seed, data);
+                let hash = rust::XxHash64::oneshot(seed, data);
                 black_box(hash);
             })
         });
@@ -97,30 +96,20 @@ fn streaming_one_chunk(c: &mut Criterion) {
         let data = &data[..size];
         g.throughput(Throughput::Bytes(data.len() as _));
 
-        let id = format!("xxHash/{size}");
+        let id = format!("c/{size}");
         g.bench_function(id, |b| {
             b.iter(|| {
-                let mut hasher = Stream::with_seed(seed);
+                let mut hasher = c::XxHash64::with_seed(seed);
                 hasher.write(data);
                 let hash = hasher.finish();
                 black_box(hash);
             })
         });
 
-        let id = format!("renu/{size}");
+        let id = format!("rust/{size}");
         g.bench_function(id, |b| {
             b.iter(|| {
-                let mut hasher = XxHash64::with_seed(seed);
-                hasher.write(data);
-                let hash = hasher.finish();
-                black_box(hash);
-            })
-        });
-
-        let id = format!("twox-hash/{size}");
-        g.bench_function(id, |b| {
-            b.iter(|| {
-                let mut hasher = Old::with_seed(seed);
+                let mut hasher = rust::XxHash64::with_seed(seed);
                 hasher.write(data);
                 let hash = hasher.finish();
                 black_box(hash);
