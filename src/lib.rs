@@ -4,11 +4,28 @@
 //!
 //! ## Hashing arbitrary data
 //!
+//! ### When all the data is available at once
+//!
 //! ```rust
 //! use xx_renu::XxHash64;
 //!
 //! let seed = 1234;
 //! let hash = XxHash64::oneshot(seed, b"some bytes");
+//! assert_eq!(0xeab5_5659_a496_d78b, hash);
+//! ```
+//!
+//! ### When the data is streaming
+//!
+//! ```rust
+//! use std::hash::Hasher;
+//! use xx_renu::XxHash64;
+//!
+//! let seed = 1234;
+//! let mut hasher = XxHash64::with_seed(seed);
+//! hasher.write(b"some");
+//! hasher.write(b" ");
+//! hasher.write(b"bytes");
+//! let hash = hasher.finish();
 //! assert_eq!(0xeab5_5659_a496_d78b, hash);
 //! ```
 //!
