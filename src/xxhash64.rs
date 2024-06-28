@@ -490,7 +490,7 @@ mod std_impl {
 }
 
 #[cfg(feature = "std")]
-pub use std_impl::RandomXxHash64Builder;
+pub use std_impl::*;
 
 #[cfg(feature = "serialize")]
 mod serialize_impl {
@@ -598,22 +598,22 @@ mod serialize_impl {
             hasher.finish();
 
             let expected_serialized = r#"{
-                    "total_len": 14,
-                    "seed": 0,
-                    "core": {
-                      "v1": 6983438078262162902,
-                      "v2": 14029467366897019727,
-                      "v3": 0,
-                      "v4": 7046029288634856825
-                    },
-                    "buffer": [
-                      72,  101, 108, 108, 111, 44, 32, 119,
-                      111, 114, 108, 100, 33,  0,  0,  0,
-                      0,   0,   0,   0,   0,   0,  0,  0,
-                      0,   0,   0,   0,   0,   0,  0,  0
-                    ],
-                    "buffer_usage": 14
-                }"#;
+                "total_len": 14,
+                "seed": 0,
+                "core": {
+                  "v1": 6983438078262162902,
+                  "v2": 14029467366897019727,
+                  "v3": 0,
+                  "v4": 7046029288634856825
+                },
+                "buffer": [
+                  72,  101, 108, 108, 111, 44, 32, 119,
+                  111, 114, 108, 100, 33,  0,  0,  0,
+                  0,   0,   0,   0,   0,   0,  0,  0,
+                  0,   0,   0,   0,   0,   0,  0,  0
+                ],
+                "buffer_usage": 14
+            }"#;
 
             let unserialized: XxHash64 = serde_json::from_str(expected_serialized)?;
             assert_eq!(hasher, unserialized);

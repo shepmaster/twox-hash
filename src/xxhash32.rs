@@ -408,4 +408,214 @@ mod test {
             .all(|h| h == expected);
         assert!(the_same);
     }
+
+    // This test validates wraparound/truncation behavior for very
+    // large inputs of a 32-bit hash, but runs very slowly in the
+    // normal "cargo test" build config since it hashes 4.3GB of
+    // data. It runs reasonably quick under "cargo test --release".
+    #[ignore]
+    #[test]
+    fn length_overflows_32bit() {
+        // Hash 4.3 billion (4_300_000_000) bytes, which overflows a u32.
+        let bytes200: [u8; 200] = array::from_fn(|i| i as _);
+
+        let mut hasher = XxHash32::with_seed(0);
+        for _ in 0..(4_300_000_000 / bytes200.len()) {
+            hasher.write(&bytes200);
+        }
+
+        // assert_eq!(hasher.total_len_64(), 0x0000_0001_004c_cb00);
+        // assert_eq!(hasher.total_len(), 0x004c_cb00);
+
+        // compared against the C implementation
+        assert_eq!(hasher.finish(), 0x1522_4ca7);
+    }
+}
+
+#[cfg(feature = "std")]
+mod std_impl {
+    use core::hash::BuildHasher;
+
+    use super::*;
+
+    pub struct RandomXxHash32Builder(u32);
+
+    impl Default for RandomXxHash32Builder {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl RandomXxHash32Builder {
+        fn new() -> Self {
+            Self(rand::random())
+        }
+    }
+
+    impl BuildHasher for RandomXxHash32Builder {
+        type Hasher = XxHash32;
+
+        fn build_hasher(&self) -> Self::Hasher {
+            XxHash32::with_seed(self.0)
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use core::hash::BuildHasherDefault;
+        use std::collections::HashMap;
+
+        use super::*;
+
+        #[test]
+        fn can_be_used_in_a_hashmap_with_a_default_seed() {
+            let mut hash: HashMap<_, _, BuildHasherDefault<XxHash32>> = Default::default();
+            hash.insert(42, "the answer");
+            assert_eq!(hash.get(&42), Some(&"the answer"));
+        }
+
+        #[test]
+        fn can_be_used_in_a_hashmap_with_a_random_seed() {
+            let mut hash: HashMap<_, _, RandomXxHash32Builder> = Default::default();
+            hash.insert(42, "the answer");
+            assert_eq!(hash.get(&42), Some(&"the answer"));
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+pub use std_impl::*;
+
+
+#[cfg(feature = "serialize")]
+mod serialize_impl {
+    use serde::{Deserialize, Serialize};
+
+    use super::*;
+
+    impl<'de> Deserialize<'de> for XxHash32 {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let shim = Deserialize::deserialize(deserializer)?;
+
+            let Shim {
+                total_len,
+                seed,
+                core,
+                buffer,
+                buffer_usage,
+            } = shim;
+            let Core { v1, v2, v3, v4 } = core;
+
+            let mut buffer_data = BufferData::new();
+            buffer_data.bytes_mut().copy_from_slice(&buffer);
+
+            Ok(XxHash32 {
+                seed,
+                accumulators: Accumulators([v1, v2, v3, v4]),
+                buffer: Buffer {
+                    offset: buffer_usage,
+                    data: buffer_data,
+                },
+                length: total_len,
+            })
+        }
+    }
+
+    impl Serialize for XxHash32 {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let XxHash32 {
+                seed,
+                ref accumulators,
+                ref buffer,
+                length,
+            } = *self;
+            let [v1, v2, v3, v4] = accumulators.0;
+            let Buffer { offset, ref data } = *buffer;
+            let buffer = *data.bytes();
+
+            let shim = Shim {
+                total_len: length,
+                seed,
+                core: Core { v1, v2, v3, v4 },
+                buffer,
+                buffer_usage: offset,
+            };
+
+            shim.serialize(serializer)
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Shim {
+        total_len: u64,
+        seed: u32,
+        core: Core,
+        buffer: [u8; 16],
+        buffer_usage: usize,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Core {
+        v1: u32,
+        v2: u32,
+        v3: u32,
+        v4: u32,
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+
+        type Result<T = (), E = serde_json::Error> = core::result::Result<T, E>;
+
+        #[test]
+        fn test_serialization_cycle() -> Result {
+            let mut hasher = XxHash32::with_seed(0);
+            hasher.write(b"Hello, world!\0");
+            hasher.finish();
+
+            let serialized = serde_json::to_string(&hasher)?;
+            let unserialized: XxHash32 = serde_json::from_str(&serialized)?;
+            assert_eq!(hasher, unserialized);
+            Ok(())
+        }
+
+        #[test]
+        fn test_serialization_stability() -> Result {
+            let mut hasher = XxHash32::with_seed(0);
+            hasher.write(b"Hello, world!\0");
+            hasher.finish();
+
+            let expected_serialized = r#"{
+                "total_len": 14,
+                "seed": 0,
+                "core": {
+                  "v1": 606290984,
+                  "v2": 2246822519,
+                  "v3": 0,
+                  "v4": 1640531535
+                },
+                "buffer": [
+                  72,  101, 108, 108, 111, 44, 32, 119,
+                  111, 114, 108, 100, 33,  0,  0,  0
+                ],
+                "buffer_usage": 14
+            }"#;
+
+            let unserialized: XxHash32 = serde_json::from_str(expected_serialized)?;
+            assert_eq!(hasher, unserialized);
+
+            let expected_value: serde_json::Value = serde_json::from_str(expected_serialized)?;
+            let actual_value = serde_json::to_value(&hasher)?;
+            assert_eq!(expected_value, actual_value);
+
+            Ok(())
+        }
+    }
 }
