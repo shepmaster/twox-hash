@@ -277,7 +277,7 @@ impl XxHash64 {
         acc += len;
 
         // Step 5. Consume remaining input
-        while let Some((chunk, rest)) = remaining.split_first_chunk::<{ mem::size_of::<u64>() }>() {
+        while let Some((chunk, rest)) = remaining.split_first_chunk() {
             let lane = u64::from_ne_bytes(*chunk).to_le();
 
             acc ^= round(0, lane);
@@ -286,7 +286,7 @@ impl XxHash64 {
             remaining = rest;
         }
 
-        while let Some((chunk, rest)) = remaining.split_first_chunk::<{ mem::size_of::<u32>() }>() {
+        while let Some((chunk, rest)) = remaining.split_first_chunk() {
             let lane = u32::from_ne_bytes(*chunk).to_le().into_u64();
 
             acc ^= lane.wrapping_mul(PRIME64_1);
@@ -296,13 +296,11 @@ impl XxHash64 {
             remaining = rest;
         }
 
-        while let Some((chunk, rest)) = remaining.split_first_chunk::<{ mem::size_of::<u8>() }>() {
-            let lane = chunk[0].into_u64();
+        for &byte in remaining {
+            let lane = byte.into_u64();
 
             acc ^= lane.wrapping_mul(PRIME64_5);
             acc = acc.rotate_left(11).wrapping_mul(PRIME64_1);
-
-            remaining = rest;
         }
 
         // Step 6. Final mix (avalanche)

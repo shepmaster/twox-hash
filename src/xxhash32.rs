@@ -56,6 +56,8 @@ impl Buffer {
         }
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn extend<'d>(&mut self, data: &'d [u8]) -> (Option<&Lanes>, &'d [u8]) {
         // Most of the slice methods we use here have `_unchecked` variants, but
         //
@@ -93,6 +95,8 @@ impl Buffer {
         }
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn set(&mut self, data: &[u8]) {
         if data.is_empty() {
             return;
@@ -109,6 +113,8 @@ impl Buffer {
         self.offset = data.len();
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn remaining(&self) -> &[u8] {
         &self.data.bytes()[..self.offset]
     }
@@ -127,6 +133,8 @@ impl Accumulators {
         ])
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn write(&mut self, lanes: Lanes) {
         let [acc1, acc2, acc3, acc4] = &mut self.0;
         let [lane1, lane2, lane3, lane4] = lanes;
@@ -137,6 +145,8 @@ impl Accumulators {
         *acc4 = round(*acc4, lane4.to_le());
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn write_many<'d>(&mut self, mut data: &'d [u8]) -> &'d [u8] {
         while let Some((chunk, rest)) = data.split_first_chunk::<BYTES_IN_LANE>() {
             // SAFETY: We have the right number of bytes and are
@@ -148,6 +158,8 @@ impl Accumulators {
         data
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     const fn finish(&self) -> u32 {
         let [acc1, acc2, acc3, acc4] = self.0;
 
@@ -223,7 +235,7 @@ impl XxHash32 {
 
     #[must_use]
     // RATIONALE: See RATIONALE[inline]
-    #[inline(always)]
+    #[inline]
     pub fn finish_32(&self) -> u32 {
         Self::finish_with(
             self.seed,
@@ -235,7 +247,7 @@ impl XxHash32 {
 
     #[must_use]
     // RATIONALE: See RATIONALE[inline]
-    #[inline(always)]
+    #[inline]
     fn finish_with(seed: u32, len: u64, accumulators: &Accumulators, mut remaining: &[u8]) -> u32 {
         // Step 3. Accumulator convergence
         let mut acc = if len < BYTES_IN_LANE.into_u64() {
@@ -252,7 +264,7 @@ impl XxHash32 {
         acc += len as u32;
 
         // Step 5. Consume remaining input
-        while let Some((chunk, rest)) = remaining.split_first_chunk::<{ mem::size_of::<u32>() }>() {
+        while let Some((chunk, rest)) = remaining.split_first_chunk() {
             let lane = u32::from_ne_bytes(*chunk).to_le();
 
             acc = acc.wrapping_add(lane.wrapping_mul(PRIME32_3));
@@ -261,13 +273,11 @@ impl XxHash32 {
             remaining = rest;
         }
 
-        while let Some((chunk, rest)) = remaining.split_first_chunk::<{ mem::size_of::<u8>() }>() {
-            let lane = chunk[0].into_u32();
+        for &byte in remaining {
+            let lane = byte.into_u32();
 
             acc = acc.wrapping_add(lane.wrapping_mul(PRIME32_5));
             acc = acc.rotate_left(11).wrapping_mul(PRIME32_1);
-
-            remaining = rest;
         }
 
         // Step 6. Final mix (avalanche)
@@ -282,6 +292,8 @@ impl XxHash32 {
 }
 
 impl Hasher for XxHash32 {
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn write(&mut self, data: &[u8]) {
         let len = data.len();
 
@@ -299,7 +311,8 @@ impl Hasher for XxHash32 {
         self.length += len.into_u64();
     }
 
-    #[must_use]
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn finish(&self) -> u64 {
         XxHash32::finish_32(self).into()
     }
@@ -376,5 +389,21 @@ mod test {
         let mut hasher = XxHash32::with_seed(0x42c9_1977);
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x6d2f_6c17);
+    }
+
+    #[test]
+    fn hashes_with_different_offsets_are_the_same() {
+        let bytes = [0x7c; 4096];
+        let expected = XxHash32::oneshot(0, &[0x7c; 64]);
+
+        let the_same = bytes
+            .windows(64)
+            .map(|w| {
+                let mut hasher = XxHash32::with_seed(0);
+                hasher.write(w);
+                hasher.finish_32()
+            })
+            .all(|h| h == expected);
+        assert!(the_same);
     }
 }
