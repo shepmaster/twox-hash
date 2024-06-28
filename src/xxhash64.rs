@@ -422,6 +422,22 @@ mod test {
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x567e_355e_0682_e1f1);
     }
+
+    #[test]
+    fn hashes_with_different_offsets_are_the_same() {
+        let bytes = [0x7c; 4096];
+        let expected = XxHash64::oneshot(0, &[0x7c; 64]);
+
+        let the_same = bytes
+            .windows(64)
+            .map(|w| {
+                let mut hasher = XxHash64::with_seed(0);
+                hasher.write(w);
+                hasher.finish()
+            })
+            .all(|h| h == expected);
+        assert!(the_same);
+    }
 }
 
 #[cfg(feature = "std")]
