@@ -318,6 +318,8 @@ impl Hasher for XxHash32 {
     }
 }
 
+// RATIONALE: See RATIONALE[inline]
+#[inline]
 const fn round(mut acc: u32, lane: u32) -> u32 {
     acc = acc.wrapping_add(lane.wrapping_mul(PRIME32_2));
     acc = acc.rotate_left(13);
