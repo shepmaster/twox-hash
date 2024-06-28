@@ -56,6 +56,8 @@ impl Buffer {
         }
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn extend<'d>(&mut self, data: &'d [u8]) -> (Option<&Lanes>, &'d [u8]) {
         // Most of the slice methods we use here have `_unchecked` variants, but
         //
@@ -93,6 +95,8 @@ impl Buffer {
         }
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn set(&mut self, data: &[u8]) {
         if data.is_empty() {
             return;
@@ -109,6 +113,8 @@ impl Buffer {
         self.offset = data.len();
     }
 
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn remaining(&self) -> &[u8] {
         &self.data.bytes()[..self.offset]
     }
@@ -127,10 +133,7 @@ impl Accumulators {
         ])
     }
 
-    // RATIONALE[inline2]: Inspecting the disassembly showed that
-    // these helper functions were not being inlined. Avoiding a few
-    // function calls wins us the tiniest performance increase, just
-    // enough so that we are neck-and-neck with the C code.
+    // RATIONALE: See RATIONALE[inline]
     #[inline]
     fn write(&mut self, lanes: Lanes) {
         let [acc1, acc2, acc3, acc4] = &mut self.0;
@@ -142,7 +145,7 @@ impl Accumulators {
         *acc4 = round(*acc4, lane4.to_le());
     }
 
-    // RATIONALE: See RATIONALE[inline2]
+    // RATIONALE: See RATIONALE[inline]
     #[inline]
     fn write_many<'d>(&mut self, mut data: &'d [u8]) -> &'d [u8] {
         while let Some((chunk, rest)) = data.split_first_chunk::<BYTES_IN_LANE>() {
@@ -155,7 +158,7 @@ impl Accumulators {
         data
     }
 
-    // RATIONALE: See RATIONALE[inline2]
+    // RATIONALE: See RATIONALE[inline]
     #[inline]
     const fn finish(&self) -> u64 {
         let [acc1, acc2, acc3, acc4] = self.0;
@@ -179,7 +182,7 @@ impl Accumulators {
         acc
     }
 
-    // RATIONALE: See RATIONALE[inline2]
+    // RATIONALE: See RATIONALE[inline]
     #[inline]
     const fn merge_accumulator(mut acc: u64, acc_n: u64) -> u64 {
         acc ^= round(0, acc_n);
@@ -218,8 +221,19 @@ impl XxHash64 {
     /// Hash all data at once. If you can use this function, you may
     /// see noticable speed gains for certain types of input.
     #[must_use]
-    // RATIONALE[inline]: In one case [1], this `inline` helps unlock a
-    // speedup from ~900µs to ~200µs.
+    // RATIONALE[inline]:
+    //
+    // These `inline`s help unlock a speedup in one benchmark [1] from
+    // ~900µs to ~200µs.
+    //
+    // Further inspection of the disassembly showed that various
+    // helper functions were not being inlined. Avoiding these few
+    // function calls wins us the tiniest performance increase, just
+    // enough so that we are neck-and-neck with (or slightly faster
+    // than!) the C code.
+    //
+    // This results in the entire hash computation being inlined at
+    // the call site.
     //
     // [1]: https://github.com/apache/datafusion-comet/pull/575
     #[inline]
@@ -250,7 +264,7 @@ impl XxHash64 {
 
     #[must_use]
     // RATIONALE: See RATIONALE[inline]
-    #[inline(always)]
+    #[inline]
     fn finish_with(seed: u64, len: u64, accumulators: &Accumulators, mut remaining: &[u8]) -> u64 {
         // Step 3. Accumulator convergence
         let mut acc = if len < BYTES_IN_LANE.into_u64() {
@@ -303,6 +317,8 @@ impl XxHash64 {
 }
 
 impl Hasher for XxHash64 {
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn write(&mut self, data: &[u8]) {
         let len = data.len();
 
@@ -320,7 +336,8 @@ impl Hasher for XxHash64 {
         self.length += len.into_u64();
     }
 
-    #[must_use]
+    // RATIONALE: See RATIONALE[inline]
+    #[inline]
     fn finish(&self) -> u64 {
         Self::finish_with(
             self.seed,
@@ -331,7 +348,7 @@ impl Hasher for XxHash64 {
     }
 }
 
-// RATIONALE: See RATIONALE[inline2]
+// RATIONALE: See RATIONALE[inline]
 #[inline]
 const fn round(mut acc: u64, lane: u64) -> u64 {
     acc = acc.wrapping_add(lane.wrapping_mul(PRIME64_2));
