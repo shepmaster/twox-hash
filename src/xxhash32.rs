@@ -186,6 +186,12 @@ impl fmt::Debug for Accumulators {
     }
 }
 
+/// Calculates the 32-bit hash. Care should be taken when using this
+/// hash.
+///
+/// Although this struct implements `Hasher`, it only calculates a
+/// 32-bit number, leaving the upper bits as 0. This means it is
+/// unlikely to be correct to use this in places like a `HashMap`.
 #[derive(Debug, PartialEq)]
 pub struct XxHash32 {
     seed: u32,
@@ -222,6 +228,7 @@ impl XxHash32 {
         Self::finish_with(seed, len.into_u64(), &accumulators, data)
     }
 
+    /// Constructs the hasher with an initial seed.
     #[must_use]
     pub const fn with_seed(seed: u32) -> Self {
         // Step 1. Initialize internal accumulators
@@ -233,6 +240,26 @@ impl XxHash32 {
         }
     }
 
+    /// The seed this hasher was created with.
+    pub const fn seed(&self) -> u32 {
+        self.seed
+    }
+
+    /// The total number of bytes hashed.
+    pub const fn total_len(&self) -> u64 {
+        self.length
+    }
+
+    /// The total number of bytes hashed, truncated to 32 bits.
+    ///
+    /// For the full 64-bit byte count, use [`total_len`](Self::total_len).
+    pub const fn total_len_32(&self) -> u64 {
+        self.length
+    }
+
+    /// Returns the hash value for the values written so far. Unlike
+    /// [`Hasher::finish`][], this method returns the actual 32-bit
+    /// value calculated, not a 64-bit value.
     #[must_use]
     // RATIONALE: See RATIONALE[inline]
     #[inline]
@@ -424,8 +451,8 @@ mod test {
             hasher.write(&bytes200);
         }
 
-        // assert_eq!(hasher.total_len_64(), 0x0000_0001_004c_cb00);
-        // assert_eq!(hasher.total_len(), 0x004c_cb00);
+        assert_eq!(hasher.total_len(), 0x0000_0001_004c_cb00);
+        assert_eq!(hasher.total_len_32(), 0x004c_cb00);
 
         // compared against the C implementation
         assert_eq!(hasher.finish(), 0x1522_4ca7);
@@ -438,6 +465,8 @@ mod std_impl {
 
     use super::*;
 
+    /// Constructs a randomized seed and reuses it for multiple hasher
+    /// instances. See the usage warning on [`XxHash32`][].
     pub struct RandomXxHash32Builder(u32);
 
     impl Default for RandomXxHash32Builder {
@@ -485,7 +514,6 @@ mod std_impl {
 
 #[cfg(feature = "std")]
 pub use std_impl::*;
-
 
 #[cfg(feature = "serialize")]
 mod serialize_impl {

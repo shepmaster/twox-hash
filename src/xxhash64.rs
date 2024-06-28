@@ -203,6 +203,7 @@ impl fmt::Debug for Accumulators {
     }
 }
 
+/// Calculates the 64-bit hash.
 #[derive(Debug, PartialEq)]
 pub struct XxHash64 {
     seed: u64,
@@ -251,6 +252,7 @@ impl XxHash64 {
         Self::finish_with(seed, len.into_u64(), &accumulators, data)
     }
 
+    /// Constructs the hasher with an initial seed.
     #[must_use]
     pub const fn with_seed(seed: u64) -> Self {
         // Step 1. Initialize internal accumulators
@@ -260,6 +262,16 @@ impl XxHash64 {
             buffer: Buffer::new(),
             length: 0,
         }
+    }
+
+    /// The seed this hasher was created with.
+    pub const fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    /// The total number of bytes hashed.
+    pub const fn total_len(&self) -> u64 {
+        self.length
     }
 
     #[must_use]
@@ -444,6 +456,8 @@ mod std_impl {
 
     use super::*;
 
+    /// Constructs a randomized seed and reuses it for multiple hasher
+    /// instances.
     pub struct RandomXxHash64Builder(u64);
 
     impl Default for RandomXxHash64Builder {
