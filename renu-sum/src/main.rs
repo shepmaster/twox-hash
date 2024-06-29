@@ -2,6 +2,7 @@ use std::{
     env,
     fs::File,
     io::Read,
+    hash::Hasher as _,
     path::{Path, PathBuf},
     sync::mpsc::{self, SendError},
     thread,

@@ -7,7 +7,7 @@ use xx_renu as rust;
 
 mod xxhash32 {
     use proptest::{prelude::*, test_runner::TestCaseResult};
-    use std::hash::Hasher;
+    use std::hash::Hasher as _;
 
     use super::*;
 
@@ -106,7 +106,7 @@ mod xxhash32 {
 
 mod xxhash64 {
     use proptest::{prelude::*, test_runner::TestCaseResult};
-    use std::hash::Hasher;
+    use std::hash::Hasher as _;
 
     use super::*;
 

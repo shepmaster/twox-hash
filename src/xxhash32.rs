@@ -1,4 +1,6 @@
-use core::{fmt, hash::Hasher, mem};
+//! The implementation of XXH32.
+
+use core::{fmt, hash, mem};
 
 use crate::{IntoU32, IntoU64};
 
@@ -61,7 +63,7 @@ impl Buffer {
     fn extend<'d>(&mut self, data: &'d [u8]) -> (Option<&Lanes>, &'d [u8]) {
         // Most of the slice methods we use here have `_unchecked` variants, but
         //
-        // 1. this method is called one time per `XxHash64::write` call
+        // 1. this method is called one time per `Hasher::write` call
         // 2. this method early exits if we don't have anything in the buffer
         //
         // Because of this, removing the panics via `unsafe` doesn't
@@ -186,33 +188,34 @@ impl fmt::Debug for Accumulators {
     }
 }
 
-/// Calculates the 32-bit hash. Care should be taken when using this
-/// hash.
+/// Calculates the 32-bit hash.
 ///
-/// Although this struct implements `Hasher`, it only calculates a
+/// ### Caution
+///
+/// Although this struct implements [`hash::Hasher`][], it only calculates a
 /// 32-bit number, leaving the upper bits as 0. This means it is
-/// unlikely to be correct to use this in places like a `HashMap`.
+/// unlikely to be correct to use this in places like a [`HashMap`][std::collections::HashMap].
 #[derive(Debug, PartialEq)]
-pub struct XxHash32 {
+pub struct Hasher {
     seed: u32,
     accumulators: Accumulators,
     buffer: Buffer,
     length: u64,
 }
 
-impl Default for XxHash32 {
+impl Default for Hasher {
     fn default() -> Self {
         Self::with_seed(0)
     }
 }
 
-impl XxHash32 {
+impl Hasher {
     /// Hash all data at once. If you can use this function, you may
     /// see noticable speed gains for certain types of input.
     #[must_use]
-    // RATIONALE[inline]: Keeping parallel to the XxHash64
-    // implementation, even though the performance gains for XxHash32
-    // haven't been tested.
+    // RATIONALE[inline]: Keeping parallel to the 64-bit
+    // implementation, even though the performance gains for the
+    // 32-bit version haven't been tested.
     #[inline]
     pub fn oneshot(seed: u32, data: &[u8]) -> u32 {
         let len = data.len();
@@ -253,12 +256,12 @@ impl XxHash32 {
     /// The total number of bytes hashed, truncated to 32 bits.
     ///
     /// For the full 64-bit byte count, use [`total_len`](Self::total_len).
-    pub const fn total_len_32(&self) -> u64 {
-        self.length
+    pub const fn total_len_32(&self) -> u32 {
+        self.length as u32
     }
 
     /// Returns the hash value for the values written so far. Unlike
-    /// [`Hasher::finish`][], this method returns the actual 32-bit
+    /// [`hash::Hasher::finish`][], this method returns the actual 32-bit
     /// value calculated, not a 64-bit value.
     #[must_use]
     // RATIONALE: See RATIONALE[inline]
@@ -318,7 +321,7 @@ impl XxHash32 {
     }
 }
 
-impl Hasher for XxHash32 {
+impl hash::Hasher for Hasher {
     // RATIONALE: See RATIONALE[inline]
     #[inline]
     fn write(&mut self, data: &[u8]) {
@@ -341,7 +344,7 @@ impl Hasher for XxHash32 {
     // RATIONALE: See RATIONALE[inline]
     #[inline]
     fn finish(&self) -> u64 {
-        XxHash32::finish_32(self).into()
+        Hasher::finish_32(self).into()
     }
 }
 
@@ -355,7 +358,7 @@ const fn round(mut acc: u32, lane: u32) -> u32 {
 
 #[cfg(test)]
 mod test {
-    use core::array;
+    use core::{array, hash::Hasher as _};
 
     use super::*;
 
@@ -363,13 +366,13 @@ mod test {
     fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
         let bytes = [0; 32];
 
-        let mut byte_by_byte = XxHash32::with_seed(0);
+        let mut byte_by_byte = Hasher::with_seed(0);
         for byte in bytes.chunks(1) {
             byte_by_byte.write(byte);
         }
         let byte_by_byte = byte_by_byte.finish();
 
-        let mut one_chunk = XxHash32::with_seed(0);
+        let mut one_chunk = Hasher::with_seed(0);
         one_chunk.write(&bytes);
         let one_chunk = one_chunk.finish();
 
@@ -378,21 +381,21 @@ mod test {
 
     #[test]
     fn hash_of_nothing_matches_c_implementation() {
-        let mut hasher = XxHash32::with_seed(0);
+        let mut hasher = Hasher::with_seed(0);
         hasher.write(&[]);
         assert_eq!(hasher.finish(), 0x02cc_5d05);
     }
 
     #[test]
     fn hash_of_single_byte_matches_c_implementation() {
-        let mut hasher = XxHash32::with_seed(0);
+        let mut hasher = Hasher::with_seed(0);
         hasher.write(&[42]);
         assert_eq!(hasher.finish(), 0xe0fe_705f);
     }
 
     #[test]
     fn hash_of_multiple_bytes_matches_c_implementation() {
-        let mut hasher = XxHash32::with_seed(0);
+        let mut hasher = Hasher::with_seed(0);
         hasher.write(b"Hello, world!\0");
         assert_eq!(hasher.finish(), 0x9e5e_7e93);
     }
@@ -400,14 +403,14 @@ mod test {
     #[test]
     fn hash_of_multiple_chunks_matches_c_implementation() {
         let bytes: [u8; 100] = array::from_fn(|i| i as u8);
-        let mut hasher = XxHash32::with_seed(0);
+        let mut hasher = Hasher::with_seed(0);
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x7f89_ba44);
     }
 
     #[test]
     fn hash_with_different_seed_matches_c_implementation() {
-        let mut hasher = XxHash32::with_seed(0x42c9_1977);
+        let mut hasher = Hasher::with_seed(0x42c9_1977);
         hasher.write(&[]);
         assert_eq!(hasher.finish(), 0xd6bf_8459);
     }
@@ -415,7 +418,7 @@ mod test {
     #[test]
     fn hash_with_different_seed_and_multiple_chunks_matches_c_implementation() {
         let bytes: [u8; 100] = array::from_fn(|i| i as u8);
-        let mut hasher = XxHash32::with_seed(0x42c9_1977);
+        let mut hasher = Hasher::with_seed(0x42c9_1977);
         hasher.write(&bytes);
         assert_eq!(hasher.finish(), 0x6d2f_6c17);
     }
@@ -423,12 +426,12 @@ mod test {
     #[test]
     fn hashes_with_different_offsets_are_the_same() {
         let bytes = [0x7c; 4096];
-        let expected = XxHash32::oneshot(0, &[0x7c; 64]);
+        let expected = Hasher::oneshot(0, &[0x7c; 64]);
 
         let the_same = bytes
             .windows(64)
             .map(|w| {
-                let mut hasher = XxHash32::with_seed(0);
+                let mut hasher = Hasher::with_seed(0);
                 hasher.write(w);
                 hasher.finish_32()
             })
@@ -446,7 +449,7 @@ mod test {
         // Hash 4.3 billion (4_300_000_000) bytes, which overflows a u32.
         let bytes200: [u8; 200] = array::from_fn(|i| i as _);
 
-        let mut hasher = XxHash32::with_seed(0);
+        let mut hasher = Hasher::with_seed(0);
         for _ in 0..(4_300_000_000 / bytes200.len()) {
             hasher.write(&bytes200);
         }
@@ -465,27 +468,46 @@ mod std_impl {
 
     use super::*;
 
-    /// Constructs a randomized seed and reuses it for multiple hasher
-    /// instances. See the usage warning on [`XxHash32`][].
-    pub struct RandomXxHash32Builder(u32);
+    /// Constructs [`Hasher`][] for multiple hasher instances. See
+    /// the [usage warning][Hasher#caution].
+    pub struct State(u32);
 
-    impl Default for RandomXxHash32Builder {
+    impl State {
+        /// Constructs the hasher with an initial seed.
+        pub fn with_seed(seed: u32) -> Self {
+            Self(seed)
+        }
+    }
+
+    impl BuildHasher for State {
+        type Hasher = Hasher;
+
+        fn build_hasher(&self) -> Self::Hasher {
+            Hasher::with_seed(self.0)
+        }
+    }
+
+    /// Constructs a randomized seed and reuses it for multiple hasher
+    /// instances. See the [usage warning][Hasher#caution].
+    pub struct RandomState(u32);
+
+    impl Default for RandomState {
         fn default() -> Self {
             Self::new()
         }
     }
 
-    impl RandomXxHash32Builder {
+    impl RandomState {
         fn new() -> Self {
             Self(rand::random())
         }
     }
 
-    impl BuildHasher for RandomXxHash32Builder {
-        type Hasher = XxHash32;
+    impl BuildHasher for RandomState {
+        type Hasher = Hasher;
 
         fn build_hasher(&self) -> Self::Hasher {
-            XxHash32::with_seed(self.0)
+            Hasher::with_seed(self.0)
         }
     }
 
@@ -498,14 +520,14 @@ mod std_impl {
 
         #[test]
         fn can_be_used_in_a_hashmap_with_a_default_seed() {
-            let mut hash: HashMap<_, _, BuildHasherDefault<XxHash32>> = Default::default();
+            let mut hash: HashMap<_, _, BuildHasherDefault<Hasher>> = Default::default();
             hash.insert(42, "the answer");
             assert_eq!(hash.get(&42), Some(&"the answer"));
         }
 
         #[test]
         fn can_be_used_in_a_hashmap_with_a_random_seed() {
-            let mut hash: HashMap<_, _, RandomXxHash32Builder> = Default::default();
+            let mut hash: HashMap<_, _, RandomState> = Default::default();
             hash.insert(42, "the answer");
             assert_eq!(hash.get(&42), Some(&"the answer"));
         }
@@ -521,7 +543,7 @@ mod serialize_impl {
 
     use super::*;
 
-    impl<'de> Deserialize<'de> for XxHash32 {
+    impl<'de> Deserialize<'de> for Hasher {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: serde::Deserializer<'de>,
@@ -540,7 +562,7 @@ mod serialize_impl {
             let mut buffer_data = BufferData::new();
             buffer_data.bytes_mut().copy_from_slice(&buffer);
 
-            Ok(XxHash32 {
+            Ok(Hasher {
                 seed,
                 accumulators: Accumulators([v1, v2, v3, v4]),
                 buffer: Buffer {
@@ -552,12 +574,12 @@ mod serialize_impl {
         }
     }
 
-    impl Serialize for XxHash32 {
+    impl Serialize for Hasher {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
-            let XxHash32 {
+            let Hasher {
                 seed,
                 ref accumulators,
                 ref buffer,
@@ -604,19 +626,19 @@ mod serialize_impl {
 
         #[test]
         fn test_serialization_cycle() -> Result {
-            let mut hasher = XxHash32::with_seed(0);
+            let mut hasher = Hasher::with_seed(0);
             hasher.write(b"Hello, world!\0");
             hasher.finish();
 
             let serialized = serde_json::to_string(&hasher)?;
-            let unserialized: XxHash32 = serde_json::from_str(&serialized)?;
+            let unserialized: Hasher = serde_json::from_str(&serialized)?;
             assert_eq!(hasher, unserialized);
             Ok(())
         }
 
         #[test]
         fn test_serialization_stability() -> Result {
-            let mut hasher = XxHash32::with_seed(0);
+            let mut hasher = Hasher::with_seed(0);
             hasher.write(b"Hello, world!\0");
             hasher.finish();
 
@@ -636,7 +658,7 @@ mod serialize_impl {
                 "buffer_usage": 14
             }"#;
 
-            let unserialized: XxHash32 = serde_json::from_str(expected_serialized)?;
+            let unserialized: Hasher = serde_json::from_str(expected_serialized)?;
             assert_eq!(hasher, unserialized);
 
             let expected_value: serde_json::Value = serde_json::from_str(expected_serialized)?;

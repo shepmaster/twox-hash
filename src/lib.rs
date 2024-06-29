@@ -17,7 +17,7 @@
 //! ### When the data is streaming
 //!
 //! ```rust
-//! use std::hash::Hasher;
+//! use std::hash::Hasher as _;
 //! use xx_renu::XxHash64;
 //!
 //! let seed = 1234;
@@ -31,13 +31,13 @@
 //!
 //! ## In a [`HashMap`](std::collections::HashMap)
 //!
-//! ### With a fixed seed
+//! ### With a default seed
 //!
 //! ```rust
 //! use std::{collections::HashMap, hash::BuildHasherDefault};
 //! use xx_renu::XxHash64;
 //!
-//! let mut hash: HashMap<_, _, BuildHasherDefault<XxHash64>> = Default::default();
+//! let mut hash = HashMap::<_, _, BuildHasherDefault<XxHash64>>::default();
 //! hash.insert(42, "the answer");
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
@@ -46,9 +46,20 @@
 //!
 //! ```rust
 //! use std::collections::HashMap;
-//! use xx_renu::RandomXxHash64Builder;
+//! use xx_renu::xxhash64;
 //!
-//! let mut hash: HashMap<_, _, RandomXxHash64Builder> = Default::default();
+//! let mut hash = HashMap::<_, _, xxhash64::RandomState>::default();
+//! hash.insert(42, "the answer");
+//! assert_eq!(hash.get(&42), Some(&"the answer"));
+//! ```
+//!
+//! ### With a fixed seed
+//!
+//! ```rust
+//! use std::collections::HashMap;
+//! use xx_renu::xxhash64;
+//!
+//! let mut hash = HashMap::with_hasher(xxhash64::State::with_seed(0xdead_cafe));
 //! hash.insert(42, "the answer");
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
@@ -61,16 +72,16 @@
 extern crate std;
 
 #[cfg(feature = "xxhash32")]
-mod xxhash32;
+pub mod xxhash32;
 
 #[cfg(feature = "xxhash32")]
-pub use xxhash32::*;
+pub use xxhash32::Hasher as XxHash32;
 
 #[cfg(feature = "xxhash64")]
-mod xxhash64;
+pub mod xxhash64;
 
 #[cfg(feature = "xxhash64")]
-pub use xxhash64::*;
+pub use xxhash64::Hasher as XxHash64;
 
 trait IntoU32 {
     fn into_u32(self) -> u32;

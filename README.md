@@ -8,3 +8,7 @@ no-features
 all-features
 
 features for 32 / 64 / xx3
+
+
+rand feature instead of `std`?
+remove digest as we aren't crypto?
