@@ -11,9 +11,9 @@ members = [
 ]
 
 [features]
-default = ["std", "xxhash32", "xxhash64"]
+default = ["random", "xxhash32", "xxhash64"]
 
-std = ["dep:rand"]
+random = ["dep:rand"]
 
 serialize = ["dep:serde"]
 

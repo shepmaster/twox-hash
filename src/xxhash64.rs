@@ -1,6 +1,6 @@
 //! The implementation of XXH64.
 
-use core::{fmt, hash, mem};
+use core::{fmt, hash::{self, BuildHasher}, mem};
 
 use crate::IntoU64;
 
@@ -368,9 +368,28 @@ const fn round(mut acc: u64, lane: u64) -> u64 {
     acc.wrapping_mul(PRIME64_1)
 }
 
+/// Constructs [`Hasher`][] for multiple hasher instances.
+pub struct State(u64);
+
+impl State {
+    /// Constructs the hasher with an initial seed.
+    pub fn with_seed(seed: u64) -> Self {
+        Self(seed)
+    }
+}
+
+impl BuildHasher for State {
+    type Hasher = Hasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        Hasher::with_seed(self.0)
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use core::{array, hash::Hasher as _};
+    use core::{array, hash::{BuildHasherDefault, Hasher as _}};
+    use std::collections::HashMap;
 
     use super::*;
 
@@ -450,35 +469,22 @@ mod test {
             .all(|h| h == expected);
         assert!(the_same);
     }
+
+    #[test]
+    fn can_be_used_in_a_hashmap_with_a_default_seed() {
+        let mut hash: HashMap<_, _, BuildHasherDefault<Hasher>> = Default::default();
+        hash.insert(42, "the answer");
+        assert_eq!(hash.get(&42), Some(&"the answer"));
+    }
 }
 
-#[cfg(feature = "std")]
-mod std_impl {
-    use core::hash::BuildHasher;
-
+#[cfg(feature = "random")]
+mod random_impl {
     use super::*;
-
-    /// Constructs [`Hasher`][] for multiple hasher instances.
-    pub struct State(u64);
-
-    impl State {
-        /// Constructs the hasher with an initial seed.
-        pub fn with_seed(seed: u64) -> Self {
-            Self(seed)
-        }
-    }
-
-    impl BuildHasher for State {
-        type Hasher = Hasher;
-
-        fn build_hasher(&self) -> Self::Hasher {
-            Hasher::with_seed(self.0)
-        }
-    }
 
     /// Constructs a randomized seed and reuses it for multiple hasher
     /// instances.
-    pub struct RandomState(u64);
+    pub struct RandomState(State);
 
     impl Default for RandomState {
         fn default() -> Self {
@@ -488,7 +494,7 @@ mod std_impl {
 
     impl RandomState {
         fn new() -> Self {
-            Self(rand::random())
+            Self(State::with_seed(rand::random()))
         }
     }
 
@@ -496,23 +502,15 @@ mod std_impl {
         type Hasher = Hasher;
 
         fn build_hasher(&self) -> Self::Hasher {
-            Hasher::with_seed(self.0)
+            self.0.build_hasher()
         }
     }
 
     #[cfg(test)]
     mod test {
-        use core::hash::BuildHasherDefault;
         use std::collections::HashMap;
 
         use super::*;
-
-        #[test]
-        fn can_be_used_in_a_hashmap_with_a_default_seed() {
-            let mut hash: HashMap<_, _, BuildHasherDefault<Hasher>> = Default::default();
-            hash.insert(42, "the answer");
-            assert_eq!(hash.get(&42), Some(&"the answer"));
-        }
 
         #[test]
         fn can_be_used_in_a_hashmap_with_a_random_seed() {
@@ -523,8 +521,8 @@ mod std_impl {
     }
 }
 
-#[cfg(feature = "std")]
-pub use std_impl::*;
+#[cfg(feature = "random")]
+pub use random_impl::*;
 
 #[cfg(feature = "serialize")]
 mod serialize_impl {
