@@ -24,7 +24,7 @@ extern "C" {
         length: libc::size_t,
     ) -> XXH_errorcode;
     fn XXH32_digest(state: *mut XXH32_state_t) -> XXH32_hash_t;
-    fn XXH32_freeState(state: *mut XXH32_state_t);
+    fn XXH32_freeState(state: *mut XXH32_state_t) -> XXH_errorcode;
 }
 
 pub struct XxHash32(*mut XXH32_state_t);
@@ -56,7 +56,8 @@ impl XxHash32 {
 
 impl Drop for XxHash32 {
     fn drop(&mut self) {
-        unsafe { XXH32_freeState(self.0) }
+        let retval = unsafe { XXH32_freeState(self.0) };
+        assert_eq!(retval, XXH_OK);
     }
 }
 
@@ -81,7 +82,7 @@ extern "C" {
         length: libc::size_t,
     ) -> XXH_errorcode;
     fn XXH64_digest(state: *mut XXH64_state_t) -> XXH64_hash_t;
-    fn XXH64_freeState(state: *mut XXH64_state_t);
+    fn XXH64_freeState(state: *mut XXH64_state_t) -> XXH_errorcode;
 }
 
 pub struct XxHash64(*mut XXH64_state_t);
@@ -113,6 +114,7 @@ impl XxHash64 {
 
 impl Drop for XxHash64 {
     fn drop(&mut self) {
-        unsafe { XXH64_freeState(self.0) }
+        let retval = unsafe { XXH64_freeState(self.0) };
+        assert_eq!(retval, XXH_OK);
     }
 }
