@@ -83,6 +83,8 @@ pub mod xxhash64;
 #[cfg(feature = "xxhash64")]
 pub use xxhash64::Hasher as XxHash64;
 
+pub mod xxhash3_64;
+
 trait IntoU32 {
     fn into_u32(self) -> u32;
 }
@@ -113,5 +115,15 @@ impl IntoU64 for u32 {
 impl IntoU64 for usize {
     fn into_u64(self) -> u64 {
         self as u64
+    }
+}
+
+trait IntoU128 {
+    fn into_u128(self) -> u128;
+}
+
+impl IntoU128 for u64 {
+    fn into_u128(self) -> u128 {
+        u128::from(self)
     }
 }
