@@ -1,6 +1,10 @@
 //! The implementation of XXH64.
 
-use core::{fmt, hash::{self, BuildHasher}, mem};
+use core::{
+    fmt,
+    hash::{self, BuildHasher},
+    mem,
+};
 
 use crate::IntoU64;
 
@@ -388,7 +392,10 @@ impl BuildHasher for State {
 
 #[cfg(test)]
 mod test {
-    use core::{array, hash::{BuildHasherDefault, Hasher as _}};
+    use core::{
+        array,
+        hash::{BuildHasherDefault, Hasher as _},
+    };
     use std::collections::HashMap;
 
     use super::*;

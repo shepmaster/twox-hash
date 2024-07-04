@@ -1,6 +1,10 @@
 //! The implementation of XXH32.
 
-use core::{fmt, hash::{self, BuildHasher}, mem};
+use core::{
+    fmt,
+    hash::{self, BuildHasher},
+    mem,
+};
 
 use crate::{IntoU32, IntoU64};
 
@@ -356,7 +360,6 @@ const fn round(mut acc: u32, lane: u32) -> u32 {
     acc.wrapping_mul(PRIME32_1)
 }
 
-
 /// Constructs [`Hasher`][] for multiple hasher instances. See
 /// the [usage warning][Hasher#caution].
 pub struct State(u32);
@@ -376,11 +379,12 @@ impl BuildHasher for State {
     }
 }
 
-
-
 #[cfg(test)]
 mod test {
-    use core::{array, hash::{BuildHasherDefault, Hasher as _}};
+    use core::{
+        array,
+        hash::{BuildHasherDefault, Hasher as _},
+    };
     use std::collections::HashMap;
 
     use super::*;
