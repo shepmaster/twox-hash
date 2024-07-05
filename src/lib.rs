@@ -85,6 +85,8 @@ pub use xxhash64::Hasher as XxHash64;
 
 pub mod xxhash3_64;
 
+pub use xxhash3_64::XxHash3_64;
+
 trait IntoU32 {
     fn into_u32(self) -> u32;
 }
