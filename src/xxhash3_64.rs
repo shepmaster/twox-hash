@@ -366,7 +366,7 @@ impl<T> SliceBackport<T> for [T] {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]) {
         assert_ne!(N, 0);
         let len = self.len() / N;
-        let (head, tail) = unsafe { self.split_at_unchecked(len) };
+        let (head, tail) = unsafe { self.split_at_unchecked(len * N) };
         let head = unsafe { slice::from_raw_parts(head.as_ptr().cast(), len) };
         (head, tail)
     }
@@ -529,5 +529,34 @@ mod test {
             let hash = XxHash3_64::oneshot(input);
             assert_eq!(hash, expected, "input was {input:?}");
         }
+    }
+
+    #[test]
+    fn backported_as_chunks() {
+        let x = [1, 2, 3, 4, 5];
+
+        let (a, b) = x.bp_as_chunks::<1>();
+        assert_eq!(a, &[[1], [2], [3], [4], [5]]);
+        assert_eq!(b, &[]);
+
+        let (a, b) = x.bp_as_chunks::<2>();
+        assert_eq!(a, &[[1, 2], [3, 4]]);
+        assert_eq!(b, &[5]);
+
+        let (a, b) = x.bp_as_chunks::<3>();
+        assert_eq!(a, &[[1, 2, 3]]);
+        assert_eq!(b, &[4, 5]);
+
+        let (a, b) = x.bp_as_chunks::<4>();
+        assert_eq!(a, &[[1, 2, 3, 4]]);
+        assert_eq!(b, &[5]);
+
+        let (a, b) = x.bp_as_chunks::<5>();
+        assert_eq!(a, &[[1, 2, 3, 4, 5]]);
+        assert_eq!(b, &[]);
+
+        let (a, b) = x.bp_as_chunks::<6>();
+        assert_eq!(a, &[] as &[[i32; 6]]);
+        assert_eq!(b, &[1, 2, 3, 4, 5]);
     }
 }
