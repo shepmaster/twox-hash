@@ -87,8 +87,8 @@ impl XxHash3_64 {
             }
 
             9..=16 => {
-                let input_first: u64 = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
-                let input_last: u64 = unsafe {
+                let input_first = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
+                let input_last = unsafe {
                     input
                         .as_ptr()
                         .add(input.len())
@@ -99,12 +99,10 @@ impl XxHash3_64 {
 
                 let secret_words =
                     unsafe { secret.as_ptr().add(24).cast::<[u64; 4]>().read_unaligned() };
-                let low: u64 =
-                    ((secret_words[0] ^ secret_words[1]).wrapping_add(seed)) ^ input_first;
-                let high: u64 =
-                    ((secret_words[2] ^ secret_words[3]).wrapping_sub(seed)) ^ input_last;
-                let mul_result: u128 = low.into_u128().wrapping_mul(high.into_u128());
-                let value: u64 = input
+                let low = ((secret_words[0] ^ secret_words[1]).wrapping_add(seed)) ^ input_first;
+                let high = ((secret_words[2] ^ secret_words[3]).wrapping_sub(seed)) ^ input_last;
+                let mul_result = low.into_u128().wrapping_mul(high.into_u128());
+                let value = input
                     .len()
                     .into_u64()
                     .wrapping_add(low.swap_bytes())
@@ -115,7 +113,7 @@ impl XxHash3_64 {
             }
 
             17..=128 => {
-                let mut acc: u64 = input.len().into_u64().wrapping_mul(PRIME64_1);
+                let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
                 let num_rounds = ((input.len() - 1) >> 5) + 1;
 
@@ -301,7 +299,7 @@ fn round(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
 }
 
 fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: &[u64; 8], secret: &[u8]) {
-    let n_full_stripes: usize = (block.len() - 1) / 64;
+    let n_full_stripes = (block.len() - 1) / 64;
     for n in 0..n_full_stripes {
         let stripe = unsafe { &*block.as_ptr().add(n * 64).cast::<[u64; 8]>() };
         accumulate(acc, stripe, secret, n * 8);
@@ -311,10 +309,10 @@ fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: &[u64; 8], secret: 
 
 fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
     let secret_words = unsafe { &*secret.as_ptr().add(secret_offset).cast::<[u64; 8]>() };
-    let mut result: u64 = init_value;
+    let mut result = init_value;
     for i in 0..4 {
         // 64-bit by 64-bit multiplication to 128-bit full result
-        let mul_result: u128 = {
+        let mul_result = {
             let a = (acc[i * 2] ^ secret_words[i * 2]).into_u128();
             let b = (acc[i * 2 + 1] ^ secret_words[i * 2 + 1]).into_u128();
             a.wrapping_mul(b)
