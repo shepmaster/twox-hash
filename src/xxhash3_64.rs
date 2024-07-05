@@ -87,8 +87,8 @@ impl XxHash3_64 {
             }
 
             9..=16 => {
-                let inputFirst: u64 = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
-                let inputLast: u64 = unsafe {
+                let input_first: u64 = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
+                let input_last: u64 = unsafe {
                     input
                         .as_ptr()
                         .add(input.len())
@@ -97,17 +97,19 @@ impl XxHash3_64 {
                         .read_unaligned()
                 };
 
-                let secretWords =
+                let secret_words =
                     unsafe { secret.as_ptr().add(24).cast::<[u64; 4]>().read_unaligned() };
-                let low: u64 = ((secretWords[0] ^ secretWords[1]).wrapping_add(seed)) ^ inputFirst;
-                let high: u64 = ((secretWords[2] ^ secretWords[3]).wrapping_sub(seed)) ^ inputLast;
-                let mulResult: u128 = low.into_u128().wrapping_mul(high.into_u128());
+                let low: u64 =
+                    ((secret_words[0] ^ secret_words[1]).wrapping_add(seed)) ^ input_first;
+                let high: u64 =
+                    ((secret_words[2] ^ secret_words[3]).wrapping_sub(seed)) ^ input_last;
+                let mul_result: u128 = low.into_u128().wrapping_mul(high.into_u128());
                 let value: u64 = input
                     .len()
                     .into_u64()
                     .wrapping_add(low.swap_bytes())
                     .wrapping_add(high)
-                    .wrapping_add(mulResult.lower_half() ^ mulResult.upper_half());
+                    .wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
 
                 avalanche(value)
             }
@@ -115,12 +117,13 @@ impl XxHash3_64 {
             17..=128 => {
                 let mut acc: u64 = input.len().into_u64().wrapping_mul(PRIME64_1);
 
-                let numRounds = ((input.len() - 1) >> 5) + 1;
+                let num_rounds = ((input.len() - 1) >> 5) + 1;
 
+                // TODO: use some chunks
                 let mut ff = input;
                 let mut rr = input;
 
-                for i in (0..numRounds).rev() {
+                for i in (0..num_rounds).rev() {
                     let (ffc, ffn) = ff.split_first_chunk().unwrap();
                     let (rrn, rrc) = rr.split_last_chunk().unwrap();
 
@@ -135,7 +138,7 @@ impl XxHash3_64 {
             }
 
             129..=240 => {
-                let mut acc: u64 = input.len().into_u64().wrapping_mul(PRIME64_1);
+                let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
                 let (head, _tail) = input.bp_as_chunks();
                 let mut head = head.into_iter();
@@ -155,7 +158,42 @@ impl XxHash3_64 {
                 avalanche(acc)
             }
 
-            _ => todo!(),
+            _ => {
+                #[rustfmt::skip]
+                let mut acc = [
+                    PRIME32_3, PRIME64_1, PRIME64_2, PRIME64_3,
+                    PRIME64_4, PRIME32_2, PRIME64_5, PRIME32_1,
+                ];
+
+                let secret_length = secret.len();
+                let stripes_per_block = (secret_length - 64) / 8;
+                let block_size = 64 * stripes_per_block;
+
+                let mut cc = input.chunks(block_size).fuse();
+
+                let last_block = cc.next_back().unwrap();
+
+                for block in cc {
+                    round(&mut acc, block, &secret);
+                }
+
+                let last_stripe = unsafe {
+                    &*input
+                        .as_ptr()
+                        .add(input.len())
+                        .sub(mem::size_of::<[u64; 8]>())
+                        .cast::<[u64; 8]>()
+                };
+
+                last_round(&mut acc, last_block, last_stripe, &secret);
+
+                final_merge(
+                    &mut acc,
+                    input.len().into_u64().wrapping_mul(PRIME64_1),
+                    &secret,
+                    11,
+                )
+            }
         }
     }
 }
@@ -187,7 +225,7 @@ fn mix_step(data: &[u8; 16], secret: &[u8], secret_offset: usize, seed: u64) -> 
             .read_unaligned()
     };
 
-    let mul_result: u128 = {
+    let mul_result = {
         let a = (data_words[0] ^ secret_words[0].wrapping_add(seed)).into_u128();
         let b = (data_words[1] ^ secret_words[1].wrapping_sub(seed)).into_u128();
 
@@ -197,22 +235,90 @@ fn mix_step(data: &[u8; 16], secret: &[u8], secret_offset: usize, seed: u64) -> 
     mul_result.lower_half() ^ mul_result.upper_half()
 }
 
-fn mixTwoChunks(
-    acc: &mut [u64; 2],
-    data1: &[u8; 16],
-    data2: &[u8; 16],
-    secret: &[u8],
-    secretOffset: usize,
-    seed: u64,
-) {
-    // TODO: Should these casts / reads happen outside this function?
-    let dataWords1 = unsafe { data1.as_ptr().cast::<[u64; 2]>().read_unaligned() }; // TODO:little-endian conversion
-    let dataWords2 = unsafe { data2.as_ptr().cast::<[u64; 2]>().read_unaligned() }; // TODO:little-endian conversion
+// fn mix_two_chunks(
+//     acc: &mut [u64; 2],
+//     data1: &[u8; 16],
+//     data2: &[u8; 16],
+//     secret: &[u8],
+//     secret_offset: usize,
+//     seed: u64,
+// ) {
+//     // TODO: Should these casts / reads happen outside this function?
+//     let data_words1 = unsafe { data1.as_ptr().cast::<[u64; 2]>().read_unaligned() }; // TODO:little-endian conversion
+//     let data_words2 = unsafe { data2.as_ptr().cast::<[u64; 2]>().read_unaligned() }; // TODO:little-endian conversion
 
-    acc[0] = acc[0] + mix_step(data1, secret, secretOffset, seed);
-    acc[1] = acc[1] + mix_step(data2, secret, secretOffset + 16, seed);
-    acc[0] = acc[0] ^ dataWords2[0].wrapping_add(dataWords2[1]);
-    acc[1] = acc[1] ^ dataWords1[0].wrapping_add(dataWords1[1]);
+//     acc[0] = acc[0] + mix_step(data1, secret, secret_offset, seed);
+//     acc[1] = acc[1] + mix_step(data2, secret, secret_offset + 16, seed);
+//     acc[0] = acc[0] ^ data_words2[0].wrapping_add(data_words2[1]);
+//     acc[1] = acc[1] ^ data_words1[0].wrapping_add(data_words1[1]);
+// }
+
+// Step 2-1. Process stripes in the block
+fn accumulate(acc: &mut [u64; 8], stripe: &[u64; 8], secret: &[u8], secret_offset: usize) {
+    // TODO: Should these casts / reads happen outside this function?
+    let secret_words = unsafe { &*secret.as_ptr().add(secret_offset).cast::<[u64; 8]>() };
+
+    for i in 0..8 {
+        let value = stripe[i] ^ secret_words[i];
+        acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe[i]);
+        acc[i] = acc[i].wrapping_add(
+            value
+                .lower_half()
+                .into_u64()
+                .wrapping_mul(value.upper_half().into_u64()),
+        );
+    }
+}
+
+fn round_accumulate(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
+    let (stripes, _) = block.bp_as_chunks::<{ mem::size_of::<[u64; 8]>() }>();
+    for (n, stripe) in stripes.iter().enumerate() {
+        let stripe = unsafe { &*stripe.as_ptr().cast() };
+        accumulate(acc, stripe, secret, n * 8);
+    }
+}
+
+fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
+    let secret_words = unsafe {
+        secret
+            .as_ptr()
+            .add(secret.len())
+            .sub(mem::size_of::<[u64; 8]>())
+            .cast::<[u64; 8]>()
+            .read_unaligned()
+    };
+
+    for i in 0..8 {
+        acc[i] ^= acc[i] >> 47;
+        acc[i] ^= secret_words[i];
+        acc[i] = acc[i] * PRIME32_1;
+    }
+}
+
+fn round(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
+    round_accumulate(acc, block, secret);
+    round_scramble(acc, secret);
+}
+
+fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: &[u64; 8], secret: &[u8]) {
+    let n_full_stripes: usize = (block.len() - 1) / 64;
+    for n in 0..n_full_stripes {
+        let stripe = unsafe { &*block.as_ptr().add(n * 64).cast::<[u64; 8]>() };
+        accumulate(acc, stripe, secret, n * 8);
+    }
+    accumulate(acc, last_stripe, secret, secret.len() - 71);
+}
+
+fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
+    let secret_words = unsafe { &*secret.as_ptr().add(secret_offset).cast::<[u64; 8]>() };
+    let mut result: u64 = init_value;
+    for i in 0..4 {
+        // 64-bit by 64-bit multiplication to 128-bit full result
+        let mul_result: u128 = (acc[i * 2] ^ secret_words[i * 2]).into_u128()
+            * (acc[i * 2 + 1] ^ secret_words[i * 2 + 1]).into_u128();
+        result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
+    }
+    avalanche(result)
 }
 
 trait Halves {
@@ -252,7 +358,7 @@ impl Halves for u128 {
 
 trait SliceBackport<T> {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]);
-    fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]);
+    // fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]);
 }
 
 impl<T> SliceBackport<T> for [T] {
@@ -264,13 +370,13 @@ impl<T> SliceBackport<T> for [T] {
         (head, tail)
     }
 
-    fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]) {
-        assert_ne!(N, 0);
-        let len = self.len() / N;
-        let (head, tail) = unsafe { self.split_at_unchecked(self.len() - len * N) };
-        let tail = unsafe { slice::from_raw_parts(tail.as_ptr().cast(), len) };
-        (head, tail)
-    }
+    // fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]) {
+    //     assert_ne!(N, 0);
+    //     let len = self.len() / N;
+    //     let (head, tail) = unsafe { self.split_at_unchecked(self.len() - len * N) };
+    //     let tail = unsafe { slice::from_raw_parts(tail.as_ptr().cast(), len) };
+    //     (head, tail)
+    // }
 }
 
 #[cfg(test)]
@@ -373,6 +479,23 @@ mod test {
             0xb980_bcaf_ae82_6b6a,
             0xf01b_b3be_cb26_4837,
             0x053f_0744_4f70_da08,
+        ];
+
+        for (input, expected) in inputs.iter().zip(expected) {
+            let hash = XxHash3_64::oneshot(input);
+            assert_eq!(hash, expected, "input was {input:?}");
+        }
+    }
+
+    #[test]
+    fn hash_64bit_240_plus_bytes_matches_c_implementation() {
+        let inputs: &[&[u8]] = &[&[0; 241], &[0; 242], &[0; 243], &[0; 244]];
+
+        let expected = [
+            0x5c5b_5d5d_40c5_9ce3,
+            0xd619_7ac3_0eb7_e67b,
+            0x6a04_3c8a_cf2e_dfe5,
+            0x83cf_eefc_38e1_35af,
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
