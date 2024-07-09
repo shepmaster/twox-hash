@@ -259,12 +259,11 @@ fn accumulate(acc: &mut [u64; 8], stripe: Stripe, secret: &[u8], secret_offset: 
     for i in 0..8 {
         let value = stripe[i] ^ secret_words[i];
         acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe[i]);
-        acc[i] = acc[i].wrapping_add(
-            value
-                .lower_half()
-                .into_u64()
-                .wrapping_mul(value.upper_half().into_u64()),
-        );
+        acc[i] = acc[i].wrapping_add({
+            let a = value.lower_half().into_u64();
+            let b = value.upper_half().into_u64();
+            a.wrapping_mul(b)
+        });
     }
 }
 
