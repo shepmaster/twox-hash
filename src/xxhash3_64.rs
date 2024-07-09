@@ -301,19 +301,14 @@ fn round_accumulate(acc: &mut [u64; 8], block: &[u8], mut secret: &[u8]) {
 
 #[inline]
 fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
-    let secret_words = unsafe {
-        secret
-            .as_ptr()
-            .add(secret.len())
-            .sub(mem::size_of::<[u64; 8]>())
-            .cast::<[u64; 8]>()
-            .read_unaligned()
-    };
+    let last = secret.last_chunk::<{mem::size_of::<[u8; 64]>()}>().unwrap();
+    let (last, _) = last.bp_as_chunks();
+    let last = last.iter().copied().map(u64::from_ne_bytes);
 
-    for i in 0..8 {
-        acc[i] ^= acc[i] >> 47;
-        acc[i] ^= secret_words[i];
-        acc[i] = acc[i].wrapping_mul(PRIME32_1);
+    for (acc, secret) in acc.iter_mut().zip(last) {
+        *acc ^= *acc >> 47;
+        *acc ^= secret;
+        *acc = acc.wrapping_mul(PRIME32_1);
     }
 }
 
