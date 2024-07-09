@@ -1,6 +1,6 @@
-#![allow(missing_docs, dead_code, non_snake_case)]
+#![allow(missing_docs)]
 
-use core::{mem, slice};
+use core::{mem, slice, iter};
 
 use crate::{IntoU128, IntoU32, IntoU64};
 
