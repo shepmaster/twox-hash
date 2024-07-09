@@ -268,11 +268,34 @@ fn accumulate(acc: &mut [u64; 8], stripe: Stripe, secret: &[u8], secret_offset: 
 }
 
 #[inline]
-fn round_accumulate(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
+fn accumulate_hot(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+    for i in 0..8 {
+        // TODO: Should these casts / reads happen outside this function?
+        let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
+        let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
+
+        let value = stripe ^ secret;
+        acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
+        acc[i] = acc[i].wrapping_add({
+            let a = value.lower_half().into_u64();
+            let b = value.upper_half().into_u64();
+            a.wrapping_mul(b)
+        });
+    }
+}
+
+#[inline]
+fn round_accumulate(acc: &mut [u64; 8], block: &[u8], mut secret: &[u8]) {
     let (stripes, _) = block.bp_as_chunks::<{ mem::size_of::<Stripe>() }>();
-    for (n, stripe) in stripes.iter().enumerate() {
-        let stripe = unsafe { stripe.as_ptr().cast::<Stripe>().read_unaligned() };
-        accumulate(acc, stripe, secret, n * 8);
+
+    let secrets = iter::from_fn(|| {
+        let (c, _) = secret.split_first_chunk()?;
+        secret = &secret[8..];
+        Some(c)
+    });
+
+    for (stripe, secret) in stripes.iter().zip(secrets) {
+        accumulate_hot(acc, stripe, secret);
     }
 }
 
@@ -312,7 +335,13 @@ fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: Stripe, secret: &[u
 
 #[inline]
 fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
-    let secret_words = unsafe { secret.as_ptr().add(secret_offset).cast::<[u64; 8]>().read_unaligned() };
+    let secret_words = unsafe {
+        secret
+            .as_ptr()
+            .add(secret_offset)
+            .cast::<[u64; 8]>()
+            .read_unaligned()
+    };
     let mut result = init_value;
     for i in 0..4 {
         // 64-bit by 64-bit multiplication to 128-bit full result
@@ -420,7 +449,7 @@ mod test {
 
         for (input, expected) in inputs.iter().zip(expected) {
             let hash = XxHash3_64::oneshot(input);
-            assert_eq!(hash, expected, "input was {input:?}");
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
@@ -438,7 +467,7 @@ mod test {
 
         for (input, expected) in inputs.iter().zip(expected) {
             let hash = XxHash3_64::oneshot(input);
-            assert_eq!(hash, expected, "input was {input:?}");
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
@@ -459,7 +488,7 @@ mod test {
 
         for (input, expected) in inputs.iter().zip(expected) {
             let hash = XxHash3_64::oneshot(input);
-            assert_eq!(hash, expected, "input was {input:?}");
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
@@ -491,7 +520,7 @@ mod test {
 
         for (input, expected) in inputs.zip(expected) {
             let hash = XxHash3_64::oneshot(input);
-            assert_eq!(hash, expected, "input was {input:?}");
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
@@ -515,24 +544,26 @@ mod test {
 
         for (input, expected) in inputs.zip(expected) {
             let hash = XxHash3_64::oneshot(input);
-            assert_eq!(hash, expected, "input was {input:?}");
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
     #[test]
     fn hash_240_plus_bytes() {
-        let inputs = bytes![241, 242, 243, 244];
+        let inputs = bytes![241, 242, 243, 244, 1024, 10240];
 
         let expected = [
             0x02e8_cd95_421c_6d02,
             0xddcb_33c4_9405_1832,
             0x8835_f952_9193_e3dc,
             0xbc17_c91e_c3cf_8d7f,
+            0xe5d7_8baf_a45b_2aa5,
+            0xbcd6_3266_df6e_2244,
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
             let hash = XxHash3_64::oneshot(input);
-            assert_eq!(hash, expected, "input was {input:?}");
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
