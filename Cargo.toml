@@ -5,6 +5,7 @@ edition = "2021"
 
 [workspace]
 members = [
+    "asmasm",
     "compare",
     "renu-sum",
     "xx_hash-sys",
