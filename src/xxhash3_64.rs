@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use core::{mem, slice};
+use core::{mem, slice, arch::asm};
 
 use crate::{IntoU128, IntoU32, IntoU64};
 
@@ -254,8 +254,6 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
 
 #[inline]
 fn round(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
-//    unsafe { core::arch::aarch64::_prefetch(block.as_ptr().cast(), _PREFETCH_READ, _PREFETCH_LOCALITY3) };
-
     round_accumulate(acc, block, secret);
     round_scramble(acc, secret);
 }
@@ -267,8 +265,6 @@ fn round_accumulate(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
         (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
 
     for (stripe, secret) in stripes.iter().zip(secrets) {
-        // todo cast to bigger to specify how much to fetch?
-        unsafe { core::arch::aarch64::_prefetch(stripe.as_ptr().cast(), _PREFETCH_READ, _PREFETCH_LOCALITY3) };
         accumulate(acc, stripe, secret);
     }
 }
@@ -339,14 +335,13 @@ fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
 
         let value = stripe ^ secret;
         acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
-
-        acc[i] = multiply_and_add(value, value >> 32, acc[i]);
+        acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
     }
 }
 
 #[inline]
 #[cfg(not(target_arch = "aarch64"))]
-fn multiply_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
     acc.wrapping_add({
         let a = (lhs as u32).into_u64();
         let b = (rhs as u32).into_u64();
@@ -357,16 +352,18 @@ fn multiply_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
 #[inline]
 // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5595-L5610
 #[cfg(target_arch = "aarch64")]
-fn multiply_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
     let res;
 
-    unsafe { asm!(
-        "umaddl {res}, {lhs:w}, {rhs:w}, {acc}",
-        lhs = in(reg) lhs,
-        rhs = in(reg) rhs,
-        acc = in(reg) acc,
-        res = out(reg) res,
-    ) }
+    unsafe {
+        asm!(
+            "umaddl {res}, {lhs:w}, {rhs:w}, {acc}",
+            lhs = in(reg) lhs,
+            rhs = in(reg) rhs,
+            acc = in(reg) acc,
+            res = out(reg) res,
+        )
+    }
 
     res
 }
