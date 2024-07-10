@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use core::{mem, slice, arch::asm};
+use core::{mem, slice};
 
 use crate::{IntoU128, IntoU32, IntoU64};
 
@@ -146,8 +146,8 @@ fn impl_17_to_128_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
     let bwd = bwd.iter().rev();
 
     for (i, (fwd_chunk, bwd_chunk)) in fwd.zip(bwd).enumerate().take(num_rounds) {
-        acc = acc.wrapping_add(mix_step(fwd_chunk, &secret, i * 32, seed));
-        acc = acc.wrapping_add(mix_step(bwd_chunk, &secret, i * 32 + 16, seed));
+        acc = acc.wrapping_add(mix_step(fwd_chunk, secret, i * 32, seed));
+        acc = acc.wrapping_add(mix_step(bwd_chunk, secret, i * 32 + 16, seed));
     }
 
     avalanche(acc)
@@ -161,16 +161,16 @@ fn impl_129_to_240_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
     let mut head = head.iter();
 
     for (i, chunk) in head.by_ref().take(8).enumerate() {
-        acc = acc.wrapping_add(mix_step(chunk, &secret, i * 16, seed));
+        acc = acc.wrapping_add(mix_step(chunk, secret, i * 16, seed));
     }
 
     acc = avalanche(acc);
 
     for (i, chunk) in head.enumerate() {
-        acc = acc.wrapping_add(mix_step(chunk, &secret, i * 16 + 3, seed));
+        acc = acc.wrapping_add(mix_step(chunk, secret, i * 16 + 3, seed));
     }
 
-    acc = acc.wrapping_add(mix_step(input.last_chunk().unwrap(), &secret, 119, seed));
+    acc = acc.wrapping_add(mix_step(input.last_chunk().unwrap(), secret, 119, seed));
 
     avalanche(acc)
 }
@@ -342,17 +342,19 @@ fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
 #[inline]
 #[cfg(not(target_arch = "aarch64"))]
 fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
-    acc.wrapping_add({
-        let a = (lhs as u32).into_u64();
-        let b = (rhs as u32).into_u64();
-        a.wrapping_mul(b)
-    })
+    let lhs = (lhs as u32).into_u64();
+    let rhs = (rhs as u32).into_u64();
+
+    let product = lhs.wrapping_mul(rhs);
+    acc.wrapping_add(product)
 }
 
 #[inline]
 // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5595-L5610
 #[cfg(target_arch = "aarch64")]
 fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+    use core::arch::asm;
+
     let res;
 
     unsafe {
