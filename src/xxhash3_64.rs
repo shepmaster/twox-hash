@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use core::{mem, slice, iter};
+use core::{mem, slice};
 
 use crate::{IntoU128, IntoU32, IntoU64};
 
@@ -39,174 +39,141 @@ impl XxHash3_64 {
     pub fn oneshot(input: &[u8]) -> u64 {
         let seed = 0;
         let secret = DEFAULT_SECRET;
+        let secret = &secret[..];
 
         match input.len() {
-            0 => {
-                let secret_words =
-                    unsafe { secret.as_ptr().add(56).cast::<[u64; 2]>().read_unaligned() };
-                avalanche_xxh64(seed ^ secret_words[0] ^ secret_words[1])
-            }
+            0 => impl_0_bytes(secret, seed),
 
-            1..=3 => {
-                let input_length = input.len() as u8; // OK as we checked that the length fits
+            1..=3 => impl_1_to_3_bytes(secret, seed, input),
 
-                let combined = input[input.len() - 1].into_u32()
-                    | input_length.into_u32() << 8
-                    | input[0].into_u32() << 16
-                    | input[input.len() >> 1].into_u32() << 24;
+            4..=8 => impl_4_to_8_bytes(secret, seed, input),
 
-                let secret_words = unsafe { secret.as_ptr().cast::<[u32; 2]>().read_unaligned() };
-                let value =
-                    ((secret_words[0] ^ secret_words[1]).into_u64() + seed) ^ combined.into_u64();
+            9..=16 => impl_9_to_16_bytes(secret, seed, input),
 
-                // FUTURE: TEST: "Note that the XXH3-64 result is the lower half of XXH3-128 result."
-                avalanche_xxh64(value)
-            }
+            17..=128 => impl_17_to_128_bytes(secret, seed, input),
 
-            4..=8 => {
-                let input_first = unsafe { input.as_ptr().cast::<u32>().read_unaligned() };
-                let input_last = unsafe {
-                    input
-                        .as_ptr()
-                        .add(input.len())
-                        .sub(mem::size_of::<u32>())
-                        .cast::<u32>()
-                        .read_unaligned()
-                };
-                let modified_seed = seed ^ (seed.lower_half().swap_bytes().into_u64() << 32);
+            129..=240 => impl_129_to_240_bytes(secret, seed, input),
 
-                let secret_words =
-                    unsafe { secret.as_ptr().add(8).cast::<[u64; 2]>().read_unaligned() };
-                let combined = input_last.into_u64() | (input_first.into_u64() << 32);
-
-                let mut value = ((secret_words[0] ^ secret_words[1]) - modified_seed) ^ combined;
-                value ^= value.rotate_left(49) ^ value.rotate_left(24);
-                value = value.wrapping_mul(PRIME_MX2);
-                value ^= (value >> 35).wrapping_add(input.len().into_u64());
-                value = value.wrapping_mul(PRIME_MX2);
-                value ^= value >> 28;
-                value
-            }
-
-            9..=16 => {
-                let input_first = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
-                let input_last = unsafe {
-                    input
-                        .as_ptr()
-                        .add(input.len())
-                        .sub(mem::size_of::<u64>())
-                        .cast::<u64>()
-                        .read_unaligned()
-                };
-
-                let secret_words =
-                    unsafe { secret.as_ptr().add(24).cast::<[u64; 4]>().read_unaligned() };
-                let low = ((secret_words[0] ^ secret_words[1]).wrapping_add(seed)) ^ input_first;
-                let high = ((secret_words[2] ^ secret_words[3]).wrapping_sub(seed)) ^ input_last;
-                let mul_result = low.into_u128().wrapping_mul(high.into_u128());
-                let value = input
-                    .len()
-                    .into_u64()
-                    .wrapping_add(low.swap_bytes())
-                    .wrapping_add(high)
-                    .wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
-
-                avalanche(value)
-            }
-
-            17..=128 => {
-                let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
-
-                let num_rounds = ((input.len() - 1) >> 5) + 1;
-
-                let (fwd, _) = input.bp_as_chunks();
-                let (_, bwd) = input.bp_as_rchunks();
-
-                let fwd = fwd.iter();
-                let bwd = bwd.iter().rev();
-
-                for (i, (fwd_chunk, bwd_chunk)) in fwd.zip(bwd).enumerate().take(num_rounds) {
-                    acc = acc.wrapping_add(mix_step(fwd_chunk, &secret, i * 32, seed));
-                    acc = acc.wrapping_add(mix_step(bwd_chunk, &secret, i * 32 + 16, seed));
-                }
-
-                avalanche(acc)
-            }
-
-            129..=240 => {
-                let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
-
-                let (head, _tail) = input.bp_as_chunks();
-                let mut head = head.iter();
-
-                for (i, chunk) in head.by_ref().take(8).enumerate() {
-                    acc = acc.wrapping_add(mix_step(chunk, &secret, i * 16, seed));
-                }
-
-                acc = avalanche(acc);
-
-                for (i, chunk) in head.enumerate() {
-                    acc = acc.wrapping_add(mix_step(chunk, &secret, i * 16 + 3, seed));
-                }
-
-                acc = acc.wrapping_add(mix_step(input.last_chunk().unwrap(), &secret, 119, seed));
-
-                avalanche(acc)
-            }
-
-            _ => {
-                #[rustfmt::skip]
-                let mut acc = [
-                    PRIME32_3, PRIME64_1, PRIME64_2, PRIME64_3,
-                    PRIME64_4, PRIME32_2, PRIME64_5, PRIME32_1,
-                ];
-
-                let stripes_per_block = (secret.len() - 64) / 8;
-                let block_size = 64 * stripes_per_block;
-
-                let mut blocks = input.chunks(block_size).fuse();
-                let last_block = blocks.next_back().unwrap();
-
-                for block in blocks {
-                    round(&mut acc, block, &secret);
-                }
-
-                let last_stripe = unsafe {
-                    input
-                        .as_ptr()
-                        .add(input.len())
-                        .sub(mem::size_of::<Stripe>())
-                        .cast::<Stripe>()
-                        .read_unaligned()
-                };
-
-                last_round(&mut acc, last_block, last_stripe, &secret);
-
-                final_merge(
-                    &mut acc,
-                    input.len().into_u64().wrapping_mul(PRIME64_1),
-                    &secret,
-                    11,
-                )
-            }
+            _ => impl_241_plus_bytes(secret, input),
         }
     }
 }
 
-fn avalanche(mut x: u64) -> u64 {
-    x ^= x >> 37;
-    x = x.wrapping_mul(PRIME_MX1);
-    x ^= x >> 32;
-    x
+#[inline]
+fn impl_0_bytes(secret: &[u8], seed: u64) -> u64 {
+    let secret_words = unsafe { secret.as_ptr().add(56).cast::<[u64; 2]>().read_unaligned() };
+    avalanche_xxh64(seed ^ secret_words[0] ^ secret_words[1])
 }
 
-fn avalanche_xxh64(mut x: u64) -> u64 {
-    x ^= x >> 33;
-    x = x.wrapping_mul(PRIME64_2);
-    x ^= x >> 29;
-    x = x.wrapping_mul(PRIME64_3);
-    x ^= x >> 32;
-    x
+#[inline]
+fn impl_1_to_3_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+    let input_length = input.len() as u8; // OK as we checked that the length fits
+
+    let combined = input[input.len() - 1].into_u32()
+        | input_length.into_u32() << 8
+        | input[0].into_u32() << 16
+        | input[input.len() >> 1].into_u32() << 24;
+
+    let secret_words = unsafe { secret.as_ptr().cast::<[u32; 2]>().read_unaligned() };
+
+    let value = ((secret_words[0] ^ secret_words[1]).into_u64() + seed) ^ combined.into_u64();
+
+    // FUTURE: TEST: "Note that the XXH3-64 result is the lower half of XXH3-128 result."
+    avalanche_xxh64(value)
+}
+
+#[inline]
+fn impl_4_to_8_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+    let input_first = unsafe { input.as_ptr().cast::<u32>().read_unaligned() };
+    let input_last = unsafe {
+        input
+            .as_ptr()
+            .add(input.len())
+            .sub(mem::size_of::<u32>())
+            .cast::<u32>()
+            .read_unaligned()
+    };
+
+    let modified_seed = seed ^ (seed.lower_half().swap_bytes().into_u64() << 32);
+    let secret_words = unsafe { secret.as_ptr().add(8).cast::<[u64; 2]>().read_unaligned() };
+
+    let combined = input_last.into_u64() | (input_first.into_u64() << 32);
+
+    let mut value = ((secret_words[0] ^ secret_words[1]) - modified_seed) ^ combined;
+    value ^= value.rotate_left(49) ^ value.rotate_left(24);
+    value = value.wrapping_mul(PRIME_MX2);
+    value ^= (value >> 35).wrapping_add(input.len().into_u64());
+    value = value.wrapping_mul(PRIME_MX2);
+    value ^= value >> 28;
+    value
+}
+
+#[inline]
+fn impl_9_to_16_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+    let input_first = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
+    let input_last = unsafe {
+        input
+            .as_ptr()
+            .add(input.len())
+            .sub(mem::size_of::<u64>())
+            .cast::<u64>()
+            .read_unaligned()
+    };
+
+    let secret_words = unsafe { secret.as_ptr().add(24).cast::<[u64; 4]>().read_unaligned() };
+    let low = ((secret_words[0] ^ secret_words[1]).wrapping_add(seed)) ^ input_first;
+    let high = ((secret_words[2] ^ secret_words[3]).wrapping_sub(seed)) ^ input_last;
+    let mul_result = low.into_u128().wrapping_mul(high.into_u128());
+    let value = input
+        .len()
+        .into_u64()
+        .wrapping_add(low.swap_bytes())
+        .wrapping_add(high)
+        .wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
+
+    avalanche(value)
+}
+
+#[inline]
+fn impl_17_to_128_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+    let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
+
+    let num_rounds = ((input.len() - 1) >> 5) + 1;
+
+    let (fwd, _) = input.bp_as_chunks();
+    let (_, bwd) = input.bp_as_rchunks();
+
+    let fwd = fwd.iter();
+    let bwd = bwd.iter().rev();
+
+    for (i, (fwd_chunk, bwd_chunk)) in fwd.zip(bwd).enumerate().take(num_rounds) {
+        acc = acc.wrapping_add(mix_step(fwd_chunk, &secret, i * 32, seed));
+        acc = acc.wrapping_add(mix_step(bwd_chunk, &secret, i * 32 + 16, seed));
+    }
+
+    avalanche(acc)
+}
+
+#[inline]
+fn impl_129_to_240_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+    let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
+
+    let (head, _tail) = input.bp_as_chunks();
+    let mut head = head.iter();
+
+    for (i, chunk) in head.by_ref().take(8).enumerate() {
+        acc = acc.wrapping_add(mix_step(chunk, &secret, i * 16, seed));
+    }
+
+    acc = avalanche(acc);
+
+    for (i, chunk) in head.enumerate() {
+        acc = acc.wrapping_add(mix_step(chunk, &secret, i * 16 + 3, seed));
+    }
+
+    acc = acc.wrapping_add(mix_step(input.last_chunk().unwrap(), &secret, 119, seed));
+
+    avalanche(acc)
 }
 
 #[inline]
@@ -249,8 +216,109 @@ fn mix_step(data: &[u8; 16], secret: &[u8], secret_offset: usize, seed: u64) -> 
 //     acc[1] = acc[1] ^ data_words1[0].wrapping_add(data_words1[1]);
 // }
 
-// Step 2-1. Process stripes in the block
+#[rustfmt::skip]
+const INITIAL_ACCUMULATORS: [u64; 8] = [
+    PRIME32_3, PRIME64_1, PRIME64_2, PRIME64_3,
+    PRIME64_4, PRIME32_2, PRIME64_5, PRIME32_1,
+];
+
+#[inline(never)]
+fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
+    let mut acc = INITIAL_ACCUMULATORS;
+
+    let stripes_per_block = (secret.len() - 64) / 8;
+    let block_size = 64 * stripes_per_block;
+
+    let mut blocks = input.chunks(block_size).fuse();
+    let last_block = blocks.next_back().unwrap();
+    let last_stripe = unsafe {
+        input
+            .as_ptr()
+            .add(input.len())
+            .sub(mem::size_of::<Stripe>())
+            .cast::<Stripe>()
+            .read_unaligned()
+    };
+
+    for block in blocks {
+        round(&mut acc, block, secret);
+    }
+
+    last_round(&mut acc, last_block, last_stripe, secret);
+
+    final_merge(
+        &mut acc,
+        input.len().into_u64().wrapping_mul(PRIME64_1),
+        secret,
+        11,
+    )
+}
+
 #[inline]
+fn round(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
+    round_accumulate(acc, block, secret);
+    round_scramble(acc, secret);
+}
+
+#[inline]
+fn round_accumulate(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
+    let (stripes, _) = block.bp_as_chunks::<{ mem::size_of::<Stripe>() }>();
+    let secrets =
+        (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
+
+    for (stripe, secret) in stripes.iter().zip(secrets) {
+        accumulate_hot(acc, stripe, secret);
+    }
+}
+
+#[inline]
+fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
+    let last = secret
+        .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
+        .unwrap();
+    let (last, _) = last.bp_as_chunks();
+    let last = last.iter().copied().map(u64::from_ne_bytes);
+
+    for (acc, secret) in acc.iter_mut().zip(last) {
+        *acc ^= *acc >> 47;
+        *acc ^= secret;
+        *acc = acc.wrapping_mul(PRIME32_1);
+    }
+}
+
+#[inline(never)]
+fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: Stripe, secret: &[u8]) {
+    let n_full_stripes = (block.len() - 1) / 64;
+    for n in 0..n_full_stripes {
+        let stripe = unsafe { block.as_ptr().add(n * 64).cast::<Stripe>().read_unaligned() };
+        accumulate(acc, stripe, secret, n * 8);
+    }
+    accumulate(acc, last_stripe, secret, secret.len() - 71);
+}
+
+#[inline(never)]
+fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
+    let secret_words = unsafe {
+        secret
+            .as_ptr()
+            .add(secret_offset)
+            .cast::<[u64; 8]>()
+            .read_unaligned()
+    };
+    let mut result = init_value;
+    for i in 0..4 {
+        // 64-bit by 64-bit multiplication to 128-bit full result
+        let mul_result = {
+            let a = (acc[i * 2] ^ secret_words[i * 2]).into_u128();
+            let b = (acc[i * 2 + 1] ^ secret_words[i * 2 + 1]).into_u128();
+            a.wrapping_mul(b)
+        };
+        result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
+    }
+    avalanche(result)
+}
+
+#[inline(never)]
 fn accumulate(acc: &mut [u64; 8], stripe: Stripe, secret: &[u8], secret_offset: usize) {
     // TODO: Should these casts / reads happen outside this function?
     let secret = &secret[secret_offset..];
@@ -285,69 +353,21 @@ fn accumulate_hot(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
 }
 
 #[inline]
-fn round_accumulate(acc: &mut [u64; 8], block: &[u8], mut secret: &[u8]) {
-    let (stripes, _) = block.bp_as_chunks::<{ mem::size_of::<Stripe>() }>();
-
-    let secrets = iter::from_fn(|| {
-        let (c, _) = secret.split_first_chunk()?;
-        secret = &secret[8..];
-        Some(c)
-    });
-
-    for (stripe, secret) in stripes.iter().zip(secrets) {
-        accumulate_hot(acc, stripe, secret);
-    }
+fn avalanche(mut x: u64) -> u64 {
+    x ^= x >> 37;
+    x = x.wrapping_mul(PRIME_MX1);
+    x ^= x >> 32;
+    x
 }
 
 #[inline]
-fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
-    let last = secret.last_chunk::<{mem::size_of::<[u8; 64]>()}>().unwrap();
-    let (last, _) = last.bp_as_chunks();
-    let last = last.iter().copied().map(u64::from_ne_bytes);
-
-    for (acc, secret) in acc.iter_mut().zip(last) {
-        *acc ^= *acc >> 47;
-        *acc ^= secret;
-        *acc = acc.wrapping_mul(PRIME32_1);
-    }
-}
-
-#[inline]
-fn round(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
-    round_accumulate(acc, block, secret);
-    round_scramble(acc, secret);
-}
-
-#[inline]
-fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: Stripe, secret: &[u8]) {
-    let n_full_stripes = (block.len() - 1) / 64;
-    for n in 0..n_full_stripes {
-        let stripe = unsafe { block.as_ptr().add(n * 64).cast::<Stripe>().read_unaligned() };
-        accumulate(acc, stripe, secret, n * 8);
-    }
-    accumulate(acc, last_stripe, secret, secret.len() - 71);
-}
-
-#[inline]
-fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
-    let secret_words = unsafe {
-        secret
-            .as_ptr()
-            .add(secret_offset)
-            .cast::<[u64; 8]>()
-            .read_unaligned()
-    };
-    let mut result = init_value;
-    for i in 0..4 {
-        // 64-bit by 64-bit multiplication to 128-bit full result
-        let mul_result = {
-            let a = (acc[i * 2] ^ secret_words[i * 2]).into_u128();
-            let b = (acc[i * 2 + 1] ^ secret_words[i * 2 + 1]).into_u128();
-            a.wrapping_mul(b)
-        };
-        result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
-    }
-    avalanche(result)
+fn avalanche_xxh64(mut x: u64) -> u64 {
+    x ^= x >> 33;
+    x = x.wrapping_mul(PRIME64_2);
+    x ^= x >> 29;
+    x = x.wrapping_mul(PRIME64_3);
+    x ^= x >> 32;
+    x
 }
 
 trait Halves {
