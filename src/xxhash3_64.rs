@@ -221,7 +221,7 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
     PRIME64_4, PRIME32_2, PRIME64_5, PRIME32_1,
 ];
 
-#[inline(never)]
+#[inline]
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
     let mut acc = INITIAL_ACCUMULATORS;
 
@@ -230,13 +230,12 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
 
     let mut blocks = input.chunks(block_size).fuse();
     let last_block = blocks.next_back().unwrap();
-    let last_stripe = unsafe {
-        input
+    let last_stripe: &[u8; 64] = unsafe {
+        &*input
             .as_ptr()
             .add(input.len())
-            .sub(mem::size_of::<Stripe>())
-            .cast::<Stripe>()
-            .read_unaligned()
+            .sub(mem::size_of::<[u8; 64]>())
+            .cast()
     };
 
     for block in blocks {
@@ -255,6 +254,8 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
 
 #[inline]
 fn round(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
+//    unsafe { core::arch::aarch64::_prefetch(block.as_ptr().cast(), _PREFETCH_READ, _PREFETCH_LOCALITY3) };
+
     round_accumulate(acc, block, secret);
     round_scramble(acc, secret);
 }
@@ -266,7 +267,9 @@ fn round_accumulate(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
         (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
 
     for (stripe, secret) in stripes.iter().zip(secrets) {
-        accumulate_hot(acc, stripe, secret);
+        // todo cast to bigger to specify how much to fetch?
+        unsafe { core::arch::aarch64::_prefetch(stripe.as_ptr().cast(), _PREFETCH_READ, _PREFETCH_LOCALITY3) };
+        accumulate(acc, stripe, secret);
     }
 }
 
@@ -285,17 +288,27 @@ fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
     }
 }
 
-#[inline(never)]
-fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: Stripe, secret: &[u8]) {
-    let n_full_stripes = (block.len() - 1) / 64;
-    for n in 0..n_full_stripes {
-        let stripe = unsafe { block.as_ptr().add(n * 64).cast::<Stripe>().read_unaligned() };
-        accumulate(acc, stripe, secret, n * 8);
+#[inline]
+fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: &[u8; 64], secret: &[u8]) {
+    // Accumulation steps are run for the stripes in the last block,
+    // except for the last stripe (whether it is full or not)
+    let stripes = match block.bp_as_chunks() {
+        ([stripes @ .., _last], []) => stripes,
+        (stripes, _last) => stripes,
+    };
+    let secrets =
+        (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
+
+    for (stripe, secret) in stripes.iter().zip(secrets) {
+        accumulate(acc, stripe, secret);
     }
-    accumulate(acc, last_stripe, secret, secret.len() - 71);
+
+    let q = &secret[secret.len() - 71..];
+    let q: &[u8; 64] = unsafe { &*q.as_ptr().cast() };
+    accumulate(acc, last_stripe, q);
 }
 
-#[inline(never)]
+#[inline]
 fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
     let secret_words = unsafe {
         secret
@@ -317,25 +330,8 @@ fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset
     avalanche(result)
 }
 
-#[inline(never)]
-fn accumulate(acc: &mut [u64; 8], stripe: Stripe, secret: &[u8], secret_offset: usize) {
-    // TODO: Should these casts / reads happen outside this function?
-    let secret = &secret[secret_offset..];
-    let secret_words = unsafe { secret.as_ptr().cast::<[u64; 8]>().read_unaligned() };
-
-    for i in 0..8 {
-        let value = stripe[i] ^ secret_words[i];
-        acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe[i]);
-        acc[i] = acc[i].wrapping_add({
-            let a = value.lower_half().into_u64();
-            let b = value.upper_half().into_u64();
-            a.wrapping_mul(b)
-        });
-    }
-}
-
 #[inline]
-fn accumulate_hot(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
     for i in 0..8 {
         // TODO: Should these casts / reads happen outside this function?
         let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
@@ -343,12 +339,36 @@ fn accumulate_hot(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
 
         let value = stripe ^ secret;
         acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
-        acc[i] = acc[i].wrapping_add({
-            let a = value.lower_half().into_u64();
-            let b = value.upper_half().into_u64();
-            a.wrapping_mul(b)
-        });
+
+        acc[i] = multiply_and_add(value, value >> 32, acc[i]);
     }
+}
+
+#[inline]
+#[cfg(not(target_arch = "aarch64"))]
+fn multiply_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+    acc.wrapping_add({
+        let a = (lhs as u32).into_u64();
+        let b = (rhs as u32).into_u64();
+        a.wrapping_mul(b)
+    })
+}
+
+#[inline]
+// https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5595-L5610
+#[cfg(target_arch = "aarch64")]
+fn multiply_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+    let res;
+
+    unsafe { asm!(
+        "umaddl {res}, {lhs:w}, {rhs:w}, {acc}",
+        lhs = in(reg) lhs,
+        rhs = in(reg) rhs,
+        acc = in(reg) acc,
+        res = out(reg) res,
+    ) }
+
+    res
 }
 
 #[inline]
