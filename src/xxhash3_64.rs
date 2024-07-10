@@ -38,8 +38,7 @@ impl XxHash3_64 {
     #[inline(never)]
     pub fn oneshot(input: &[u8]) -> u64 {
         let seed = 0;
-        let secret = DEFAULT_SECRET;
-        let secret = &secret[..];
+        let secret = &DEFAULT_SECRET;
 
         match input.len() {
             0 => impl_0_bytes(secret, seed),
