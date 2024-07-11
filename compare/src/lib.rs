@@ -205,8 +205,8 @@ mod xxhash64 {
 
 mod xxhash3_64 {
     use proptest::{prelude::*, test_runner::TestCaseResult};
-    use xx_renu::xxhash3_64::SECRET_MINIMUM_LENGTH;
     use std::hash::Hasher as _;
+    use xx_renu::xxhash3_64::SECRET_MINIMUM_LENGTH;
 
     use super::*;
 

@@ -173,25 +173,23 @@ mod xxhash3_64 {
         let (seed, data) = gen_data(BIG_DATA_SIZE);
         let mut g = c.benchmark_group("xxhash3_64/oneshot");
 
-        for size in [data.len()] {
-            //half_sizes(data.len()).take_while(|&s| s >= MIN_BIG_DATA_SIZE)} {
+        for size in half_sizes(data.len()).take_while(|&s| s >= MIN_BIG_DATA_SIZE) {
             let data = &data[..size];
             g.throughput(Throughput::Bytes(data.len() as _));
 
             let id = format!("impl-c/size-{size:07}");
             g.bench_function(id, |b| {
-                b.iter(|| {
-                    let hash = c::XxHash3_64::oneshot(data);
-                    black_box(hash);
-                })
+                b.iter(|| c::XxHash3_64::oneshot_with_seed(seed, data))
+            });
+
+            let id = format!("impl-c-scalar/size-{size:07}");
+            g.bench_function(id, |b| {
+                b.iter(|| c::ScalarXxHash3_64::oneshot_with_seed(seed, data))
             });
 
             let id = format!("impl-rust/size-{size:07}");
             g.bench_function(id, |b| {
-                b.iter(|| {
-                    let hash = rust::XxHash3_64::oneshot(data);
-                    black_box(hash);
-                })
+                b.iter(|| rust::XxHash3_64::oneshot_with_seed(seed, data))
             });
         }
 
