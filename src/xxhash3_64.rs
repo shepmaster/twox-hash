@@ -15,6 +15,8 @@ const PRIME64_5: u64 = 0x27D4EB2F165667C5;
 const PRIME_MX1: u64 = 0x165667919E3779F9;
 const PRIME_MX2: u64 = 0x9FB21C651E98DF25;
 
+const DEFAULT_SEED: u64 = 0;
+
 const DEFAULT_SECRET: [u8; 192] = [
     0xb8, 0xfe, 0x6c, 0x39, 0x23, 0xa4, 0x4b, 0xbe, 0x7c, 0x01, 0x81, 0x2c, 0xf7, 0x21, 0xad, 0x1c,
     0xde, 0xd4, 0x6d, 0xe9, 0x83, 0x90, 0x97, 0xdb, 0x72, 0x40, 0xa4, 0xa4, 0xb7, 0xb3, 0x67, 0x1f,
@@ -30,6 +32,8 @@ const DEFAULT_SECRET: [u8; 192] = [
     0x45, 0xcb, 0x3a, 0x8f, 0x95, 0x16, 0x04, 0x28, 0xaf, 0xd7, 0xfb, 0xca, 0xbb, 0x4b, 0x40, 0x7e,
 ];
 
+pub const SECRET_MINIMUM_LENGTH: usize = 136;
+
 pub struct XxHash3_64;
 
 type Stripe = [u64; 8];
@@ -37,7 +41,7 @@ type Stripe = [u64; 8];
 impl XxHash3_64 {
     #[inline(never)]
     pub fn oneshot(input: &[u8]) -> u64 {
-        impl_oneshot(&DEFAULT_SECRET, 0, input)
+        impl_oneshot(&DEFAULT_SECRET, DEFAULT_SEED, input)
     }
 
     #[inline(never)]
@@ -50,8 +54,15 @@ impl XxHash3_64 {
 
         impl_oneshot(secret, seed, input)
     }
+
+    #[inline(never)]
+    pub fn oneshot_with_secret(secret: &[u8], input: &[u8]) -> u64 {
+        assert!(secret.len() >= SECRET_MINIMUM_LENGTH); // TODO: ERROR
+        impl_oneshot(secret, DEFAULT_SEED, input)
+    }
 }
 
+#[inline]
 fn derive_secret(seed: u64) -> [u8; 192] {
     let mut derived_secret = DEFAULT_SECRET;
     let base = derived_secret.as_mut_ptr().cast::<u64>();
@@ -74,7 +85,7 @@ fn derive_secret(seed: u64) -> [u8; 192] {
 }
 
 #[inline]
-fn impl_oneshot(secret: &[u8; 192], seed: u64, input: &[u8]) -> u64 {
+fn impl_oneshot(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
     match input.len() {
         0 => impl_0_bytes(secret, seed),
 

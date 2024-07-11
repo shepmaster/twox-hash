@@ -205,6 +205,7 @@ mod xxhash64 {
 
 mod xxhash3_64 {
     use proptest::{prelude::*, test_runner::TestCaseResult};
+    use xx_renu::xxhash3_64::SECRET_MINIMUM_LENGTH;
     use std::hash::Hasher as _;
 
     use super::*;
@@ -233,6 +234,11 @@ mod xxhash3_64 {
         #[test]
         fn oneshot_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
             oneshot_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn oneshot_with_a_secret(secret in prop::collection::vec(num::u8::ANY, SECRET_MINIMUM_LENGTH..1024), data: Vec<u8>) {
+            oneshot_with_secret_impl(&secret, &data)?;
         }
 
         // #[test]
@@ -279,6 +285,14 @@ mod xxhash3_64 {
     fn oneshot_impl(seed: u64, data: &[u8]) -> TestCaseResult {
         let native = c::XxHash3_64::oneshot_with_seed(seed, data);
         let rust = rust::XxHash3_64::oneshot_with_seed(seed, data);
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn oneshot_with_secret_impl(secret: &[u8], data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash3_64::oneshot_with_secret(secret, data);
+        let rust = rust::XxHash3_64::oneshot_with_secret(secret, data);
 
         prop_assert_eq!(native, rust);
         Ok(())
