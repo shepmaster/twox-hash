@@ -67,24 +67,33 @@
 #![no_std]
 #![deny(rust_2018_idioms)]
 #![deny(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(any(doc, test))]
 extern crate std;
 
 #[cfg(feature = "xxhash32")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash32")))]
 pub mod xxhash32;
 
 #[cfg(feature = "xxhash32")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash32")))]
 pub use xxhash32::Hasher as XxHash32;
 
 #[cfg(feature = "xxhash64")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash64")))]
 pub mod xxhash64;
 
 #[cfg(feature = "xxhash64")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash64")))]
 pub use xxhash64::Hasher as XxHash64;
 
+#[cfg(feature = "xxhash3_64")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_64")))]
 pub mod xxhash3_64;
 
+#[cfg(feature = "xxhash3_64")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_64")))]
 pub use xxhash3_64::XxHash3_64;
 
 trait IntoU32 {

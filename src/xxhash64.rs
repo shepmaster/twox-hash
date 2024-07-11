@@ -486,6 +486,7 @@ mod test {
 }
 
 #[cfg(feature = "random")]
+#[cfg_attr(docsrs, doc(cfg(feature = "random")))]
 mod random_impl {
     use super::*;
 
@@ -529,9 +530,11 @@ mod random_impl {
 }
 
 #[cfg(feature = "random")]
+#[cfg_attr(docsrs, doc(cfg(feature = "random")))]
 pub use random_impl::*;
 
 #[cfg(feature = "serialize")]
+#[cfg_attr(docsrs, doc(cfg(feature = "serialize")))]
 mod serialize_impl {
     use serde::{Deserialize, Serialize};
 
