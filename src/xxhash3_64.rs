@@ -37,24 +37,58 @@ type Stripe = [u64; 8];
 impl XxHash3_64 {
     #[inline(never)]
     pub fn oneshot(input: &[u8]) -> u64 {
-        let seed = 0;
-        let secret = &DEFAULT_SECRET;
+        impl_oneshot(&DEFAULT_SECRET, 0, input)
+    }
 
-        match input.len() {
-            0 => impl_0_bytes(secret, seed),
+    #[inline(never)]
+    pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u64 {
+        let secret = if seed != 0 && input.len() > 240 {
+            &derive_secret(seed)
+        } else {
+            &DEFAULT_SECRET
+        };
 
-            1..=3 => impl_1_to_3_bytes(secret, seed, input),
+        impl_oneshot(secret, seed, input)
+    }
+}
 
-            4..=8 => impl_4_to_8_bytes(secret, seed, input),
+fn derive_secret(seed: u64) -> [u8; 192] {
+    let mut derived_secret = DEFAULT_SECRET;
+    let base = derived_secret.as_mut_ptr().cast::<u64>();
 
-            9..=16 => impl_9_to_16_bytes(secret, seed, input),
+    for i in 0..12 {
+        let a_p = unsafe { base.add(i * 2) };
+        let b_p = unsafe { base.add(i * 2 + 1) };
 
-            17..=128 => impl_17_to_128_bytes(secret, seed, input),
+        let mut a = unsafe { a_p.read_unaligned() };
+        let mut b = unsafe { b_p.read_unaligned() };
 
-            129..=240 => impl_129_to_240_bytes(secret, seed, input),
+        a = a.wrapping_add(seed);
+        b = b.wrapping_sub(seed);
 
-            _ => impl_241_plus_bytes(secret, input),
-        }
+        unsafe { a_p.write_unaligned(a) };
+        unsafe { b_p.write_unaligned(b) };
+    }
+
+    derived_secret
+}
+
+#[inline]
+fn impl_oneshot(secret: &[u8; 192], seed: u64, input: &[u8]) -> u64 {
+    match input.len() {
+        0 => impl_0_bytes(secret, seed),
+
+        1..=3 => impl_1_to_3_bytes(secret, seed, input),
+
+        4..=8 => impl_4_to_8_bytes(secret, seed, input),
+
+        9..=16 => impl_9_to_16_bytes(secret, seed, input),
+
+        17..=128 => impl_17_to_128_bytes(secret, seed, input),
+
+        129..=240 => impl_129_to_240_bytes(secret, seed, input),
+
+        _ => impl_241_plus_bytes(secret, input),
     }
 }
 
@@ -98,7 +132,11 @@ fn impl_4_to_8_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
 
     let combined = input_last.into_u64() | (input_first.into_u64() << 32);
 
-    let mut value = ((secret_words[0] ^ secret_words[1]) - modified_seed) ^ combined;
+    let mut value = {
+        let a = secret_words[0] ^ secret_words[1];
+        let b = a.wrapping_sub(modified_seed);
+        b ^ combined
+    };
     value ^= value.rotate_left(49) ^ value.rotate_left(24);
     value = value.wrapping_mul(PRIME_MX2);
     value ^= (value >> 35).wrapping_add(input.len().into_u64());
@@ -596,6 +634,27 @@ mod test {
 
         for (input, expected) in inputs.iter().zip(expected) {
             let hash = XxHash3_64::oneshot(input);
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
+        }
+    }
+
+    #[test]
+    fn hash_with_seed() {
+        let inputs = bytes![0, 1, 4, 9, 17, 129, 241, 1024];
+
+        let expected = [
+            0x4aed_e683_89c0_e311,
+            0x78fc_079a_75aa_f3c0,
+            0x1b73_06b8_9f25_4507,
+            0x7df7_627f_d1f9_39b6,
+            0x49ca_0fff_0950_1622,
+            0x2bfd_caec_30ff_3000,
+            0xf984_56bc_25be_0901,
+            0x2483_9f0f_cdf4_d078,
+        ];
+
+        for (input, expected) in inputs.iter().zip(expected) {
+            let hash = XxHash3_64::oneshot_with_seed(0xdead_cafe, input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }

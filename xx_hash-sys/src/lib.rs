@@ -131,6 +131,11 @@ pub struct XXH3_state_t {
 
 extern "C" {
     fn XXH3_64bits(input: *const libc::c_void, length: libc::size_t) -> XXH64_hash_t;
+    fn XXH3_64bits_withSeed(
+        input: *const libc::c_void,
+        length: libc::size_t,
+        seed: XXH64_hash_t,
+    ) -> XXH64_hash_t;
 
     fn XXH3_createState() -> *mut XXH3_state_t;
     fn XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
@@ -148,6 +153,10 @@ pub struct XxHash3_64(*mut XXH3_state_t);
 impl XxHash3_64 {
     pub fn oneshot(data: &[u8]) -> u64 {
         unsafe { XXH3_64bits(data.as_ptr().cast(), data.len()) }
+    }
+
+    pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
+        unsafe { XXH3_64bits_withSeed(data.as_ptr().cast(), data.len(), seed) }
     }
 
     pub fn with_seed() -> Self {
