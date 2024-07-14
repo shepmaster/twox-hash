@@ -33,7 +33,7 @@ fn main() {
     assert!(s.success(), "Scalar build failed");
 
     let name = xxhash.join("libxxhash.a");
-    let new =  out.join("libxxhash_scalar.a");
+    let new = out.join("libxxhash_scalar.a");
     fs::copy(name, new).expect("Copy scalar");
 
     let s = make_cmd()
@@ -49,9 +49,8 @@ fn main() {
     assert!(s.success(), "Optimized build failed");
 
     let name = xxhash.join("libxxhash.a");
-    let new =  out.join("libxxhash_optimized.a");
+    let new = out.join("libxxhash_optimized.a");
     fs::copy(name, new).expect("Copy scalar");
-
 
     println!("cargo::rustc-link-lib=static=xxhash_scalar");
     println!("cargo::rustc-link-lib=static=xxhash_optimized");

@@ -377,15 +377,82 @@ fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset
 
 #[inline]
 fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-    for i in 0..8 {
-        // TODO: Should these casts / reads happen outside this function?
-        let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
-        let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
+    use core::arch::aarch64::*;
 
-        let value = stripe ^ secret;
-        acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
-        acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
+    // unsafe {
+    //     _prefetch::<_PREFETCH_READ, _PREFETCH_LOCALITY3>(stripe.as_ptr().cast());
+    //     _prefetch::<_PREFETCH_READ, _PREFETCH_LOCALITY3>(secret.as_ptr().cast());
+    // }
+
+    // eprintln!("{acc:x?}");
+    // for i in 0..8 {
+    //     // TODO: Should these casts / reads happen outside this function?
+    //     let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
+    //     let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
+
+    //     eprintln!("{:x?}, {:x?}", stripe, secret);
+
+    //     let value = stripe ^ secret;
+    //     acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
+    //     acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
+    // }
+
+    // We process 4x u64 at a time as that allows us to completely
+    // fill a `uint64x2_t` with useful values when performing the
+    // `vmull_{high_}u32`.
+    let (acc2, _) = acc.bp_as_chunks_mut::<4>();
+    for (i, acc) in acc2.into_iter().enumerate() {
+        unsafe {
+            let mut accv_0 = vld1q_u64(acc.as_ptr().cast::<u64>());
+            let mut accv_1 = vld1q_u64(acc.as_ptr().cast::<u64>().add(2));
+            let stripe_0 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4));
+            let stripe_1 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4 + 2));
+            let secret_0 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4));
+            let secret_1 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4 + 2));
+
+            let value_0 = veorq_u64(stripe_0, secret_0);
+            let value_1 = veorq_u64(stripe_1, secret_1);
+
+            let parts_0 = vreinterpretq_u32_u64(value_0);
+            let parts_1 = vreinterpretq_u32_u64(value_1);
+
+            let hi = vuzp1q_u32(parts_0, parts_1);
+            let lo = vuzp2q_u32(parts_0, parts_1);
+
+            let product_0 = vmull_u32(vget_low_u32(hi), vget_low_u32(lo));
+            let product_1 = vmull_high_u32(hi, lo);
+
+            accv_0 = vaddq_u64(accv_0, product_0);
+            accv_1 = vaddq_u64(accv_1, product_1);
+
+            let stripe_rot_0 = vextq_u64::<1>(stripe_0, stripe_0);
+            let stripe_rot_1 = vextq_u64::<1>(stripe_1, stripe_1);
+            accv_0 = vaddq_u64(accv_0, stripe_rot_0);
+            accv_1 = vaddq_u64(accv_1, stripe_rot_1);
+
+            vst1q_u64(acc.as_mut_ptr().cast::<u64>(), accv_0);
+            vst1q_u64(acc.as_mut_ptr().cast::<u64>().add(2), accv_1);
+        };
     }
+
+
+    // Pseudo-SIMD
+
+    // for (acc, (str, sec)) in acc.iter_mut().zip(stripe_x.into_iter().zip(secret_x)) {
+    //     let value = str ^ sec;
+    //     *acc = multiply_64_as_32_and_add(value, value >> 32, *acc);
+    // }
+
+    // let mut stripe_x = stripe_x;
+
+    // stripe_x.swap(0, 1);
+    // stripe_x.swap(2, 3);
+    // stripe_x.swap(4, 5);
+    // stripe_x.swap(6, 7);
+
+    // for (acc, str) in acc.iter_mut().zip(stripe_x) {
+    //     *acc = acc.wrapping_add(str);
+    // }
 }
 
 #[inline]
@@ -474,6 +541,7 @@ impl Halves for u128 {
 
 trait SliceBackport<T> {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]);
+    fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]);
     fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]);
 }
 
@@ -483,6 +551,14 @@ impl<T> SliceBackport<T> for [T] {
         let len = self.len() / N;
         let (head, tail) = unsafe { self.split_at_unchecked(len * N) };
         let head = unsafe { slice::from_raw_parts(head.as_ptr().cast(), len) };
+        (head, tail)
+    }
+
+    fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]) {
+        assert_ne!(N, 0);
+        let len = self.len() / N;
+        let (head, tail) = unsafe { self.split_at_mut_unchecked(len * N) };
+        let head = unsafe { slice::from_raw_parts_mut(head.as_mut_ptr().cast(), len) };
         (head, tail)
     }
 
@@ -631,7 +707,7 @@ mod test {
     }
 
     #[test]
-    fn hash_240_plus_bytes() {
+    fn hash_241_plus_bytes() {
         let inputs = bytes![241, 242, 243, 244, 1024, 10240];
 
         let expected = [
