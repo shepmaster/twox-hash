@@ -320,17 +320,95 @@ fn round_accumulate(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
 
 #[inline]
 fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
-    let last = secret
-        .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
-        .unwrap();
-    let (last, _) = last.bp_as_chunks();
-    let last = last.iter().copied().map(u64::from_ne_bytes);
 
-    for (acc, secret) in acc.iter_mut().zip(last) {
-        *acc ^= *acc >> 47;
-        *acc ^= secret;
-        *acc = acc.wrapping_mul(PRIME32_1);
-    }
+
+    // let last = secret
+    //     .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
+    //     .unwrap();
+    // let (last, _) = last.bp_as_chunks();
+    // let last = last.iter().copied().map(u64::from_ne_bytes);
+
+    // for (acc, secret) in acc.iter_mut().zip(last) {
+    //     *acc ^= *acc >> 47;
+    //     *acc ^= secret;
+    //     *acc = acc.wrapping_mul(PRIME32_1);
+    // }
+
+    unsafe {
+        use core::arch::aarch64::*;
+
+        let secret_base = secret.as_ptr().add(secret.len()).sub(64).cast::<u64>();
+        let (acc, _) = acc.bp_as_chunks_mut::<2>();
+        for (i, acc) in acc.iter_mut().enumerate() {
+            let mut accv = vld1q_u64(acc.as_ptr());
+            let secret = vld1q_u64(secret_base.add(i * 2));
+
+            let shifted = vshrq_n_u64::<47>(accv);
+            accv = veorq_u64(accv, shifted);
+            accv = veorq_u64(accv, secret);
+
+            // let acc0 = vgetq_lane_u64::<0>(accv);
+            // let acc1 = vgetq_lane_u64::<1>(accv);
+            // let r0 = acc0.wrapping_mul(PRIME32_1);
+            // let r1 = acc1.wrapping_mul(PRIME32_1);
+            // eprintln!("expected = {r0:x}, {r1:x}");
+
+            let prime = vdupq_n_u32(PRIME32_1 as _); // opt: always 0 in high bits cause 32bit
+
+            // eprintln!("acc = {accv:x?}");
+
+            let accv = vreinterpretq_u32_u64(accv);
+
+            // eprintln!("acc = {accv:x?}");
+
+            // eprintln!("lo(acc) = {:x?} lo(pp) = {:x?}", vget_low_u32(accv), vget_low_u32(pp));
+
+            let lo = vmull_u32(vget_low_u32(accv), vget_low_u32(prime));
+            let hi = vmull_high_u32(accv, prime);
+
+            // eprintln!("lo = {lo:x?} hi = {hi:x?}");
+
+            let a = vuzp1q_u64(lo, hi);
+            let b = vuzp2q_u64(lo, hi);
+
+            // eprintln!("a = {a:x?} b = {b:x?}");
+
+            let b  = vshlq_n_u64::<32>(b);
+
+            let s = vaddq_u64(a, b);
+
+            // eprintln!("s = {s:x?}");
+            // let accv = vreinterpretq_u64_u32(accv);
+            // eprintln!("acc = {accv:x?}");
+
+            let accv = s;
+
+//            panic!();
+
+           vst1q_u64(acc.as_mut_ptr(), accv);
+        }
+        }
+
+    // eprintln!("{acc:x?}");
+    // eprintln!("----------");
+
+
+    // scalar
+    // acc
+    //
+    // [23e3a8c41a04e6b, e0ab8aff41b10f66,
+    //  fd0385440ae4def7, ac00b2db47f23b90,
+    //  60a911d92c86ff3b, ad3b37a550927c9c,
+    //  211896d1cfc9b1b9, 66ceedfabb78caeb]
+    //
+    // simd
+    // acc
+    //
+    // [b66e3311c60fb961, c8a474f8ebf44757,
+    //  6810423fba6d7ed0, d41b8185aab06f3,
+    //  9f012bd957bae2ba, b3ce30e7c301b27e,
+    //  c2090074dc5d2070, dadf4f22e5e02bdd]
+
 }
 
 #[inline]
