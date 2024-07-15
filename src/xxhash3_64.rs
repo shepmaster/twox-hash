@@ -347,68 +347,75 @@ fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
             accv = veorq_u64(accv, shifted);
             accv = veorq_u64(accv, secret);
 
-            // let acc0 = vgetq_lane_u64::<0>(accv);
-            // let acc1 = vgetq_lane_u64::<1>(accv);
-            // let r0 = acc0.wrapping_mul(PRIME32_1);
-            // let r1 = acc1.wrapping_mul(PRIME32_1);
-            // eprintln!("expected = {r0:x}, {r1:x}");
+            accv = neon::xx_vmulq_u32_u64(accv, PRIME32_1 as u32);
 
-            let prime = vdupq_n_u32(PRIME32_1 as _); // opt: always 0 in high bits cause 32bit
-
-            // eprintln!("acc = {accv:x?}");
-
-            let accv = vreinterpretq_u32_u64(accv);
-
-            // eprintln!("acc = {accv:x?}");
-
-            // eprintln!("lo(acc) = {:x?} lo(pp) = {:x?}", vget_low_u32(accv), vget_low_u32(pp));
-
-            let lo = vmull_u32(vget_low_u32(accv), vget_low_u32(prime));
-            let hi = vmull_high_u32(accv, prime);
-
-            // eprintln!("lo = {lo:x?} hi = {hi:x?}");
-
-            let a = vuzp1q_u64(lo, hi);
-            let b = vuzp2q_u64(lo, hi);
-
-            // eprintln!("a = {a:x?} b = {b:x?}");
-
-            let b  = vshlq_n_u64::<32>(b);
-
-            let s = vaddq_u64(a, b);
-
-            // eprintln!("s = {s:x?}");
-            // let accv = vreinterpretq_u64_u32(accv);
-            // eprintln!("acc = {accv:x?}");
-
-            let accv = s;
-
-//            panic!();
-
-           vst1q_u64(acc.as_mut_ptr(), accv);
+            vst1q_u64(acc.as_mut_ptr(), accv);
         }
+    }
+}
+
+mod neon {
+    use core::arch::aarch64::*;
+
+    // There is no `vmulq_u64` (multiply 64-bit by 64-bit, keeping the
+    // lower 64 bits of the result) operation, so we have to make our
+    // own out of 32-bit operations . We can simplify by realizing
+    // that we are always multiplying by a 32-bit number.
+    //
+    // The basic algorithm is traditional long multiplication. `[]`
+    // denotes groups of 32 bits.
+    //
+    //         [AAAA][BBBB]
+    // x             [CCCC]
+    // --------------------
+    //         [BCBC][BCBC]
+    // + [ACAC][ACAC]
+    // --------------------
+    //         [ACBC][BCBC] // 64-bit truncation occurs
+    //
+    // This can be written in NEON as a vectorwise wrapping
+    // multiplication of the high-order chunk of the input (`A`)
+    // against the constant and then a multiply-widen-and-accumulate
+    // of the low-order chunk of the input and the constant:
+    //
+    // 1. High-order, vectorwise
+    //
+    //         [AAAA][BBBB]
+    // x       [CCCC][0000]
+    // --------------------
+    //         [ACAC][0000]
+    //
+    // 2. Low-order, widening
+    //
+    //               [BBBB]
+    // x             [CCCC] // widening
+    // --------------------
+    //         [BCBC][BCBC]
+    //
+    // 3. Accumulation
+    //
+    //         [ACAC][0000]
+    // +       [BCBC][BCBC] // vectorwise
+    // --------------------
+    //         [ACBC][BCBC]
+    //
+    // Thankfully, NEON has a single multiply-widen-and-accumulate
+    // operation.
+    #[inline]
+    pub fn xx_vmulq_u32_u64(input: uint64x2_t, og_factor: u32) -> uint64x2_t {
+        unsafe {
+            let input_as_u32 = vreinterpretq_u32_u64(input);
+            let factor = vmov_n_u32(og_factor);
+            let factor_striped = vmovq_n_u64(u64::from(og_factor) << 32);
+            let factor_striped = vreinterpretq_u32_u64(factor_striped);
+
+            let high_shifted_as_32 = vmulq_u32(input_as_u32, factor_striped);
+            let high_shifted = vreinterpretq_u64_u32(high_shifted_as_32);
+
+            let input_lo = vmovn_u64(input);
+            vmlal_u32(high_shifted, input_lo, factor)
         }
-
-    // eprintln!("{acc:x?}");
-    // eprintln!("----------");
-
-
-    // scalar
-    // acc
-    //
-    // [23e3a8c41a04e6b, e0ab8aff41b10f66,
-    //  fd0385440ae4def7, ac00b2db47f23b90,
-    //  60a911d92c86ff3b, ad3b37a550927c9c,
-    //  211896d1cfc9b1b9, 66ceedfabb78caeb]
-    //
-    // simd
-    // acc
-    //
-    // [b66e3311c60fb961, c8a474f8ebf44757,
-    //  6810423fba6d7ed0, d41b8185aab06f3,
-    //  9f012bd957bae2ba, b3ce30e7c301b27e,
-    //  c2090074dc5d2070, dadf4f22e5e02bdd]
-
+    }
 }
 
 #[inline]
