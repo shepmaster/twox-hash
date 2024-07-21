@@ -318,25 +318,77 @@ fn round_accumulate(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
     }
 }
 
-#[inline]
-#[cfg(not(target_arch = "aarch64"))]
-fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
-    let last = secret
-        .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
-        .unwrap();
-    let (last, _) = last.bp_as_chunks();
-    let last = last.iter().copied().map(u64::from_ne_bytes);
+#[cfg(any(not(all(feature = "simd", target_arch = "aarch64"))))]
+mod scalar {
+    use core::mem;
 
-    for (acc, secret) in acc.iter_mut().zip(last) {
-        *acc ^= *acc >> 47;
-        *acc ^= secret;
-        *acc = acc.wrapping_mul(PRIME32_1);
+    use super::{SliceBackport as _, PRIME32_1};
+
+    #[inline]
+    pub fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
+        let last = secret
+            .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
+            .unwrap();
+        let (last, _) = last.bp_as_chunks();
+        let last = last.iter().copied().map(u64::from_ne_bytes);
+
+        for (acc, secret) in acc.iter_mut().zip(last) {
+            *acc ^= *acc >> 47;
+            *acc ^= secret;
+            *acc = acc.wrapping_mul(PRIME32_1);
+        }
+    }
+
+    #[inline]
+    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        for i in 0..8 {
+            // TODO: Should these casts / reads happen outside this function?
+            let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
+            let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
+
+            let value = stripe ^ secret;
+            acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
+            acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
+        }
+    }
+
+    #[inline]
+    #[cfg(not(target_arch = "aarch64"))]
+    fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+        let lhs = (lhs as u32).into_u64();
+        let rhs = (rhs as u32).into_u64();
+
+        let product = lhs.wrapping_mul(rhs);
+        acc.wrapping_add(product)
+    }
+
+    #[inline]
+    // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5595-L5610
+    // https://github.com/llvm/llvm-project/issues/98481
+    #[cfg(target_arch = "aarch64")]
+    fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+        use core::arch::asm;
+
+        let res;
+
+        unsafe {
+            asm!(
+                "umaddl {res}, {lhs:w}, {rhs:w}, {acc}",
+                lhs = in(reg) lhs,
+                rhs = in(reg) rhs,
+                acc = in(reg) acc,
+                res = out(reg) res,
+            )
+        }
+
+        res
     }
 }
 
-#[cfg(target_arch = "aarch64")]
-use neon::{accumulate, round_scramble};
+#[cfg(any(not(all(feature = "simd", target_arch = "aarch64"))))]
+use scalar as vector_impl;
 
+#[cfg(all(target_arch = "aarch64", feature = "simd"))]
 mod neon {
     use core::arch::aarch64::*;
 
@@ -485,6 +537,11 @@ mod neon {
     // }
 }
 
+#[cfg(all(target_arch = "aarch64", feature = "simd"))]
+use neon as vector_impl;
+
+use vector_impl::{accumulate, round_scramble};
+
 #[inline]
 fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: &[u8; 64], secret: &[u8]) {
     // Accumulation steps are run for the stripes in the last block,
@@ -525,52 +582,6 @@ fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset
         result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
     }
     avalanche(result)
-}
-
-#[inline]
-#[cfg(not(target_arch = "aarch64"))]
-fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-    for i in 0..8 {
-        // TODO: Should these casts / reads happen outside this function?
-        let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
-        let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
-
-        let value = stripe ^ secret;
-        acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
-        acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
-    }
-}
-
-#[inline]
-#[cfg(not(target_arch = "aarch64"))]
-fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
-    let lhs = (lhs as u32).into_u64();
-    let rhs = (rhs as u32).into_u64();
-
-    let product = lhs.wrapping_mul(rhs);
-    acc.wrapping_add(product)
-}
-
-#[inline]
-// https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5595-L5610
-// https://github.com/llvm/llvm-project/issues/98481
-#[cfg(target_arch = "aarch64")]
-fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
-    use core::arch::asm;
-
-    let res;
-
-    unsafe {
-        asm!(
-            "umaddl {res}, {lhs:w}, {rhs:w}, {acc}",
-            lhs = in(reg) lhs,
-            rhs = in(reg) rhs,
-            acc = in(reg) acc,
-            res = out(reg) res,
-        )
-    }
-
-    res
 }
 
 #[inline]
@@ -628,7 +639,10 @@ impl Halves for u128 {
 
 trait SliceBackport<T> {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]);
+
+    #[cfg(all(target_arch = "aarch64", feature = "simd"))]
     fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]);
+
     fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]);
 }
 
@@ -641,6 +655,7 @@ impl<T> SliceBackport<T> for [T] {
         (head, tail)
     }
 
+    #[cfg(all(target_arch = "aarch64", feature = "simd"))]
     fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]) {
         assert_ne!(N, 0);
         let len = self.len() / N;
