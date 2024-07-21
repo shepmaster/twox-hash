@@ -370,7 +370,7 @@ mod neon {
 
     // We process 4x u64 at a time as that allows us to completely
     // fill a `uint64x2_t` with useful values when performing the
-    // `vmull_{high_}u32`.
+    // multiplication.
     #[inline]
     pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
         let (acc2, _) = acc.bp_as_chunks_mut::<4>();
@@ -383,29 +383,35 @@ mod neon {
                 let secret_0 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4));
                 let secret_1 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4 + 2));
 
+                // stripe_rot[i ^ 1] = stripe[i];
+                let stripe_rot_0 = vextq_u64::<1>(stripe_0, stripe_0);
+                let stripe_rot_1 = vextq_u64::<1>(stripe_1, stripe_1);
+
                 // value[i] = stripe[i] ^ secret[i];
                 let value_0 = veorq_u64(stripe_0, secret_0);
                 let value_1 = veorq_u64(stripe_1, secret_1);
 
-                // tmp[i] = value[i] * (value[i] >> 32)
+                // sum[i] = value[i] * (value[i] >> 32) + stripe_rot[i]
+                //
+                // Each vector has 64-bit values, but we treat them as
+                // 32-bit and then unzip them. This naturally splits
+                // the upper and lower 32 bits.
                 let parts_0 = vreinterpretq_u32_u64(value_0);
                 let parts_1 = vreinterpretq_u32_u64(value_1);
 
                 let hi = vuzp1q_u32(parts_0, parts_1);
                 let lo = vuzp2q_u32(parts_0, parts_1);
 
-                let product_0 = vmull_u32(vget_low_u32(hi), vget_low_u32(lo));
-                let product_1 = vmull_high_u32(hi, lo);
+                let sum_0 = vmlal_u32(stripe_rot_0, vget_low_u32(hi), vget_low_u32(lo));
+                let sum_1 = vmlal_high_u32(stripe_rot_1, hi, lo);
 
-                // acc[i] += tmp[i]
-                accv_0 = vaddq_u64(accv_0, product_0);
-                accv_1 = vaddq_u64(accv_1, product_1);
+                // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
+                core::arch::asm!("/* {x:v} */", x = in(vreg) sum_0);
+                core::arch::asm!("/* {x:v} */", x = in(vreg) sum_1);
 
-                // acc[i ^ 1] = acc[i ^ 1] + stripe[i];
-                let stripe_rot_0 = vextq_u64::<1>(stripe_0, stripe_0);
-                let stripe_rot_1 = vextq_u64::<1>(stripe_1, stripe_1);
-                accv_0 = vaddq_u64(accv_0, stripe_rot_0);
-                accv_1 = vaddq_u64(accv_1, stripe_rot_1);
+                // acc[i] += sum[i]
+                accv_0 = vaddq_u64(accv_0, sum_0);
+                accv_1 = vaddq_u64(accv_1, sum_1);
 
                 vst1q_u64(acc.as_mut_ptr().cast::<u64>(), accv_0);
                 vst1q_u64(acc.as_mut_ptr().cast::<u64>().add(2), accv_1);
