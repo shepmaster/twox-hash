@@ -36,8 +36,6 @@ pub const SECRET_MINIMUM_LENGTH: usize = 136;
 
 pub struct XxHash3_64;
 
-type Stripe = [u64; 8];
-
 impl XxHash3_64 {
     #[inline(never)]
     pub fn oneshot(input: &[u8]) -> u64 {
@@ -274,11 +272,20 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
     let mut acc = INITIAL_ACCUMULATORS;
 
+    assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
+    assert!(input.len() >= 241);
+
     let stripes_per_block = (secret.len() - 64) / 8;
     let block_size = 64 * stripes_per_block;
 
-    let mut blocks = input.chunks(block_size).fuse();
-    let last_block = blocks.next_back().unwrap();
+    let mut blocks = input.chunks_exact(block_size);
+    let last_block =
+        if blocks.remainder().is_empty() {
+            unsafe { blocks.next_back().unwrap_unchecked() }
+        } else {
+            blocks.remainder()
+        };
+
     let last_stripe: &[u8; 64] = unsafe {
         &*input
             .as_ptr()
@@ -288,7 +295,9 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
     };
 
     for block in blocks {
-        round(&mut acc, block, secret);
+        let (stripes, _) = block.bp_as_chunks();
+
+        round(&mut acc, stripes, secret);
     }
 
     last_round(&mut acc, last_block, last_stripe, secret);
@@ -302,14 +311,13 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
 }
 
 #[inline]
-fn round(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
-    round_accumulate(acc, block, secret);
+fn round(acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
+    round_accumulate(acc, stripes, secret);
     round_scramble(acc, secret);
 }
 
 #[inline]
-fn round_accumulate(acc: &mut [u64; 8], block: &[u8], secret: &[u8]) {
-    let (stripes, _) = block.bp_as_chunks::<{ mem::size_of::<Stripe>() }>();
+fn round_accumulate(acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
     let secrets =
         (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
 
