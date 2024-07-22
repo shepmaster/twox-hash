@@ -312,11 +312,14 @@ fn round_accumulate(acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
     }
 }
 
-#[cfg(any(not(all(feature = "simd", target_arch = "aarch64"))))]
+#[cfg(all(
+    not(all(target_feature = "neon", feature = "simd")),
+    not(all(target_feature = "avx2", feature = "simd")),
+))]
 mod scalar {
     use core::mem;
 
-    use super::{SliceBackport as _, PRIME32_1};
+    use super::{SliceBackport as _, PRIME32_1, IntoU64};
 
     #[inline]
     pub fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
@@ -379,10 +382,13 @@ mod scalar {
     }
 }
 
-#[cfg(any(not(all(feature = "simd", target_arch = "aarch64"))))]
+#[cfg(all(
+    not(all(target_feature = "neon", feature = "simd")),
+    not(all(target_feature = "avx2", feature = "simd")),
+))]
 use scalar as vector_impl;
 
-#[cfg(all(target_arch = "aarch64", feature = "simd"))]
+#[cfg(all(target_feature = "neon", feature = "simd"))]
 mod neon {
     use core::arch::aarch64::*;
 
@@ -531,8 +537,56 @@ mod neon {
     }
 }
 
-#[cfg(all(target_arch = "aarch64", feature = "simd"))]
+#[cfg(all(target_feature = "neon", feature = "simd"))]
 use neon as vector_impl;
+
+#[cfg(all(target_feature = "avx2", feature = "simd"))]
+mod avx2 {
+    use core::mem;
+
+    use super::{SliceBackport as _, PRIME32_1, IntoU64};
+
+    #[inline]
+    pub fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
+        let last = secret
+            .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
+            .unwrap();
+        let (last, _) = last.bp_as_chunks();
+        let last = last.iter().copied().map(u64::from_ne_bytes);
+
+        for (acc, secret) in acc.iter_mut().zip(last) {
+            *acc ^= *acc >> 47;
+            *acc ^= secret;
+            *acc = acc.wrapping_mul(PRIME32_1);
+        }
+    }
+
+    #[inline]
+    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        for i in 0..8 {
+            // TODO: Should these casts / reads happen outside this function?
+            let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
+            let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
+
+            let value = stripe ^ secret;
+            acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
+
+            acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
+        }
+    }
+
+    #[inline]
+    fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+        let lhs = (lhs as u32).into_u64();
+        let rhs = (rhs as u32).into_u64();
+
+        let product = lhs.wrapping_mul(rhs);
+        acc.wrapping_add(product)
+    }
+}
+
+#[cfg(all(target_feature = "avx2", feature = "simd"))]
+use avx2 as vector_impl;
 
 use vector_impl::{accumulate, round_scramble};
 
