@@ -3,6 +3,11 @@ name = "compare"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["simd"]
+
+simd = ["xx-renu/simd"]
+
 [[bench]]
 name = "benchmark"
 harness = false
@@ -12,5 +17,5 @@ criterion = "0.5.1"
 proptest = "1.5.0"
 rand = "0.8.5"
 twox-hash = "1.6.3"
-xx-renu = { path = ".." }
+xx-renu = { path = "..", default-features = false, features = ["xxhash32", "xxhash64", "xxhash3_64"] }
 xx_hash-sys = { path = "../xx_hash-sys" }
