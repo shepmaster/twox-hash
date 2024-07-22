@@ -244,24 +244,6 @@ fn mix_step(data: &[u8; 16], secret: &[u8], secret_offset: usize, seed: u64) -> 
     mul_result.lower_half() ^ mul_result.upper_half()
 }
 
-// fn mix_two_chunks(
-//     acc: &mut [u64; 2],
-//     data1: &[u8; 16],
-//     data2: &[u8; 16],
-//     secret: &[u8],
-//     secret_offset: usize,
-//     seed: u64,
-// ) {
-//     // TODO: Should these casts / reads happen outside this function?
-//     let data_words1 = unsafe { data1.as_ptr().cast::<[u64; 2]>().read_unaligned() }; // TODO:little-endian conversion
-//     let data_words2 = unsafe { data2.as_ptr().cast::<[u64; 2]>().read_unaligned() }; // TODO:little-endian conversion
-
-//     acc[0] = acc[0] + mix_step(data1, secret, secret_offset, seed);
-//     acc[1] = acc[1] + mix_step(data2, secret, secret_offset + 16, seed);
-//     acc[0] = acc[0] ^ data_words2[0].wrapping_add(data_words2[1]);
-//     acc[1] = acc[1] ^ data_words1[0].wrapping_add(data_words1[1]);
-// }
-
 #[rustfmt::skip]
 const INITIAL_ACCUMULATORS: [u64; 8] = [
     PRIME32_3, PRIME64_1, PRIME64_2, PRIME64_3,
@@ -281,6 +263,10 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
     let mut blocks = input.chunks_exact(block_size);
     let last_block =
         if blocks.remainder().is_empty() {
+            // SAFETY: We know that `input` is non-empty, which means
+            // that either there will be a remainder or one or more
+            // full blocks. That info isn't flowing to the optimizer,
+            // so we use `unwrap_unchecked`.
             unsafe { blocks.next_back().unwrap_unchecked() }
         } else {
             blocks.remainder()
@@ -465,9 +451,8 @@ mod neon {
                 let sum_0 = vmlal_u32(stripe_rot_0, vget_low_u32(hi), vget_low_u32(lo));
                 let sum_1 = vmlal_high_u32(stripe_rot_1, hi, lo);
 
-                // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
-                core::arch::asm!("/* {x:v} */", x = in(vreg) sum_0);
-                core::arch::asm!("/* {x:v} */", x = in(vreg) sum_1);
+                reordering_barrier(sum_0);
+                reordering_barrier(sum_1);
 
                 // acc[i] += sum[i]
                 accv_0 = vaddq_u64(accv_0, sum_0);
@@ -539,10 +524,11 @@ mod neon {
         }
     }
 
-    // unsafe {
-    //   _prefetch::<_PREFETCH_READ, _PREFETCH_LOCALITY3>(stripe.as_ptr().cast());
-    //   _prefetch::<_PREFETCH_READ, _PREFETCH_LOCALITY3>(secret.as_ptr().cast());
-    // }
+    // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
+    #[inline]
+    fn reordering_barrier(r: uint64x2_t) {
+        unsafe { core::arch::asm!("/* {r:v} */", r = in(vreg) r) }
+    }
 }
 
 #[cfg(all(target_arch = "aarch64", feature = "simd"))]
