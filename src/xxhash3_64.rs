@@ -251,64 +251,121 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 
 #[inline]
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
-    let mut acc = INITIAL_ACCUMULATORS;
+    unsafe { avx2::oneshot_unchecked(secret, input) }
+}
 
-    assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
-    assert!(input.len() >= 241);
+struct Algorithm<V>(V);
 
-    let stripes_per_block = (secret.len() - 64) / 8;
-    let block_size = 64 * stripes_per_block;
+impl<V: Vector> Algorithm<V> {
+    fn do_it(&self, secret: &[u8], input: &[u8]) -> u64 {
+        let mut acc = INITIAL_ACCUMULATORS;
 
-    let mut blocks = input.chunks_exact(block_size);
-    let last_block =
-        if blocks.remainder().is_empty() {
-            // SAFETY: We know that `input` is non-empty, which means
-            // that either there will be a remainder or one or more
-            // full blocks. That info isn't flowing to the optimizer,
-            // so we use `unwrap_unchecked`.
-            unsafe { blocks.next_back().unwrap_unchecked() }
-        } else {
-            blocks.remainder()
+        assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
+        assert!(input.len() >= 241);
+
+        let stripes_per_block = (secret.len() - 64) / 8;
+        let block_size = 64 * stripes_per_block;
+
+        let mut blocks = input.chunks_exact(block_size);
+        let last_block =
+            if blocks.remainder().is_empty() {
+                // SAFETY: We know that `input` is non-empty, which means
+                // that either there will be a remainder or one or more
+                // full blocks. That info isn't flowing to the optimizer,
+                // so we use `unwrap_unchecked`.
+                unsafe { blocks.next_back().unwrap_unchecked() }
+            } else {
+                blocks.remainder()
+            };
+
+        let last_stripe: &[u8; 64] = unsafe {
+            &*input
+                .as_ptr()
+                .add(input.len())
+                .sub(mem::size_of::<[u8; 64]>())
+                .cast()
         };
 
-    let last_stripe: &[u8; 64] = unsafe {
-        &*input
-            .as_ptr()
-            .add(input.len())
-            .sub(mem::size_of::<[u8; 64]>())
-            .cast()
-    };
+        for block in blocks {
+            let (stripes, _) = block.bp_as_chunks();
 
-    for block in blocks {
-        let (stripes, _) = block.bp_as_chunks();
+            self.round(&mut acc, stripes, secret);
+        }
 
-        round(&mut acc, stripes, secret);
+        self.last_round(&mut acc, last_block, last_stripe, secret);
+
+        self.final_merge(
+            &mut acc,
+            input.len().into_u64().wrapping_mul(PRIME64_1),
+            secret,
+            11,
+        )
     }
 
-    last_round(&mut acc, last_block, last_stripe, secret);
-
-    final_merge(
-        &mut acc,
-        input.len().into_u64().wrapping_mul(PRIME64_1),
-        secret,
-        11,
-    )
-}
-
-#[inline]
-fn round(acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
-    round_accumulate(acc, stripes, secret);
-    round_scramble(acc, secret);
-}
-
-#[inline]
-fn round_accumulate(acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
-    let secrets =
-        (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
-
-    for (stripe, secret) in stripes.iter().zip(secrets) {
-        accumulate(acc, stripe, secret);
+    #[inline]
+    fn round(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
+        self.round_accumulate(acc, stripes, secret);
+        self.0.round_scramble(acc, secret);
     }
+
+    #[inline]
+    fn round_accumulate(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
+        let secrets =
+            (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
+
+        for (stripe, secret) in stripes.iter().zip(secrets) {
+            self.0.accumulate(acc, stripe, secret);
+        }
+    }
+
+
+    #[inline]
+    fn last_round(&self, acc: &mut [u64; 8], block: &[u8], last_stripe: &[u8; 64], secret: &[u8]) {
+        // Accumulation steps are run for the stripes in the last block,
+        // except for the last stripe (whether it is full or not)
+        let stripes = match block.bp_as_chunks() {
+            ([stripes @ .., _last], []) => stripes,
+            (stripes, _last) => stripes,
+        };
+        let secrets =
+            (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
+
+        for (stripe, secret) in stripes.iter().zip(secrets) {
+            self.0.accumulate(acc, stripe, secret);
+        }
+
+        let q = &secret[secret.len() - 71..];
+        let q: &[u8; 64] = unsafe { &*q.as_ptr().cast() };
+        self.0.accumulate(acc, last_stripe, q);
+    }
+
+    #[inline]
+    fn final_merge(&self, acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
+        let secret_words = unsafe {
+            secret
+                .as_ptr()
+                .add(secret_offset)
+                .cast::<[u64; 8]>()
+                .read_unaligned()
+        };
+        let mut result = init_value;
+        for i in 0..4 {
+            // 64-bit by 64-bit multiplication to 128-bit full result
+            let mul_result = {
+                let a = (acc[i * 2] ^ secret_words[i * 2]).into_u128();
+                let b = (acc[i * 2 + 1] ^ secret_words[i * 2 + 1]).into_u128();
+                a.wrapping_mul(b)
+            };
+            result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
+        }
+        avalanche(result)
+    }
+}
+
+trait Vector {
+    fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]);
+
+    fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]);
 }
 
 // This module is not `cfg`-gated because it is used by some of the
@@ -316,33 +373,36 @@ fn round_accumulate(acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
 mod scalar {
     use core::mem;
 
-    use super::{SliceBackport as _, PRIME32_1, IntoU64};
+    use super::{IntoU64, SliceBackport as _, Vector, PRIME32_1};
 
-    #[inline]
-    pub fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
-        let last = secret
-            .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
-            .unwrap();
-        let (last, _) = last.bp_as_chunks();
-        let last = last.iter().copied().map(u64::from_ne_bytes);
+    pub struct Impl;
 
-        for (acc, secret) in acc.iter_mut().zip(last) {
-            *acc ^= *acc >> 47;
-            *acc ^= secret;
-            *acc = acc.wrapping_mul(PRIME32_1);
+    impl Vector for Impl {
+        #[inline]
+        fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]) {
+            let last = secret
+                .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
+                .unwrap();
+            let (last, _) = last.bp_as_chunks();
+            let last = last.iter().copied().map(u64::from_ne_bytes);
+
+            for (acc, secret) in acc.iter_mut().zip(last) {
+                *acc ^= *acc >> 47;
+                *acc ^= secret;
+                *acc = acc.wrapping_mul(PRIME32_1);
+            }
         }
-    }
 
-    #[inline]
-    #[allow(dead_code)]
-    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        for i in 0..8 {
-            let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
-            let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
+        #[inline]
+        fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+            for i in 0..8 {
+                let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
+                let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
 
-            let value = stripe ^ secret;
-            acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
-            acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
+                let value = stripe ^ secret;
+                acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
+                acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
+            }
         }
     }
 
@@ -379,251 +439,246 @@ mod scalar {
     }
 }
 
-#[cfg(all(
-    not(all(target_feature = "neon", feature = "simd")),
-    not(all(target_feature = "avx2", feature = "simd")),
-))]
-use scalar as vector_impl;
+// #[cfg(all(
+//     not(all(target_feature = "neon", feature = "simd")),
+//     not(all(target_feature = "avx2", feature = "simd")),
+// ))]
+// use scalar as vector_impl;
 
-#[cfg(all(target_feature = "neon", feature = "simd"))]
-mod neon {
-    use core::arch::aarch64::*;
+// #[cfg(all(target_feature = "neon", feature = "simd"))]
+// mod neon {
+//     use core::arch::aarch64::*;
 
-    use super::{SliceBackport as _, PRIME32_1};
+//     use super::{SliceBackport as _, PRIME32_1};
 
-    #[inline]
-    pub fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
-        unsafe {
-            let secret_base = secret.as_ptr().add(secret.len()).sub(64).cast::<u64>();
-            let (acc, _) = acc.bp_as_chunks_mut::<2>();
-            for (i, acc) in acc.iter_mut().enumerate() {
-                let mut accv = vld1q_u64(acc.as_ptr());
-                let secret = vld1q_u64(secret_base.add(i * 2));
+//     #[inline]
+//     pub fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
+//         unsafe {
+//             let secret_base = secret.as_ptr().add(secret.len()).sub(64).cast::<u64>();
+//             let (acc, _) = acc.bp_as_chunks_mut::<2>();
+//             for (i, acc) in acc.iter_mut().enumerate() {
+//                 let mut accv = vld1q_u64(acc.as_ptr());
+//                 let secret = vld1q_u64(secret_base.add(i * 2));
 
-                // tmp[i] = acc[i] >> 47
-                let shifted = vshrq_n_u64::<47>(accv);
+//                 // tmp[i] = acc[i] >> 47
+//                 let shifted = vshrq_n_u64::<47>(accv);
 
-                // acc[i] ^= tmp[i]
-                accv = veorq_u64(accv, shifted);
+//                 // acc[i] ^= tmp[i]
+//                 accv = veorq_u64(accv, shifted);
 
-                // acc[i] ^= secret[i]
-                accv = veorq_u64(accv, secret);
+//                 // acc[i] ^= secret[i]
+//                 accv = veorq_u64(accv, secret);
 
-                // acc[i] *= PRIME32_1
-                accv = xx_vmulq_u32_u64(accv, PRIME32_1 as u32);
+//                 // acc[i] *= PRIME32_1
+//                 accv = xx_vmulq_u32_u64(accv, PRIME32_1 as u32);
 
-                vst1q_u64(acc.as_mut_ptr(), accv);
-            }
-        }
-    }
+//                 vst1q_u64(acc.as_mut_ptr(), accv);
+//             }
+//         }
+//     }
 
-    // We process 4x u64 at a time as that allows us to completely
-    // fill a `uint64x2_t` with useful values when performing the
-    // multiplication.
-    #[inline]
-    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        let (acc2, _) = acc.bp_as_chunks_mut::<4>();
-        for (i, acc) in acc2.into_iter().enumerate() {
-            unsafe {
-                let mut accv_0 = vld1q_u64(acc.as_ptr().cast::<u64>());
-                let mut accv_1 = vld1q_u64(acc.as_ptr().cast::<u64>().add(2));
-                let stripe_0 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4));
-                let stripe_1 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4 + 2));
-                let secret_0 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4));
-                let secret_1 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4 + 2));
+//     // We process 4x u64 at a time as that allows us to completely
+//     // fill a `uint64x2_t` with useful values when performing the
+//     // multiplication.
+//     #[inline]
+//     pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+//         let (acc2, _) = acc.bp_as_chunks_mut::<4>();
+//         for (i, acc) in acc2.into_iter().enumerate() {
+//             unsafe {
+//                 let mut accv_0 = vld1q_u64(acc.as_ptr().cast::<u64>());
+//                 let mut accv_1 = vld1q_u64(acc.as_ptr().cast::<u64>().add(2));
+//                 let stripe_0 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4));
+//                 let stripe_1 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4 + 2));
+//                 let secret_0 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4));
+//                 let secret_1 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4 + 2));
 
-                // stripe_rot[i ^ 1] = stripe[i];
-                let stripe_rot_0 = vextq_u64::<1>(stripe_0, stripe_0);
-                let stripe_rot_1 = vextq_u64::<1>(stripe_1, stripe_1);
+//                 // stripe_rot[i ^ 1] = stripe[i];
+//                 let stripe_rot_0 = vextq_u64::<1>(stripe_0, stripe_0);
+//                 let stripe_rot_1 = vextq_u64::<1>(stripe_1, stripe_1);
 
-                // value[i] = stripe[i] ^ secret[i];
-                let value_0 = veorq_u64(stripe_0, secret_0);
-                let value_1 = veorq_u64(stripe_1, secret_1);
+//                 // value[i] = stripe[i] ^ secret[i];
+//                 let value_0 = veorq_u64(stripe_0, secret_0);
+//                 let value_1 = veorq_u64(stripe_1, secret_1);
 
-                // sum[i] = value[i] * (value[i] >> 32) + stripe_rot[i]
-                //
-                // Each vector has 64-bit values, but we treat them as
-                // 32-bit and then unzip them. This naturally splits
-                // the upper and lower 32 bits.
-                let parts_0 = vreinterpretq_u32_u64(value_0);
-                let parts_1 = vreinterpretq_u32_u64(value_1);
+//                 // sum[i] = value[i] * (value[i] >> 32) + stripe_rot[i]
+//                 //
+//                 // Each vector has 64-bit values, but we treat them as
+//                 // 32-bit and then unzip them. This naturally splits
+//                 // the upper and lower 32 bits.
+//                 let parts_0 = vreinterpretq_u32_u64(value_0);
+//                 let parts_1 = vreinterpretq_u32_u64(value_1);
 
-                let hi = vuzp1q_u32(parts_0, parts_1);
-                let lo = vuzp2q_u32(parts_0, parts_1);
+//                 let hi = vuzp1q_u32(parts_0, parts_1);
+//                 let lo = vuzp2q_u32(parts_0, parts_1);
 
-                let sum_0 = vmlal_u32(stripe_rot_0, vget_low_u32(hi), vget_low_u32(lo));
-                let sum_1 = vmlal_high_u32(stripe_rot_1, hi, lo);
+//                 let sum_0 = vmlal_u32(stripe_rot_0, vget_low_u32(hi), vget_low_u32(lo));
+//                 let sum_1 = vmlal_high_u32(stripe_rot_1, hi, lo);
 
-                reordering_barrier(sum_0);
-                reordering_barrier(sum_1);
+//                 reordering_barrier(sum_0);
+//                 reordering_barrier(sum_1);
 
-                // acc[i] += sum[i]
-                accv_0 = vaddq_u64(accv_0, sum_0);
-                accv_1 = vaddq_u64(accv_1, sum_1);
+//                 // acc[i] += sum[i]
+//                 accv_0 = vaddq_u64(accv_0, sum_0);
+//                 accv_1 = vaddq_u64(accv_1, sum_1);
 
-                vst1q_u64(acc.as_mut_ptr().cast::<u64>(), accv_0);
-                vst1q_u64(acc.as_mut_ptr().cast::<u64>().add(2), accv_1);
-            };
-        }
-    }
+//                 vst1q_u64(acc.as_mut_ptr().cast::<u64>(), accv_0);
+//                 vst1q_u64(acc.as_mut_ptr().cast::<u64>().add(2), accv_1);
+//             };
+//         }
+//     }
 
-    // There is no `vmulq_u64` (multiply 64-bit by 64-bit, keeping the
-    // lower 64 bits of the result) operation, so we have to make our
-    // own out of 32-bit operations . We can simplify by realizing
-    // that we are always multiplying by a 32-bit number.
-    //
-    // The basic algorithm is traditional long multiplication. `[]`
-    // denotes groups of 32 bits.
-    //
-    //         [AAAA][BBBB]
-    // x             [CCCC]
-    // --------------------
-    //         [BCBC][BCBC]
-    // + [ACAC][ACAC]
-    // --------------------
-    //         [ACBC][BCBC] // 64-bit truncation occurs
-    //
-    // This can be written in NEON as a vectorwise wrapping
-    // multiplication of the high-order chunk of the input (`A`)
-    // against the constant and then a multiply-widen-and-accumulate
-    // of the low-order chunk of the input and the constant:
-    //
-    // 1. High-order, vectorwise
-    //
-    //         [AAAA][BBBB]
-    // x       [CCCC][0000]
-    // --------------------
-    //         [ACAC][0000]
-    //
-    // 2. Low-order, widening
-    //
-    //               [BBBB]
-    // x             [CCCC] // widening
-    // --------------------
-    //         [BCBC][BCBC]
-    //
-    // 3. Accumulation
-    //
-    //         [ACAC][0000]
-    // +       [BCBC][BCBC] // vectorwise
-    // --------------------
-    //         [ACBC][BCBC]
-    //
-    // Thankfully, NEON has a single multiply-widen-and-accumulate
-    // operation.
-    #[inline]
-    pub fn xx_vmulq_u32_u64(input: uint64x2_t, og_factor: u32) -> uint64x2_t {
-        unsafe {
-            let input_as_u32 = vreinterpretq_u32_u64(input);
-            let factor = vmov_n_u32(og_factor);
-            let factor_striped = vmovq_n_u64(u64::from(og_factor) << 32);
-            let factor_striped = vreinterpretq_u32_u64(factor_striped);
+//     // There is no `vmulq_u64` (multiply 64-bit by 64-bit, keeping the
+//     // lower 64 bits of the result) operation, so we have to make our
+//     // own out of 32-bit operations . We can simplify by realizing
+//     // that we are always multiplying by a 32-bit number.
+//     //
+//     // The basic algorithm is traditional long multiplication. `[]`
+//     // denotes groups of 32 bits.
+//     //
+//     //         [AAAA][BBBB]
+//     // x             [CCCC]
+//     // --------------------
+//     //         [BCBC][BCBC]
+//     // + [ACAC][ACAC]
+//     // --------------------
+//     //         [ACBC][BCBC] // 64-bit truncation occurs
+//     //
+//     // This can be written in NEON as a vectorwise wrapping
+//     // multiplication of the high-order chunk of the input (`A`)
+//     // against the constant and then a multiply-widen-and-accumulate
+//     // of the low-order chunk of the input and the constant:
+//     //
+//     // 1. High-order, vectorwise
+//     //
+//     //         [AAAA][BBBB]
+//     // x       [CCCC][0000]
+//     // --------------------
+//     //         [ACAC][0000]
+//     //
+//     // 2. Low-order, widening
+//     //
+//     //               [BBBB]
+//     // x             [CCCC] // widening
+//     // --------------------
+//     //         [BCBC][BCBC]
+//     //
+//     // 3. Accumulation
+//     //
+//     //         [ACAC][0000]
+//     // +       [BCBC][BCBC] // vectorwise
+//     // --------------------
+//     //         [ACBC][BCBC]
+//     //
+//     // Thankfully, NEON has a single multiply-widen-and-accumulate
+//     // operation.
+//     #[inline]
+//     pub fn xx_vmulq_u32_u64(input: uint64x2_t, og_factor: u32) -> uint64x2_t {
+//         unsafe {
+//             let input_as_u32 = vreinterpretq_u32_u64(input);
+//             let factor = vmov_n_u32(og_factor);
+//             let factor_striped = vmovq_n_u64(u64::from(og_factor) << 32);
+//             let factor_striped = vreinterpretq_u32_u64(factor_striped);
 
-            let high_shifted_as_32 = vmulq_u32(input_as_u32, factor_striped);
-            let high_shifted = vreinterpretq_u64_u32(high_shifted_as_32);
+//             let high_shifted_as_32 = vmulq_u32(input_as_u32, factor_striped);
+//             let high_shifted = vreinterpretq_u64_u32(high_shifted_as_32);
 
-            let input_lo = vmovn_u64(input);
-            vmlal_u32(high_shifted, input_lo, factor)
-        }
-    }
+//             let input_lo = vmovn_u64(input);
+//             vmlal_u32(high_shifted, input_lo, factor)
+//         }
+//     }
 
-    // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
-    #[inline]
-    fn reordering_barrier(r: uint64x2_t) {
-        unsafe { core::arch::asm!("/* {r:v} */", r = in(vreg) r) }
-    }
-}
+//     // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
+//     #[inline]
+//     fn reordering_barrier(r: uint64x2_t) {
+//         unsafe { core::arch::asm!("/* {r:v} */", r = in(vreg) r) }
+//     }
+// }
 
-#[cfg(all(target_feature = "neon", feature = "simd"))]
-use neon as vector_impl;
+// #[cfg(all(target_feature = "neon", feature = "simd"))]
+// use neon as vector_impl;
 
-#[cfg(all(target_feature = "avx2", feature = "simd"))]
+#[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx2 {
     use core::arch::x86_64::*;
 
-    // The scalar implementation is autovectorized nicely enough
-    pub use super::scalar::round_scramble;
+    use super::Vector;
+
+    #[cfg(target_feature = "avx2")]
+    pub unsafe fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
+        unsafe { oneshot_unchecked(secret, input) }
+    }
+
+    #[target_feature(enable = "avx2")]
+    pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
+        unsafe { super::Algorithm(Impl::new_unchecked()) }.do_it(secret, input)
+    }
+
+    pub struct Impl(super::scalar::Impl);
+
+    impl Impl {
+        #[cfg(target_feature = "avx2")]
+        pub fn new() -> Self {
+            unsafe { Self::new_unchecked() }
+        }
+
+        /// # Safety
+        /// You must ensure that the CPU has the AVX2 feature
+        pub unsafe fn new_unchecked() -> Impl {
+            Impl(super::scalar::Impl)
+        }
+    }
+
+    impl Vector for Impl {
+        #[inline]
+        fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]) {
+            // The scalar implementation is autovectorized nicely enough
+            self.0.round_scramble(acc, secret)
+        }
+
+        #[inline]
+        fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+            // SAFETY: Type can only be constructed when AVX2 feature is present
+            unsafe { accumulate_avx2(acc, stripe, secret) }
+        }
+    }
 
     #[inline]
-    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+    #[target_feature(enable = "avx2")]
+    unsafe fn accumulate_avx2(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
         for i in 0..2 {
-            unsafe {
-                // todo: align the accumulator and avoid the unaligned load and store
-                let mut acc_0 = _mm256_loadu_si256(acc.as_mut_ptr().cast::<u64>().add(4 * i).cast());
-                let stripe_0 = _mm256_loadu_si256(stripe.as_ptr().cast::<u64>().add(4 * i).cast());
-                let secret_0 = _mm256_loadu_si256(secret.as_ptr().cast::<u64>().add(4 * i).cast());
+            // todo: align the accumulator and avoid the unaligned load and store
+            let mut acc_0 = _mm256_loadu_si256(acc.as_mut_ptr().cast::<u64>().add(4 * i).cast());
+            let stripe_0 = _mm256_loadu_si256(stripe.as_ptr().cast::<u64>().add(4 * i).cast());
+            let secret_0 = _mm256_loadu_si256(secret.as_ptr().cast::<u64>().add(4 * i).cast());
 
-                // let value[i] = stripe[i] ^ secret[i];
-                let value_0 = _mm256_xor_si256(stripe_0, secret_0);
+            // let value[i] = stripe[i] ^ secret[i];
+            let value_0 = _mm256_xor_si256(stripe_0, secret_0);
 
-                // TODO: "rotate" is not quite correct
-                // stripe_rot[i] = stripe[i ^ 1]
-                let stripe_rot_0 = _mm256_permute4x64_epi64::<0b10_11_00_01>(stripe_0);
+            // TODO: "rotate" is not quite correct
+            // stripe_rot[i] = stripe[i ^ 1]
+            let stripe_rot_0 = _mm256_permute4x64_epi64::<0b10_11_00_01>(stripe_0);
 
-                // acc[i] += stripe_rot[i]
-                acc_0 = _mm256_add_epi64(acc_0, stripe_rot_0);
+            // acc[i] += stripe_rot[i]
+            acc_0 = _mm256_add_epi64(acc_0, stripe_rot_0);
 
-                // value_swap[i] = swap_32_bit_pieces_in_64_bit_elements(value[i])
-                let value_swap_0 = _mm256_shuffle_epi32::<0b10_11_00_01>(value_0);
+            // value_swap[i] = swap_32_bit_pieces_in_64_bit_elements(value[i])
+            let value_swap_0 = _mm256_shuffle_epi32::<0b10_11_00_01>(value_0);
 
-                // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_swap[i])
-                let product_0 = _mm256_mul_epu32(value_0, value_swap_0);
+            // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_swap[i])
+            let product_0 = _mm256_mul_epu32(value_0, value_swap_0);
 
-                // acc[i] += product[i]
-                acc_0 = _mm256_add_epi64(acc_0, product_0);
+            // acc[i] += product[i]
+            acc_0 = _mm256_add_epi64(acc_0, product_0);
 
-                _mm256_storeu_si256(acc.as_mut_ptr().cast::<u64>().add(4 * i).cast(), acc_0);
-            }
+            _mm256_storeu_si256(acc.as_mut_ptr().cast::<u64>().add(4 * i).cast(), acc_0);
         }
     }
 }
 
-#[cfg(all(target_feature = "avx2", feature = "simd"))]
-use avx2 as vector_impl;
+// #[cfg(all(target_feature = "avx2", feature = "simd"))]
+// use avx2 as vector_impl;
 
-use vector_impl::{accumulate, round_scramble};
-
-#[inline]
-fn last_round(acc: &mut [u64; 8], block: &[u8], last_stripe: &[u8; 64], secret: &[u8]) {
-    // Accumulation steps are run for the stripes in the last block,
-    // except for the last stripe (whether it is full or not)
-    let stripes = match block.bp_as_chunks() {
-        ([stripes @ .., _last], []) => stripes,
-        (stripes, _last) => stripes,
-    };
-    let secrets =
-        (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
-
-    for (stripe, secret) in stripes.iter().zip(secrets) {
-        accumulate(acc, stripe, secret);
-    }
-
-    let q = &secret[secret.len() - 71..];
-    let q: &[u8; 64] = unsafe { &*q.as_ptr().cast() };
-    accumulate(acc, last_stripe, q);
-}
-
-#[inline]
-fn final_merge(acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
-    let secret_words = unsafe {
-        secret
-            .as_ptr()
-            .add(secret_offset)
-            .cast::<[u64; 8]>()
-            .read_unaligned()
-    };
-    let mut result = init_value;
-    for i in 0..4 {
-        // 64-bit by 64-bit multiplication to 128-bit full result
-        let mul_result = {
-            let a = (acc[i * 2] ^ secret_words[i * 2]).into_u128();
-            let b = (acc[i * 2 + 1] ^ secret_words[i * 2 + 1]).into_u128();
-            a.wrapping_mul(b)
-        };
-        result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
-    }
-    avalanche(result)
-}
+// use vector_impl::{accumulate, round_scramble};
 
 #[inline]
 fn avalanche(mut x: u64) -> u64 {
