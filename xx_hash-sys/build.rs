@@ -1,58 +1,32 @@
-use std::{env, fs, path::PathBuf, process::Command};
+use std::{env, path::PathBuf};
 
 fn main() {
+    // TODO: CARGO_CFG_TARGET_FEATURE has `Some(adx,aes,avx,avx2,...`
+
     let base = env::var_os("CARGO_MANIFEST_DIR").unwrap();
-    let base: PathBuf = base.into();
-    let xxhash = base.join("xxHash");
+    let mut base: PathBuf = base.into();
+    base.push("xxHash");
+    base.push("xxhash.c");
 
-    let out = env::var("OUT_DIR").expect("no OUT_DIR");
-    let mut out = PathBuf::from(out);
-    out.push("xxhash");
-    fs::create_dir_all(&out).expect("make it");
-
-    let make_cmd = || {
-        let mut c = Command::new("make");
-        c.current_dir(&xxhash);
-        c
+    let build = {
+        let mut build = cc::Build::new();
+        build.file(base);
+        build
     };
 
-    let s = make_cmd()
-        .arg("clean")
-        .status()
-        .expect("Could not run clean for scalar build");
-    assert!(s.success(), "Scalar clean failed");
+    let mut scalar_build = build.clone();
+    scalar_build
+        .define("XXH_VECTOR", "XXH_SCALAR")
+        .define("XXH_NAMESPACE", "scalar_")
+        .compile("xxhash_scalar");
 
-    let s = make_cmd()
-        .arg("libxxhash.a")
-        .env(
-            "CFLAGS",
-            "-O3 -DXXH_VECTOR=XXH_SCALAR -DXXH_NAMESPACE=scalar_",
-        )
-        .status()
-        .expect("Could not run scalar build");
-    assert!(s.success(), "Scalar build failed");
+    let mut avx2_build = build.clone();
+    avx2_build
+        .flag("-march=x86-64-v3")
+        .define("XXH_VECTOR", "XXH_AVX2")
+        .define("XXH_NAMESPACE", "avx2_")
+        .compile("xxhash_avx2");
 
-    let name = xxhash.join("libxxhash.a");
-    let new = out.join("libxxhash_scalar.a");
-    fs::copy(name, new).expect("Copy scalar");
-
-    let s = make_cmd()
-        .arg("clean")
-        .status()
-        .expect("Could not run clean for optimized build");
-    assert!(s.success(), "Optimized clean failed");
-
-    let s = make_cmd()
-        .arg("libxxhash.a")
-        .status()
-        .expect("Could not run optimized build");
-    assert!(s.success(), "Optimized build failed");
-
-    let name = xxhash.join("libxxhash.a");
-    let new = out.join("libxxhash_optimized.a");
-    fs::copy(name, new).expect("Copy scalar");
-
-    println!("cargo::rustc-link-lib=static=xxhash_scalar");
-    println!("cargo::rustc-link-lib=static=xxhash_optimized");
-    println!("cargo::rustc-link-search={}", out.display());
+    let native_build = build;
+    native_build.compile("xxhash_native");
 }

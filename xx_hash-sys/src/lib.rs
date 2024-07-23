@@ -276,3 +276,79 @@ impl Drop for ScalarXxHash3_64 {
         assert_eq!(retval, XXH_OK);
     }
 }
+
+// ----------
+
+extern "C" {
+    fn avx2_XXH3_64bits(input: *const libc::c_void, length: libc::size_t) -> XXH64_hash_t;
+    fn avx2_XXH3_64bits_withSeed(
+        input: *const libc::c_void,
+        length: libc::size_t,
+        seed: XXH64_hash_t,
+    ) -> XXH64_hash_t;
+    fn avx2_XXH3_64bits_withSecret(
+        input: *const libc::c_void,
+        length: libc::size_t,
+        secret: *const libc::c_void,
+        secret_length: libc::size_t,
+    ) -> XXH64_hash_t;
+
+    fn avx2_XXH3_createState() -> *mut XXH3_state_t;
+    fn avx2_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
+    fn avx2_XXH3_64bits_update(
+        state: *mut XXH3_state_t,
+        buffer: *const libc::c_void,
+        length: libc::size_t,
+    ) -> XXH_errorcode;
+    fn avx2_XXH3_64bits_digest(state: *mut XXH3_state_t) -> XXH64_hash_t;
+    fn avx2_XXH3_freeState(state: *mut XXH3_state_t) -> XXH_errorcode;
+}
+
+pub struct Avx2XxHash3_64(*mut XXH3_state_t);
+
+impl Avx2XxHash3_64 {
+    pub fn oneshot(data: &[u8]) -> u64 {
+        unsafe { avx2_XXH3_64bits(data.as_ptr().cast(), data.len()) }
+    }
+
+    pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
+        unsafe { avx2_XXH3_64bits_withSeed(data.as_ptr().cast(), data.len(), seed) }
+    }
+
+    pub fn oneshot_with_secret(secret: &[u8], data: &[u8]) -> u64 {
+        unsafe {
+            avx2_XXH3_64bits_withSecret(
+                data.as_ptr().cast(),
+                data.len(),
+                secret.as_ptr().cast(),
+                secret.len(),
+            )
+        }
+    }
+
+    pub fn with_seed() -> Self {
+        let state = unsafe {
+            let state = avx2_XXH3_createState();
+            avx2_XXH3_64bits_reset(state);
+            state
+        };
+
+        Self(state)
+    }
+
+    pub fn write(&mut self, data: &[u8]) {
+        let retval = unsafe { avx2_XXH3_64bits_update(self.0, data.as_ptr().cast(), data.len()) };
+        assert_eq!(retval, XXH_OK);
+    }
+
+    pub fn finish(&mut self) -> u64 {
+        unsafe { avx2_XXH3_64bits_digest(self.0) }
+    }
+}
+
+impl Drop for Avx2XxHash3_64 {
+    fn drop(&mut self) {
+        let retval = unsafe { avx2_XXH3_freeState(self.0) };
+        assert_eq!(retval, XXH_OK);
+    }
+}
