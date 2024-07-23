@@ -224,7 +224,6 @@ fn impl_129_to_240_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
 
 #[inline]
 fn mix_step(data: &[u8; 16], secret: &[u8], secret_offset: usize, seed: u64) -> u64 {
-    // TODO: Should these casts / reads happen outside this function?
     let data_words = unsafe { data.as_ptr().cast::<[u64; 2]>().read_unaligned() };
     let secret_words = unsafe {
         secret
@@ -312,10 +311,8 @@ fn round_accumulate(acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
     }
 }
 
-#[cfg(all(
-    not(all(target_feature = "neon", feature = "simd")),
-    not(all(target_feature = "avx2", feature = "simd")),
-))]
+// This module is not `cfg`-gated because it is used by some of the
+// SIMD implementations.
 mod scalar {
     use core::mem;
 
@@ -337,9 +334,9 @@ mod scalar {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
         for i in 0..8 {
-            // TODO: Should these casts / reads happen outside this function?
             let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
             let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
 
@@ -542,25 +539,10 @@ use neon as vector_impl;
 
 #[cfg(all(target_feature = "avx2", feature = "simd"))]
 mod avx2 {
-    use core::{mem, arch::x86_64::*};
+    use core::arch::x86_64::*;
 
-    use super::{SliceBackport as _, PRIME32_1, IntoU64};
-
-    #[inline]
-    pub fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
-        let last = secret
-            .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
-            .unwrap();
-        
-        let (last, _) = last.bp_as_chunks();
-        let last = last.iter().copied().map(u64::from_ne_bytes);
-
-        for (acc, secret) in acc.iter_mut().zip(last) {
-            *acc ^= *acc >> 47;
-            *acc ^= secret;
-            *acc = acc.wrapping_mul(PRIME32_1);
-        }
-    }
+    // The scalar implementation is autovectorized nicely enough
+    pub use super::scalar::round_scramble;
 
     #[inline]
     pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
@@ -586,11 +568,6 @@ mod avx2 {
 
                 // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_swap[i])
                 let product_0 = _mm256_mul_epu32(value_0, value_swap_0);
-
-                // eprintln!();
-                // eprintln!("{value_0:016x?}");
-                // eprintln!("{value_swap_0:016x?}");
-                // eprintln!("{product_0:016x?}");
 
                 // acc[i] += product[i]
                 acc_0 = _mm256_add_epi64(acc_0, product_0);
