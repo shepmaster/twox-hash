@@ -1,7 +1,8 @@
-use std::{env, path::PathBuf};
+use std::{env, path::PathBuf, str::FromStr};
 
 fn main() {
-    // TODO: CARGO_CFG_TARGET_FEATURE has `Some(adx,aes,avx,avx2,...`
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").expect("Need to know target architecture");
+    let target_arch = target_arch.parse::<Arch>().ok();
 
     let base = env::var_os("CARGO_MANIFEST_DIR").unwrap();
     let mut base: PathBuf = base.into();
@@ -20,13 +21,44 @@ fn main() {
         .define("XXH_NAMESPACE", "scalar_")
         .compile("xxhash_scalar");
 
-    let mut avx2_build = build.clone();
-    avx2_build
-        .flag("-march=x86-64-v3")
-        .define("XXH_VECTOR", "XXH_AVX2")
-        .define("XXH_NAMESPACE", "avx2_")
-        .compile("xxhash_avx2");
+    match target_arch {
+        Some(Arch::Aarch64) => {
+            let mut neon_build = build.clone();
+            neon_build
+                .define("XXH_VECTOR", "XXH_NEON")
+                .define("XXH_NAMESPACE", "neon_")
+                .compile("xxhash_neon");
+        }
+
+        Some(Arch::X86_64) => {
+            let mut avx2_build = build.clone();
+            avx2_build
+                .flag("-march=x86-64-v3")
+                .define("XXH_VECTOR", "XXH_AVX2")
+                .define("XXH_NAMESPACE", "avx2_")
+                .compile("xxhash_avx2");
+        }
+
+        None => {}
+    }
 
     let native_build = build;
     native_build.compile("xxhash_native");
+}
+
+enum Arch {
+    Aarch64,
+    X86_64,
+}
+
+impl FromStr for Arch {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "aarch64" => Self::Aarch64,
+            "x86_64" => Self::X86_64,
+            _ => return Err(()),
+        })
+    }
 }

@@ -251,8 +251,7 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 
 #[inline]
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
-//    unsafe { avx2::oneshot_unchecked(secret, input) }
-    x86_64_detect::oneshot(secret, input)
+    detect::oneshot(secret, input)
 }
 
 struct Algorithm<V>(V);
@@ -383,7 +382,7 @@ mod scalar {
         super::Algorithm(Impl).oneshot(secret, input)
     }
 
-    use super::{IntoU64, SliceBackport as _, Vector, PRIME32_1};
+    use super::{SliceBackport as _, Vector, PRIME32_1};
 
     pub struct Impl;
 
@@ -419,6 +418,8 @@ mod scalar {
     #[inline]
     #[cfg(not(target_arch = "aarch64"))]
     fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
+        use super::IntoU64;
+
         let lhs = (lhs as u32).into_u64();
         let rhs = (rhs as u32).into_u64();
 
@@ -449,154 +450,198 @@ mod scalar {
     }
 }
 
-// #[cfg(all(target_feature = "neon", feature = "simd"))]
-// mod neon {
-//     use core::arch::aarch64::*;
+#[cfg(all(target_arch = "aarch64", feature = "simd"))]
+mod neon {
+    use core::arch::aarch64::*;
 
-//     use super::{SliceBackport as _, PRIME32_1};
+    use super::{SliceBackport as _, Vector, PRIME32_1};
 
-//     #[inline]
-//     pub fn round_scramble(acc: &mut [u64; 8], secret: &[u8]) {
-//         unsafe {
-//             let secret_base = secret.as_ptr().add(secret.len()).sub(64).cast::<u64>();
-//             let (acc, _) = acc.bp_as_chunks_mut::<2>();
-//             for (i, acc) in acc.iter_mut().enumerate() {
-//                 let mut accv = vld1q_u64(acc.as_ptr());
-//                 let secret = vld1q_u64(secret_base.add(i * 2));
+    /// # Safety
+    /// You must ensure that the CPU has the NEON feature
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
+        super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
+    }
 
-//                 // tmp[i] = acc[i] >> 47
-//                 let shifted = vshrq_n_u64::<47>(accv);
+    struct Impl(());
 
-//                 // acc[i] ^= tmp[i]
-//                 accv = veorq_u64(accv, shifted);
+    impl Impl {
+        /// # Safety
+        /// You must ensure that the CPU has the NEON feature
+        unsafe fn new_unchecked() -> Self {
+            Self(())
+        }
+    }
 
-//                 // acc[i] ^= secret[i]
-//                 accv = veorq_u64(accv, secret);
+    impl Vector for Impl {
+        #[inline]
+        fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]) {
+            unsafe { round_scramble_neon(acc, secret) }
+        }
 
-//                 // acc[i] *= PRIME32_1
-//                 accv = xx_vmulq_u32_u64(accv, PRIME32_1 as u32);
+        #[inline]
+        fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+            unsafe { accumulate_neon(acc, stripe, secret) }
+        }
+    }
 
-//                 vst1q_u64(acc.as_mut_ptr(), accv);
-//             }
-//         }
-//     }
+    #[inline]
+    #[target_feature(enable = "neon")]
+    unsafe fn round_scramble_neon(acc: &mut [u64; 8], secret: &[u8]) {
+        unsafe {
+            let secret_base = secret.as_ptr().add(secret.len()).sub(64).cast::<u64>();
+            let (acc, _) = acc.bp_as_chunks_mut::<2>();
+            for (i, acc) in acc.iter_mut().enumerate() {
+                let mut accv = vld1q_u64(acc.as_ptr());
+                let secret = vld1q_u64(secret_base.add(i * 2));
 
-//     // We process 4x u64 at a time as that allows us to completely
-//     // fill a `uint64x2_t` with useful values when performing the
-//     // multiplication.
-//     #[inline]
-//     pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-//         let (acc2, _) = acc.bp_as_chunks_mut::<4>();
-//         for (i, acc) in acc2.into_iter().enumerate() {
-//             unsafe {
-//                 let mut accv_0 = vld1q_u64(acc.as_ptr().cast::<u64>());
-//                 let mut accv_1 = vld1q_u64(acc.as_ptr().cast::<u64>().add(2));
-//                 let stripe_0 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4));
-//                 let stripe_1 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4 + 2));
-//                 let secret_0 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4));
-//                 let secret_1 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4 + 2));
+                // tmp[i] = acc[i] >> 47
+                let shifted = vshrq_n_u64::<47>(accv);
 
-//                 // stripe_rot[i ^ 1] = stripe[i];
-//                 let stripe_rot_0 = vextq_u64::<1>(stripe_0, stripe_0);
-//                 let stripe_rot_1 = vextq_u64::<1>(stripe_1, stripe_1);
+                // acc[i] ^= tmp[i]
+                accv = veorq_u64(accv, shifted);
 
-//                 // value[i] = stripe[i] ^ secret[i];
-//                 let value_0 = veorq_u64(stripe_0, secret_0);
-//                 let value_1 = veorq_u64(stripe_1, secret_1);
+                // acc[i] ^= secret[i]
+                accv = veorq_u64(accv, secret);
 
-//                 // sum[i] = value[i] * (value[i] >> 32) + stripe_rot[i]
-//                 //
-//                 // Each vector has 64-bit values, but we treat them as
-//                 // 32-bit and then unzip them. This naturally splits
-//                 // the upper and lower 32 bits.
-//                 let parts_0 = vreinterpretq_u32_u64(value_0);
-//                 let parts_1 = vreinterpretq_u32_u64(value_1);
+                // acc[i] *= PRIME32_1
+                accv = xx_vmulq_u32_u64(accv, PRIME32_1 as u32);
 
-//                 let hi = vuzp1q_u32(parts_0, parts_1);
-//                 let lo = vuzp2q_u32(parts_0, parts_1);
+                vst1q_u64(acc.as_mut_ptr(), accv);
+            }
+        }
+    }
 
-//                 let sum_0 = vmlal_u32(stripe_rot_0, vget_low_u32(hi), vget_low_u32(lo));
-//                 let sum_1 = vmlal_high_u32(stripe_rot_1, hi, lo);
+    // We process 4x u64 at a time as that allows us to completely
+    // fill a `uint64x2_t` with useful values when performing the
+    // multiplication.
+    #[target_feature(enable = "neon")]
+    #[inline]
+    unsafe fn accumulate_neon(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        let (acc2, _) = acc.bp_as_chunks_mut::<4>();
+        for (i, acc) in acc2.into_iter().enumerate() {
+            unsafe {
+                let mut accv_0 = vld1q_u64(acc.as_ptr().cast::<u64>());
+                let mut accv_1 = vld1q_u64(acc.as_ptr().cast::<u64>().add(2));
+                let stripe_0 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4));
+                let stripe_1 = vld1q_u64(stripe.as_ptr().cast::<u64>().add(i * 4 + 2));
+                let secret_0 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4));
+                let secret_1 = vld1q_u64(secret.as_ptr().cast::<u64>().add(i * 4 + 2));
 
-//                 reordering_barrier(sum_0);
-//                 reordering_barrier(sum_1);
+                // stripe_rot[i ^ 1] = stripe[i];
+                let stripe_rot_0 = vextq_u64::<1>(stripe_0, stripe_0);
+                let stripe_rot_1 = vextq_u64::<1>(stripe_1, stripe_1);
 
-//                 // acc[i] += sum[i]
-//                 accv_0 = vaddq_u64(accv_0, sum_0);
-//                 accv_1 = vaddq_u64(accv_1, sum_1);
+                // value[i] = stripe[i] ^ secret[i];
+                let value_0 = veorq_u64(stripe_0, secret_0);
+                let value_1 = veorq_u64(stripe_1, secret_1);
 
-//                 vst1q_u64(acc.as_mut_ptr().cast::<u64>(), accv_0);
-//                 vst1q_u64(acc.as_mut_ptr().cast::<u64>().add(2), accv_1);
-//             };
-//         }
-//     }
+                // sum[i] = value[i] * (value[i] >> 32) + stripe_rot[i]
+                //
+                // Each vector has 64-bit values, but we treat them as
+                // 32-bit and then unzip them. This naturally splits
+                // the upper and lower 32 bits.
+                let parts_0 = vreinterpretq_u32_u64(value_0);
+                let parts_1 = vreinterpretq_u32_u64(value_1);
 
-//     // There is no `vmulq_u64` (multiply 64-bit by 64-bit, keeping the
-//     // lower 64 bits of the result) operation, so we have to make our
-//     // own out of 32-bit operations . We can simplify by realizing
-//     // that we are always multiplying by a 32-bit number.
-//     //
-//     // The basic algorithm is traditional long multiplication. `[]`
-//     // denotes groups of 32 bits.
-//     //
-//     //         [AAAA][BBBB]
-//     // x             [CCCC]
-//     // --------------------
-//     //         [BCBC][BCBC]
-//     // + [ACAC][ACAC]
-//     // --------------------
-//     //         [ACBC][BCBC] // 64-bit truncation occurs
-//     //
-//     // This can be written in NEON as a vectorwise wrapping
-//     // multiplication of the high-order chunk of the input (`A`)
-//     // against the constant and then a multiply-widen-and-accumulate
-//     // of the low-order chunk of the input and the constant:
-//     //
-//     // 1. High-order, vectorwise
-//     //
-//     //         [AAAA][BBBB]
-//     // x       [CCCC][0000]
-//     // --------------------
-//     //         [ACAC][0000]
-//     //
-//     // 2. Low-order, widening
-//     //
-//     //               [BBBB]
-//     // x             [CCCC] // widening
-//     // --------------------
-//     //         [BCBC][BCBC]
-//     //
-//     // 3. Accumulation
-//     //
-//     //         [ACAC][0000]
-//     // +       [BCBC][BCBC] // vectorwise
-//     // --------------------
-//     //         [ACBC][BCBC]
-//     //
-//     // Thankfully, NEON has a single multiply-widen-and-accumulate
-//     // operation.
-//     #[inline]
-//     pub fn xx_vmulq_u32_u64(input: uint64x2_t, og_factor: u32) -> uint64x2_t {
-//         unsafe {
-//             let input_as_u32 = vreinterpretq_u32_u64(input);
-//             let factor = vmov_n_u32(og_factor);
-//             let factor_striped = vmovq_n_u64(u64::from(og_factor) << 32);
-//             let factor_striped = vreinterpretq_u32_u64(factor_striped);
+                let hi = vuzp1q_u32(parts_0, parts_1);
+                let lo = vuzp2q_u32(parts_0, parts_1);
 
-//             let high_shifted_as_32 = vmulq_u32(input_as_u32, factor_striped);
-//             let high_shifted = vreinterpretq_u64_u32(high_shifted_as_32);
+                let sum_0 = vmlal_u32(stripe_rot_0, vget_low_u32(hi), vget_low_u32(lo));
+                let sum_1 = vmlal_high_u32(stripe_rot_1, hi, lo);
 
-//             let input_lo = vmovn_u64(input);
-//             vmlal_u32(high_shifted, input_lo, factor)
-//         }
-//     }
+                reordering_barrier(sum_0);
+                reordering_barrier(sum_1);
 
-//     // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
-//     #[inline]
-//     fn reordering_barrier(r: uint64x2_t) {
-//         unsafe { core::arch::asm!("/* {r:v} */", r = in(vreg) r) }
-//     }
-// }
+                // acc[i] += sum[i]
+                accv_0 = vaddq_u64(accv_0, sum_0);
+                accv_1 = vaddq_u64(accv_1, sum_1);
+
+                vst1q_u64(acc.as_mut_ptr().cast::<u64>(), accv_0);
+                vst1q_u64(acc.as_mut_ptr().cast::<u64>().add(2), accv_1);
+            };
+        }
+    }
+
+    // There is no `vmulq_u64` (multiply 64-bit by 64-bit, keeping the
+    // lower 64 bits of the result) operation, so we have to make our
+    // own out of 32-bit operations . We can simplify by realizing
+    // that we are always multiplying by a 32-bit number.
+    //
+    // The basic algorithm is traditional long multiplication. `[]`
+    // denotes groups of 32 bits.
+    //
+    //         [AAAA][BBBB]
+    // x             [CCCC]
+    // --------------------
+    //         [BCBC][BCBC]
+    // + [ACAC][ACAC]
+    // --------------------
+    //         [ACBC][BCBC] // 64-bit truncation occurs
+    //
+    // This can be written in NEON as a vectorwise wrapping
+    // multiplication of the high-order chunk of the input (`A`)
+    // against the constant and then a multiply-widen-and-accumulate
+    // of the low-order chunk of the input and the constant:
+    //
+    // 1. High-order, vectorwise
+    //
+    //         [AAAA][BBBB]
+    // x       [CCCC][0000]
+    // --------------------
+    //         [ACAC][0000]
+    //
+    // 2. Low-order, widening
+    //
+    //               [BBBB]
+    // x             [CCCC] // widening
+    // --------------------
+    //         [BCBC][BCBC]
+    //
+    // 3. Accumulation
+    //
+    //         [ACAC][0000]
+    // +       [BCBC][BCBC] // vectorwise
+    // --------------------
+    //         [ACBC][BCBC]
+    //
+    // Thankfully, NEON has a single multiply-widen-and-accumulate
+    // operation.
+    #[inline]
+    pub fn xx_vmulq_u32_u64(input: uint64x2_t, og_factor: u32) -> uint64x2_t {
+        unsafe {
+            let input_as_u32 = vreinterpretq_u32_u64(input);
+            let factor = vmov_n_u32(og_factor);
+            let factor_striped = vmovq_n_u64(u64::from(og_factor) << 32);
+            let factor_striped = vreinterpretq_u32_u64(factor_striped);
+
+            let high_shifted_as_32 = vmulq_u32(input_as_u32, factor_striped);
+            let high_shifted = vreinterpretq_u64_u32(high_shifted_as_32);
+
+            let input_lo = vmovn_u64(input);
+            vmlal_u32(high_shifted, input_lo, factor)
+        }
+    }
+
+    // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
+    #[inline]
+    fn reordering_barrier(r: uint64x2_t) {
+        unsafe { core::arch::asm!("/* {r:v} */", r = in(vreg) r) }
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", feature = "std"))]
+mod aarch64_detect {
+    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
+        #[cfg(feature = "simd")]
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            return unsafe { super::neon::oneshot_unchecked(secret, input) };
+        }
+
+        super::scalar::oneshot(secret, input)
+    }
+}
 
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx2 {
@@ -604,26 +649,17 @@ mod avx2 {
 
     use super::Vector;
 
-    #[inline]
-    #[cfg(target_feature = "avx2")]
-    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        unsafe { oneshot_unchecked(secret, input) }
-    }
-
+    /// # Safety
+    /// You must ensure that the CPU has the AVX2 feature
     #[inline]
     #[target_feature(enable = "avx2")]
     pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
-        unsafe { super::Algorithm(Impl::new_unchecked()) }.oneshot(secret, input)
+        super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
     }
 
     pub struct Impl(super::scalar::Impl);
 
     impl Impl {
-        #[cfg(target_feature = "avx2")]
-        pub fn new() -> Self {
-            unsafe { Self::new_unchecked() }
-        }
-
         /// # Safety
         /// You must ensure that the CPU has the AVX2 feature
         pub unsafe fn new_unchecked() -> Impl {
@@ -681,12 +717,24 @@ mod avx2 {
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
 mod x86_64_detect {
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-
         #[cfg(feature = "simd")]
-        if is_x86_feature_detected!("avx2") {
-            return unsafe { super::avx2::oneshot_unchecked(secret, input) }
+        if std::arch::is_x86_feature_detected!("avx2") {
+            return unsafe { super::avx2::oneshot_unchecked(secret, input) };
         }
 
+        super::scalar::oneshot(secret, input)
+    }
+}
+
+mod detect {
+    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
+        #[cfg(all(target_arch = "aarch64", feature = "std"))]
+        return super::aarch64_detect::oneshot(secret, input);
+
+        #[cfg(all(target_arch = "x86_64", feature = "std"))]
+        return super::x86_64_detect::oneshot(secret, input);
+
+        #[allow(unreachable_code)]
         super::scalar::oneshot(secret, input)
     }
 }

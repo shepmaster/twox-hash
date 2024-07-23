@@ -184,13 +184,24 @@ mod xxhash3_64 {
 
             let id = format!("impl-c-scalar/size-{size:07}");
             g.bench_function(id, |b| {
-                b.iter(|| c::ScalarXxHash3_64::oneshot_with_seed(seed, data))
+                b.iter(|| c::scalar::XxHash3_64::oneshot_with_seed(seed, data))
             });
 
-            let id = format!("impl-c-avx2/size-{size:07}");
-            g.bench_function(id, |b| {
-                b.iter(|| c::Avx2XxHash3_64::oneshot_with_seed(seed, data))
-            });
+            #[cfg(target_arch = "aarch64")]
+            {
+                let id = format!("impl-c-neon/size-{size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::neon::XxHash3_64::oneshot_with_seed(seed, data))
+                });
+            }
+
+            #[cfg(target_arch = "x86_64")]
+            {
+                let id = format!("impl-c-avx2/size-{size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::avx2::XxHash3_64::oneshot_with_seed(seed, data))
+                });
+            }
 
             let id = format!("impl-rust/size-{size:07}");
             g.bench_function(id, |b| {
