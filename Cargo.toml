@@ -12,7 +12,7 @@ members = [
 ]
 
 [features]
-default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "simd"]
+default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "simd", "std"]
 
 random = ["dep:rand"]
 
@@ -23,6 +23,8 @@ xxhash64 = []
 xxhash3_64 = []
 
 simd = []
+
+std = []
 
 [dependencies]
 rand = { version = "0.8.0", optional = true, default-features = false, features = ["std", "std_rng"] }

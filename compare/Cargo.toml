@@ -17,5 +17,5 @@ criterion = "0.5.1"
 proptest = "1.5.0"
 rand = "0.8.5"
 twox-hash = "1.6.3"
-xx-renu = { path = "..", default-features = false, features = ["xxhash32", "xxhash64", "xxhash3_64"] }
+xx-renu = { path = "..", default-features = false, features = ["xxhash32", "xxhash64", "xxhash3_64", "std"] }
 xx_hash-sys = { path = "../xx_hash-sys" }

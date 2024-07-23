@@ -251,13 +251,14 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 
 #[inline]
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
-    unsafe { avx2::oneshot_unchecked(secret, input) }
+//    unsafe { avx2::oneshot_unchecked(secret, input) }
+    x86_64_detect::oneshot(secret, input)
 }
 
 struct Algorithm<V>(V);
 
 impl<V: Vector> Algorithm<V> {
-    fn do_it(&self, secret: &[u8], input: &[u8]) -> u64 {
+    fn oneshot(&self, secret: &[u8], input: &[u8]) -> u64 {
         let mut acc = INITIAL_ACCUMULATORS;
 
         assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
@@ -267,16 +268,15 @@ impl<V: Vector> Algorithm<V> {
         let block_size = 64 * stripes_per_block;
 
         let mut blocks = input.chunks_exact(block_size);
-        let last_block =
-            if blocks.remainder().is_empty() {
-                // SAFETY: We know that `input` is non-empty, which means
-                // that either there will be a remainder or one or more
-                // full blocks. That info isn't flowing to the optimizer,
-                // so we use `unwrap_unchecked`.
-                unsafe { blocks.next_back().unwrap_unchecked() }
-            } else {
-                blocks.remainder()
-            };
+        let last_block = if blocks.remainder().is_empty() {
+            // SAFETY: We know that `input` is non-empty, which means
+            // that either there will be a remainder or one or more
+            // full blocks. That info isn't flowing to the optimizer,
+            // so we use `unwrap_unchecked`.
+            unsafe { blocks.next_back().unwrap_unchecked() }
+        } else {
+            blocks.remainder()
+        };
 
         let last_stripe: &[u8; 64] = unsafe {
             &*input
@@ -318,7 +318,6 @@ impl<V: Vector> Algorithm<V> {
         }
     }
 
-
     #[inline]
     fn last_round(&self, acc: &mut [u64; 8], block: &[u8], last_stripe: &[u8; 64], secret: &[u8]) {
         // Accumulation steps are run for the stripes in the last block,
@@ -340,7 +339,13 @@ impl<V: Vector> Algorithm<V> {
     }
 
     #[inline]
-    fn final_merge(&self, acc: &mut [u64; 8], init_value: u64, secret: &[u8], secret_offset: usize) -> u64 {
+    fn final_merge(
+        &self,
+        acc: &mut [u64; 8],
+        init_value: u64,
+        secret: &[u8],
+        secret_offset: usize,
+    ) -> u64 {
         let secret_words = unsafe {
             secret
                 .as_ptr()
@@ -372,6 +377,11 @@ trait Vector {
 // SIMD implementations.
 mod scalar {
     use core::mem;
+
+    #[inline]
+    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
+        super::Algorithm(Impl).oneshot(secret, input)
+    }
 
     use super::{IntoU64, SliceBackport as _, Vector, PRIME32_1};
 
@@ -438,12 +448,6 @@ mod scalar {
         res
     }
 }
-
-// #[cfg(all(
-//     not(all(target_feature = "neon", feature = "simd")),
-//     not(all(target_feature = "avx2", feature = "simd")),
-// ))]
-// use scalar as vector_impl;
 
 // #[cfg(all(target_feature = "neon", feature = "simd"))]
 // mod neon {
@@ -594,23 +598,22 @@ mod scalar {
 //     }
 // }
 
-// #[cfg(all(target_feature = "neon", feature = "simd"))]
-// use neon as vector_impl;
-
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx2 {
     use core::arch::x86_64::*;
 
     use super::Vector;
 
+    #[inline]
     #[cfg(target_feature = "avx2")]
-    pub unsafe fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
+    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         unsafe { oneshot_unchecked(secret, input) }
     }
 
+    #[inline]
     #[target_feature(enable = "avx2")]
     pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
-        unsafe { super::Algorithm(Impl::new_unchecked()) }.do_it(secret, input)
+        unsafe { super::Algorithm(Impl::new_unchecked()) }.oneshot(secret, input)
     }
 
     pub struct Impl(super::scalar::Impl);
@@ -675,10 +678,18 @@ mod avx2 {
     }
 }
 
-// #[cfg(all(target_feature = "avx2", feature = "simd"))]
-// use avx2 as vector_impl;
+#[cfg(all(target_arch = "x86_64", feature = "std"))]
+mod x86_64_detect {
+    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
 
-// use vector_impl::{accumulate, round_scramble};
+        #[cfg(feature = "simd")]
+        if is_x86_feature_detected!("avx2") {
+            return unsafe { super::avx2::oneshot_unchecked(secret, input) }
+        }
+
+        super::scalar::oneshot(secret, input)
+    }
+}
 
 #[inline]
 fn avalanche(mut x: u64) -> u64 {

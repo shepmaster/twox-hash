@@ -64,9 +64,9 @@
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
 
-#![no_std]
 #![deny(rust_2018_idioms)]
 #![deny(missing_docs)]
+#![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 #[cfg(any(doc, test))]
