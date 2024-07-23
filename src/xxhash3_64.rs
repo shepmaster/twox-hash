@@ -542,7 +542,7 @@ use neon as vector_impl;
 
 #[cfg(all(target_feature = "avx2", feature = "simd"))]
 mod avx2 {
-    use core::mem;
+    use core::{mem, arch::x86_64::*};
 
     use super::{SliceBackport as _, PRIME32_1, IntoU64};
 
@@ -551,6 +551,7 @@ mod avx2 {
         let last = secret
             .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
             .unwrap();
+        
         let (last, _) = last.bp_as_chunks();
         let last = last.iter().copied().map(u64::from_ne_bytes);
 
@@ -563,25 +564,40 @@ mod avx2 {
 
     #[inline]
     pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        for i in 0..8 {
-            // TODO: Should these casts / reads happen outside this function?
-            let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
-            let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
+        for i in 0..2 {
+            unsafe {
+                // todo: align the accumulator and avoid the unaligned load and store
+                let mut acc_0 = _mm256_loadu_si256(acc.as_mut_ptr().cast::<u64>().add(4 * i).cast());
+                let stripe_0 = _mm256_loadu_si256(stripe.as_ptr().cast::<u64>().add(4 * i).cast());
+                let secret_0 = _mm256_loadu_si256(secret.as_ptr().cast::<u64>().add(4 * i).cast());
 
-            let value = stripe ^ secret;
-            acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
+                // let value[i] = stripe[i] ^ secret[i];
+                let value_0 = _mm256_xor_si256(stripe_0, secret_0);
 
-            acc[i] = multiply_64_as_32_and_add(value, value >> 32, acc[i]);
+                // TODO: "rotate" is not quite correct
+                // stripe_rot[i] = stripe[i ^ 1]
+                let stripe_rot_0 = _mm256_permute4x64_epi64::<0b10_11_00_01>(stripe_0);
+
+                // acc[i] += stripe_rot[i]
+                acc_0 = _mm256_add_epi64(acc_0, stripe_rot_0);
+
+                // value_swap[i] = swap_32_bit_pieces_in_64_bit_elements(value[i])
+                let value_swap_0 = _mm256_shuffle_epi32::<0b10_11_00_01>(value_0);
+
+                // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_swap[i])
+                let product_0 = _mm256_mul_epu32(value_0, value_swap_0);
+
+                // eprintln!();
+                // eprintln!("{value_0:016x?}");
+                // eprintln!("{value_swap_0:016x?}");
+                // eprintln!("{product_0:016x?}");
+
+                // acc[i] += product[i]
+                acc_0 = _mm256_add_epi64(acc_0, product_0);
+
+                _mm256_storeu_si256(acc.as_mut_ptr().cast::<u64>().add(4 * i).cast(), acc_0);
+            }
         }
-    }
-
-    #[inline]
-    fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
-        let lhs = (lhs as u32).into_u64();
-        let rhs = (rhs as u32).into_u64();
-
-        let product = lhs.wrapping_mul(rhs);
-        acc.wrapping_add(product)
     }
 }
 
