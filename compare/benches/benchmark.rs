@@ -201,6 +201,11 @@ mod xxhash3_64 {
                 g.bench_function(id, |b| {
                     b.iter(|| c::avx2::XxHash3_64::oneshot_with_seed(seed, data))
                 });
+
+                let id = format!("impl-c-sse2/size-{size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::sse2::XxHash3_64::oneshot_with_seed(seed, data))
+                });
             }
 
             let id = format!("impl-rust/size-{size:07}");

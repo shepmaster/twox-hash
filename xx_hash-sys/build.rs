@@ -37,6 +37,12 @@ fn main() {
                 .define("XXH_VECTOR", "XXH_AVX2")
                 .define("XXH_NAMESPACE", "avx2_")
                 .compile("xxhash_avx2");
+
+            let mut sse2_build = build.clone();
+            sse2_build
+                .define("XXH_VECTOR", "XXH_SSE2")
+                .define("XXH_NAMESPACE", "sse2_")
+                .compile("xxhash_sse2");
         }
 
         None => {}
