@@ -32,8 +32,16 @@ fn main() {
 
         Some(Arch::X86_64) => {
             let mut avx2_build = build.clone();
+
+            // TODO: check for msvc, not "windows"
+            if cfg!(target_os = "windows") {
+                // This seems to make the code slower
+                // avx2_build.flag("/arch:AVX2");
+            } else {
+                avx2_build.flag("-march=x86-64-v3");
+            }
+
             avx2_build
-                .flag("-march=x86-64-v3")
                 .define("XXH_VECTOR", "XXH_AVX2")
                 .define("XXH_NAMESPACE", "avx2_")
                 .compile("xxhash_avx2");
