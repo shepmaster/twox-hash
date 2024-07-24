@@ -257,6 +257,7 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
 struct Algorithm<V>(V);
 
 impl<V: Vector> Algorithm<V> {
+    #[inline]
     fn oneshot(&self, secret: &[u8], input: &[u8]) -> u64 {
         let mut acc = INITIAL_ACCUMULATORS;
 
@@ -469,6 +470,7 @@ mod neon {
     impl Impl {
         /// # Safety
         /// You must ensure that the CPU has the NEON feature
+        #[inline]
         unsafe fn new_unchecked() -> Self {
             Self(())
         }
@@ -633,6 +635,7 @@ mod neon {
 
 #[cfg(all(target_arch = "aarch64", feature = "std"))]
 mod aarch64_detect {
+    #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         #[cfg(feature = "simd")]
         if std::arch::is_aarch64_feature_detected!("neon") {
@@ -662,6 +665,7 @@ mod avx2 {
     impl Impl {
         /// # Safety
         /// You must ensure that the CPU has the AVX2 feature
+        #[inline]
         pub unsafe fn new_unchecked() -> Impl {
             Impl(super::scalar::Impl)
         }
@@ -731,6 +735,7 @@ mod sse2 {
     impl Impl {
         /// # Safety
         /// You must ensure that the CPU has the SSE2 feature
+        #[inline]
         pub unsafe fn new_unchecked() -> Impl {
             Impl(super::scalar::Impl)
         }
@@ -784,6 +789,7 @@ mod sse2 {
 
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
 mod x86_64_detect {
+    #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         #[cfg(feature = "simd")]
         {
@@ -801,6 +807,7 @@ mod x86_64_detect {
 }
 
 mod detect {
+    #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         #[cfg(all(target_arch = "aarch64", feature = "std"))]
         return super::aarch64_detect::oneshot(secret, input);
