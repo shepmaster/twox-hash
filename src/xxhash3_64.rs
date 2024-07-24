@@ -688,17 +688,21 @@ mod avx2 {
     #[inline]
     #[target_feature(enable = "avx2")]
     unsafe fn accumulate_avx2(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        let acc = acc.as_mut_ptr().cast::<__m256i>();
+        let stripe = stripe.as_ptr().cast::<__m256i>();
+        let secret = secret.as_ptr().cast::<__m256i>();
+
         for i in 0..2 {
             // todo: align the accumulator and avoid the unaligned load and store
-            let mut acc_0 = _mm256_loadu_si256(acc.as_mut_ptr().cast::<u64>().add(4 * i).cast());
-            let stripe_0 = _mm256_loadu_si256(stripe.as_ptr().cast::<u64>().add(4 * i).cast());
-            let secret_0 = _mm256_loadu_si256(secret.as_ptr().cast::<u64>().add(4 * i).cast());
+            let mut acc_0 = _mm256_loadu_si256(acc.add(i));
+            let stripe_0 = _mm256_loadu_si256(stripe.add(i));
+            let secret_0 = _mm256_loadu_si256(secret.add(i));
 
             // let value[i] = stripe[i] ^ secret[i];
             let value_0 = _mm256_xor_si256(stripe_0, secret_0);
 
             // stripe_swap[i] = stripe[i ^ 1]
-            let stripe_swap_0 = _mm256_permute4x64_epi64::<0b10_11_00_01>(stripe_0);
+            let stripe_swap_0 = _mm256_shuffle_epi32::<0b01_00_11_10>(stripe_0);
 
             // acc[i] += stripe_swap[i]
             acc_0 = _mm256_add_epi64(acc_0, stripe_swap_0);
@@ -712,7 +716,7 @@ mod avx2 {
             // acc[i] += product[i]
             acc_0 = _mm256_add_epi64(acc_0, product_0);
 
-            _mm256_storeu_si256(acc.as_mut_ptr().cast::<u64>().add(4 * i).cast(), acc_0);
+            _mm256_storeu_si256(acc.add(i), acc_0);
         }
     }
 }
@@ -758,11 +762,15 @@ mod sse2 {
     #[inline]
     #[target_feature(enable = "sse2")]
     unsafe fn accumulate_sse2(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        let acc = acc.as_mut_ptr().cast::<__m128i>();
+        let stripe = stripe.as_ptr().cast::<__m128i>();
+        let secret = secret.as_ptr().cast::<__m128i>();
+
         for i in 0..4 {
             // todo: align the accumulator and avoid the unaligned load and store
-            let mut acc_0 = _mm_loadu_si128(acc.as_mut_ptr().cast::<u64>().add(2 * i).cast());
-            let stripe_0 = _mm_loadu_si128(stripe.as_ptr().cast::<u64>().add(2 * i).cast());
-            let secret_0 = _mm_loadu_si128(secret.as_ptr().cast::<u64>().add(2 * i).cast());
+            let mut acc_0 = _mm_loadu_si128(acc.add(i));
+            let stripe_0 = _mm_loadu_si128(stripe.add(i));
+            let secret_0 = _mm_loadu_si128(secret.add(i));
 
             // let value[i] = stripe[i] ^ secret[i];
             let value_0 = _mm_xor_si128(stripe_0, secret_0);
@@ -773,16 +781,16 @@ mod sse2 {
             // acc[i] += stripe_swap[i]
             acc_0 = _mm_add_epi64(acc_0, stripe_swap_0);
 
-            // value_swap[i] = swap_32_bit_pieces_in_64_bit_elements(value[i])
-            let value_swap_0 = _mm_shuffle_epi32::<0b10_11_00_01>(value_0);
+            // value_shift[i] = value[i] >> 32
+            let value_shift_0 = _mm_srli_epi64::<32>(value_0);
 
-            // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_swap[i])
-            let product_0 = _mm_mul_epu32(value_0, value_swap_0);
+            // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_shift[i])
+            let product_0 = _mm_mul_epu32(value_0, value_shift_0);
 
             // acc[i] += product[i]
             acc_0 = _mm_add_epi64(acc_0, product_0);
 
-            _mm_storeu_si128(acc.as_mut_ptr().cast::<u64>().add(2 * i).cast(), acc_0);
+            _mm_storeu_si128(acc.add(i), acc_0);
         }
     }
 }
