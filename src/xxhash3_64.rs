@@ -713,12 +713,87 @@ mod avx2 {
     }
 }
 
+mod sse2 {
+    use core::arch::x86_64::*;
+
+    use super::Vector;
+
+    /// # Safety
+    /// You must ensure that the CPU has the SSE2 feature
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
+        super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
+    }
+
+    pub struct Impl(super::scalar::Impl);
+
+    impl Impl {
+        /// # Safety
+        /// You must ensure that the CPU has the SSE2 feature
+        pub unsafe fn new_unchecked() -> Impl {
+            Impl(super::scalar::Impl)
+        }
+    }
+
+    impl Vector for Impl {
+        #[inline]
+        fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]) {
+            // The scalar implementation is autovectorized nicely enough
+            self.0.round_scramble(acc, secret)
+        }
+
+        #[inline]
+        fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+            // SAFETY: Type can only be constructed when SSE2 feature is present
+            unsafe { accumulate_sse2(acc, stripe, secret) }
+        }
+    }
+
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    unsafe fn accumulate_sse2(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        for i in 0..4 {
+            // todo: align the accumulator and avoid the unaligned load and store
+            let mut acc_0 = _mm_loadu_si128(acc.as_mut_ptr().cast::<u64>().add(2 * i).cast());
+            let stripe_0 = _mm_loadu_si128(stripe.as_ptr().cast::<u64>().add(2 * i).cast());
+            let secret_0 = _mm_loadu_si128(secret.as_ptr().cast::<u64>().add(2 * i).cast());
+
+            // let value[i] = stripe[i] ^ secret[i];
+            let value_0 = _mm_xor_si128(stripe_0, secret_0);
+
+            // stripe_swap[i] = stripe[i ^ 1]
+            let stripe_swap_0 = _mm_shuffle_epi32::<0b01_00_11_10>(stripe_0);
+
+            // acc[i] += stripe_swap[i]
+            acc_0 = _mm_add_epi64(acc_0, stripe_swap_0);
+
+            // value_swap[i] = swap_32_bit_pieces_in_64_bit_elements(value[i])
+            let value_swap_0 = _mm_shuffle_epi32::<0b10_11_00_01>(value_0);
+
+            // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_swap[i])
+            let product_0 = _mm_mul_epu32(value_0, value_swap_0);
+
+            // acc[i] += product[i]
+            acc_0 = _mm_add_epi64(acc_0, product_0);
+
+            _mm_storeu_si128(acc.as_mut_ptr().cast::<u64>().add(2 * i).cast(), acc_0);
+        }
+    }
+}
+
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
 mod x86_64_detect {
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         #[cfg(feature = "simd")]
-        if std::arch::is_x86_feature_detected!("avx2") {
-            return unsafe { super::avx2::oneshot_unchecked(secret, input) };
+        {
+            if std::arch::is_x86_feature_detected!("avx2") {
+                return unsafe { super::avx2::oneshot_unchecked(secret, input) };
+            }
+
+            if std::arch::is_x86_feature_detected!("sse2") {
+                return unsafe { super::sse2::oneshot_unchecked(secret, input) };
+            }
         }
 
         super::scalar::oneshot(secret, input)
