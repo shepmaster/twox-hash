@@ -693,18 +693,17 @@ mod avx2 {
             // let value[i] = stripe[i] ^ secret[i];
             let value_0 = _mm256_xor_si256(stripe_0, secret_0);
 
-            // TODO: "rotate" is not quite correct
-            // stripe_rot[i] = stripe[i ^ 1]
-            let stripe_rot_0 = _mm256_permute4x64_epi64::<0b10_11_00_01>(stripe_0);
+            // stripe_swap[i] = stripe[i ^ 1]
+            let stripe_swap_0 = _mm256_permute4x64_epi64::<0b10_11_00_01>(stripe_0);
 
-            // acc[i] += stripe_rot[i]
-            acc_0 = _mm256_add_epi64(acc_0, stripe_rot_0);
+            // acc[i] += stripe_swap[i]
+            acc_0 = _mm256_add_epi64(acc_0, stripe_swap_0);
 
-            // value_swap[i] = swap_32_bit_pieces_in_64_bit_elements(value[i])
-            let value_swap_0 = _mm256_shuffle_epi32::<0b10_11_00_01>(value_0);
+            // value_shift[i] = value[i] >> 32
+            let value_shift_0 = _mm256_srli_epi64::<32>(value_0);
 
-            // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_swap[i])
-            let product_0 = _mm256_mul_epu32(value_0, value_swap_0);
+            // product[i] = lower_32_bit(value[i]) * lower_32_bit(value_shift[i])
+            let product_0 = _mm256_mul_epu32(value_0, value_shift_0);
 
             // acc[i] += product[i]
             acc_0 = _mm256_add_epi64(acc_0, product_0);
