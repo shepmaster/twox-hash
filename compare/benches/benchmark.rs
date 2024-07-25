@@ -169,6 +169,34 @@ fn half_sizes(max: usize) -> impl Iterator<Item = usize> {
 mod xxhash3_64 {
     use super::*;
 
+    fn tiny_data(c: &mut Criterion) {
+        let (seed, data) = gen_data(TINY_DATA_SIZE);
+        let mut g = c.benchmark_group("xxhash3_64/tiny_data");
+
+        for size in 0..=data.len() {
+            let data = &data[..size];
+            g.throughput(Throughput::Bytes(data.len() as _));
+
+            let id = format!("impl-c/fn-oneshot/size-{size:02}");
+            g.bench_function(id, |b| {
+                b.iter(|| {
+                    let hash = c::XxHash3_64::oneshot_with_seed(seed, data);
+                    black_box(hash);
+                })
+            });
+
+            let id = format!("impl-rust/fn-oneshot/size-{size:02}");
+            g.bench_function(id, |b| {
+                b.iter(|| {
+                    let hash = rust::XxHash3_64::oneshot_with_seed(seed, data);
+                    black_box(hash);
+                })
+            });
+        }
+
+        g.finish();
+    }
+
     fn oneshot(c: &mut Criterion) {
         let (seed, data) = gen_data(BIG_DATA_SIZE);
         let mut g = c.benchmark_group("xxhash3_64/oneshot");
@@ -217,7 +245,7 @@ mod xxhash3_64 {
         g.finish();
     }
 
-    criterion_group!(benches, oneshot);
+    criterion_group!(benches, tiny_data, oneshot);
 }
 
 criterion_group!(benches, tiny_data, oneshot, streaming);
