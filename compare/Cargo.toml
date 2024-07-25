@@ -3,11 +3,6 @@ name = "compare"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["simd"]
-
-simd = ["xx-renu/simd"]
-
 [[bench]]
 name = "benchmark"
 harness = false

@@ -12,7 +12,7 @@ members = [
 ]
 
 [features]
-default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "simd", "std"]
+default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "std"]
 
 random = ["dep:rand"]
 
@@ -22,9 +22,16 @@ xxhash32 = []
 xxhash64 = []
 xxhash3_64 = []
 
-simd = []
-
 std = []
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    'cfg(_internal_xxhash3_force_scalar)',
+    'cfg(_internal_xxhash3_force_neon)',
+    'cfg(_internal_xxhash3_force_sse2)',
+    'cfg(_internal_xxhash3_force_avx2)',
+]
 
 [dependencies]
 rand = { version = "0.8.0", optional = true, default-features = false, features = ["std", "std_rng"] }

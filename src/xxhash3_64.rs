@@ -251,6 +251,19 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 
 #[inline]
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
+    #[cfg(_internal_xxhash3_force_scalar)]
+    return scalar::oneshot(secret, input);
+
+    #[cfg(_internal_xxhash3_force_neon)]
+    unsafe { return neon::oneshot_unchecked(secret, input) };
+
+    #[cfg(_internal_xxhash3_force_sse2)]
+    unsafe { return sse2::oneshot_unchecked(secret, input) };
+
+    #[cfg(_internal_xxhash3_force_avx2)]
+    unsafe { return avx2::oneshot_unchecked(secret, input) };
+
+    #[allow(unreachable_code)]
     detect::oneshot(secret, input)
 }
 
@@ -451,7 +464,7 @@ mod scalar {
     }
 }
 
-#[cfg(all(target_arch = "aarch64", feature = "simd"))]
+#[cfg(target_arch = "aarch64")]
 mod neon {
     use core::arch::aarch64::*;
 
@@ -637,7 +650,6 @@ mod neon {
 mod aarch64_detect {
     #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        #[cfg(feature = "simd")]
         if std::arch::is_aarch64_feature_detected!("neon") {
             return unsafe { super::neon::oneshot_unchecked(secret, input) };
         }
@@ -646,7 +658,7 @@ mod aarch64_detect {
     }
 }
 
-#[cfg(all(target_arch = "x86_64", feature = "simd"))]
+#[cfg(target_arch = "x86_64")]
 mod avx2 {
     use core::arch::x86_64::*;
 
@@ -721,6 +733,7 @@ mod avx2 {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
 mod sse2 {
     use core::arch::x86_64::*;
 
@@ -799,15 +812,12 @@ mod sse2 {
 mod x86_64_detect {
     #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        #[cfg(feature = "simd")]
-        {
-            if std::arch::is_x86_feature_detected!("avx2") {
-                return unsafe { super::avx2::oneshot_unchecked(secret, input) };
-            }
+        if std::arch::is_x86_feature_detected!("avx2") {
+            return unsafe { super::avx2::oneshot_unchecked(secret, input) };
+        }
 
-            if std::arch::is_x86_feature_detected!("sse2") {
-                return unsafe { super::sse2::oneshot_unchecked(secret, input) };
-            }
+        if std::arch::is_x86_feature_detected!("sse2") {
+            return unsafe { super::sse2::oneshot_unchecked(secret, input) };
         }
 
         super::scalar::oneshot(secret, input)
@@ -884,7 +894,7 @@ impl Halves for u128 {
 trait SliceBackport<T> {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]);
 
-    #[cfg(all(target_arch = "aarch64", feature = "simd"))]
+    #[cfg(target_arch = "aarch64")]
     fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]);
 
     fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]);
@@ -899,7 +909,7 @@ impl<T> SliceBackport<T> for [T] {
         (head, tail)
     }
 
-    #[cfg(all(target_arch = "aarch64", feature = "simd"))]
+    #[cfg(target_arch = "aarch64")]
     fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]) {
         assert_ne!(N, 0);
         let len = self.len() / N;
