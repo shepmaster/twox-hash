@@ -82,7 +82,7 @@ fn derive_secret(seed: u64) -> [u8; 192] {
     derived_secret
 }
 
-#[inline]
+#[inline(always)]
 fn impl_oneshot(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
     match input.len() {
         0 => impl_0_bytes(secret, seed),
