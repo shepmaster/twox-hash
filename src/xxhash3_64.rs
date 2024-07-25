@@ -255,13 +255,19 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
     return scalar::oneshot(secret, input);
 
     #[cfg(_internal_xxhash3_force_neon)]
-    unsafe { return neon::oneshot_unchecked(secret, input) };
+    unsafe {
+        return neon::oneshot_unchecked(secret, input);
+    };
 
     #[cfg(_internal_xxhash3_force_sse2)]
-    unsafe { return sse2::oneshot_unchecked(secret, input) };
+    unsafe {
+        return sse2::oneshot_unchecked(secret, input);
+    };
 
     #[cfg(_internal_xxhash3_force_avx2)]
-    unsafe { return avx2::oneshot_unchecked(secret, input) };
+    unsafe {
+        return avx2::oneshot_unchecked(secret, input);
+    };
 
     #[allow(unreachable_code)]
     detect::oneshot(secret, input)
