@@ -170,14 +170,20 @@ mod xxhash3_64 {
     use super::*;
 
     fn tiny_data(c: &mut Criterion) {
-        let (seed, data) = gen_data(TINY_DATA_SIZE);
+        let (seed, data) = gen_data(240);
         let mut g = c.benchmark_group("xxhash3_64/tiny_data");
 
-        for size in 0..=data.len() {
+        // let categories = 0..=data.len();
+
+        // Visual inspection of all the data points showed these as
+        // examples of thier nearby neighbors.
+        let categories = [0, 2, 9, 25, 50, 80, 113, 135, 150, 165, 185, 200, 215, 230];
+
+        for size in categories {
             let data = &data[..size];
             g.throughput(Throughput::Bytes(data.len() as _));
 
-            let id = format!("impl-c/fn-oneshot/size-{size:02}");
+            let id = format!("impl-c/fn-oneshot/size-{size:03}");
             g.bench_function(id, |b| {
                 b.iter(|| {
                     let hash = c::XxHash3_64::oneshot_with_seed(seed, data);
@@ -185,7 +191,7 @@ mod xxhash3_64 {
                 })
             });
 
-            let id = format!("impl-rust/fn-oneshot/size-{size:02}");
+            let id = format!("impl-rust/fn-oneshot/size-{size:03}");
             g.bench_function(id, |b| {
                 b.iter(|| {
                     let hash = rust::XxHash3_64::oneshot_with_seed(seed, data);
