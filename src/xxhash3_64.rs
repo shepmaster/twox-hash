@@ -194,71 +194,57 @@ fn impl_17_to_128_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
     if input.len() > 32 {
         if input.len() > 64 {
             if input.len() > 96 {
-                acc = acc.wrapping_add(mix_step_ff(&fwd[3], &secret[3][0], seed));
-                acc = acc.wrapping_add(mix_step_ff(&bwd[q - 4], &secret[3][1], seed));
+                acc = acc.wrapping_add(mix_step(&fwd[3], &secret[3][0], seed));
+                acc = acc.wrapping_add(mix_step(&bwd[q - 4], &secret[3][1], seed));
             }
 
-            acc = acc.wrapping_add(mix_step_ff(&fwd[2], &secret[2][0], seed));
-            acc = acc.wrapping_add(mix_step_ff(&bwd[q - 3], &secret[2][1], seed));
+            acc = acc.wrapping_add(mix_step(&fwd[2], &secret[2][0], seed));
+            acc = acc.wrapping_add(mix_step(&bwd[q - 3], &secret[2][1], seed));
         }
 
-        acc = acc.wrapping_add(mix_step_ff(&fwd[1], &secret[1][0], seed));
-        acc = acc.wrapping_add(mix_step_ff(&bwd[q - 2], &secret[1][1], seed));
+        acc = acc.wrapping_add(mix_step(&fwd[1], &secret[1][0], seed));
+        acc = acc.wrapping_add(mix_step(&bwd[q - 2], &secret[1][1], seed));
     }
 
-    acc = acc.wrapping_add(mix_step_ff(&fwd[0], &secret[0][0], seed));
-    acc = acc.wrapping_add(mix_step_ff(&bwd[q - 1], &secret[0][1], seed));
+    acc = acc.wrapping_add(mix_step(&fwd[0], &secret[0][0], seed));
+    acc = acc.wrapping_add(mix_step(&bwd[q - 1], &secret[0][1], seed));
 
     avalanche(acc)
-}
-
-#[inline]
-fn mix_step_ff(data: &[u8; 16], secret: &[u8; 16], seed: u64) -> u64 {
-    let data_words = unsafe { data.as_ptr().cast::<[u64; 2]>().read_unaligned() };
-    let secret_words = unsafe { secret.as_ptr().cast::<[u64; 2]>().read_unaligned() };
-
-    let mul_result = {
-        let a = (data_words[0] ^ secret_words[0].wrapping_add(seed)).into_u128();
-        let b = (data_words[1] ^ secret_words[1].wrapping_sub(seed)).into_u128();
-
-        a.wrapping_mul(b)
-    };
-
-    mul_result.lower_half() ^ mul_result.upper_half()
 }
 
 #[inline]
 fn impl_129_to_240_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
     let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
-    let (head, _tail) = input.bp_as_chunks();
+    let (head, _) = input.bp_as_chunks();
+    let last_chunk = input.last_chunk().unwrap();
     let mut head = head.iter();
 
-    for (i, chunk) in head.by_ref().take(8).enumerate() {
-        acc = acc.wrapping_add(mix_step(chunk, secret, i * 16, seed));
+    let (ss, _) = secret.bp_as_chunks();
+    let (ss2, _) = secret[3..].bp_as_chunks();
+
+    let qq = head.by_ref().zip(ss);
+
+    for (chunk, s) in qq.take(8) {
+        acc = acc.wrapping_add(mix_step(chunk, s, seed));
     }
 
     acc = avalanche(acc);
 
-    for (i, chunk) in head.enumerate() {
-        acc = acc.wrapping_add(mix_step(chunk, secret, i * 16 + 3, seed));
+    for (chunk, s) in head.zip(ss2) {
+        acc = acc.wrapping_add(mix_step(chunk, s, seed));
     }
 
-    acc = acc.wrapping_add(mix_step(input.last_chunk().unwrap(), secret, 119, seed));
+    let ss3 = &secret[119..].first_chunk().unwrap();
+    acc = acc.wrapping_add(mix_step(last_chunk, ss3, seed));
 
     avalanche(acc)
 }
 
 #[inline]
-fn mix_step(data: &[u8; 16], secret: &[u8], secret_offset: usize, seed: u64) -> u64 {
+fn mix_step(data: &[u8; 16], secret: &[u8; 16], seed: u64) -> u64 {
     let data_words = unsafe { data.as_ptr().cast::<[u64; 2]>().read_unaligned() };
-    let secret_words = unsafe {
-        secret
-            .as_ptr()
-            .add(secret_offset)
-            .cast::<[u64; 2]>()
-            .read_unaligned()
-    };
+    let secret_words = unsafe { secret.as_ptr().cast::<[u64; 2]>().read_unaligned() };
 
     let mul_result = {
         let a = (data_words[0] ^ secret_words[0].wrapping_add(seed)).into_u128();
