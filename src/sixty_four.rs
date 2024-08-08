@@ -283,11 +283,30 @@ impl Hasher for XxHash64 {
 }
 
 #[cfg(feature = "std")]
+impl std::io::Write for XxHash64 {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        Hasher::write(self, buf);
+        Ok(buf.len())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        Hasher::write(self, buf);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "std")]
 pub use crate::std_support::sixty_four::RandomXxHashBuilder64;
 
 #[cfg(test)]
 mod test {
-    use super::{RandomXxHashBuilder64, XxHash64};
+    #[cfg(feature = "std")]
+    use super::RandomXxHashBuilder64;
+    use super::XxHash64;
     use std::collections::HashMap;
     use std::hash::BuildHasherDefault;
     use std::prelude::v1::*;
@@ -351,6 +370,47 @@ mod test {
         assert_eq!(hasher.finish(), 0x567e_355e_0682_e1f1);
     }
 
+    #[cfg(feature = "std")]
+    #[test]
+    fn write_matches_hash() {
+        use std::io::Write;
+
+        let bytes: Vec<_> = (0..32).map(|_| 0).collect();
+
+        let mut hasher_hash = XxHash64::with_seed(0);
+        let mut hasher_write = XxHash64::with_seed(0);
+        let mut hasher_write_all = XxHash64::with_seed(0);
+
+        for byte in bytes.chunks(1) {
+            Write::write(&mut hasher_write, byte).unwrap();
+            Write::write_all(&mut hasher_write_all, byte).unwrap();
+            XxHash64::write(&mut hasher_hash, byte);
+            assert_eq!(hasher_hash.finish(), hasher_write.finish());
+            assert_eq!(hasher_hash.finish(), hasher_write_all.finish());
+        }
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn write_matches_different_hash() {
+        use std::io::Write;
+
+        let bytes: Vec<_> = (0..32).map(|_| 0xbe).collect();
+
+        let mut hasher_hash = XxHash64::with_seed(0xae05_4331_1b70_2d91);
+        let mut hasher_write = XxHash64::with_seed(0xae05_4331_1b70_2d91);
+        let mut hasher_write_all = XxHash64::with_seed(0xae05_4331_1b70_2d91);
+
+        for byte in bytes.chunks(1) {
+            Write::write(&mut hasher_write, byte).unwrap();
+            Write::write_all(&mut hasher_write_all, byte).unwrap();
+            XxHash64::write(&mut hasher_hash, byte);
+        }
+
+        assert_eq!(hasher_hash.finish(), hasher_write.finish());
+        assert_eq!(hasher_hash.finish(), hasher_write_all.finish());
+    }
+
     #[test]
     fn can_be_used_in_a_hashmap_with_a_default_seed() {
         let mut hash: HashMap<_, _, BuildHasherDefault<XxHash64>> = Default::default();
@@ -358,6 +418,7 @@ mod test {
         assert_eq!(hash.get(&42), Some(&"the answer"));
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn can_be_used_in_a_hashmap_with_a_random_seed() {
         let mut hash: HashMap<_, _, RandomXxHashBuilder64> = Default::default();

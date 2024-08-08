@@ -1,3 +1,5 @@
+#![no_std]
+
 //! A Rust implementation of the [XXHash] algorithm.
 //!
 //! [XXHash]: https://github.com/Cyan4973/xxHash
@@ -14,22 +16,22 @@
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
 //!
-//! ### With a random seed
-//!
-//! ```rust
-//! use std::collections::HashMap;
-//! use twox_hash::RandomXxHashBuilder64;
-//!
-//! let mut hash: HashMap<_, _, RandomXxHashBuilder64> = Default::default();
-//! hash.insert(42, "the answer");
-//! assert_eq!(hash.get(&42), Some(&"the answer"));
-//! ```
+#[cfg_attr(feature = "std", doc = r##"
+### With a random seed
 
-#![no_std]
+```rust
+use std::collections::HashMap;
+use twox_hash::RandomXxHashBuilder64;
+
+let mut hash: HashMap<_, _, RandomXxHashBuilder64> = Default::default();
+hash.insert(42, "the answer");
+assert_eq!(hash.get(&42), Some(&"the answer"));
+```
+"##)]
 
 extern crate alloc;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "std"))]
 extern crate std;
 
 use core::{marker::PhantomData, mem};
