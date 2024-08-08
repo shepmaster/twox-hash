@@ -141,6 +141,23 @@ impl Hasher for Hash64 {
     }
 }
 
+#[cfg(feature = "std")]
+impl std::io::Write for Hash64 {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        Hasher::write(self, buf);
+        Ok(buf.len())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        Hasher::write(self, buf);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Calculates the 128-bit hash.
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
 #[derive(Clone, Default)]
@@ -176,6 +193,23 @@ impl HasherExt for Hash128 {
     #[inline(always)]
     fn finish_ext(&self) -> u128 {
         self.0.digest128()
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::io::Write for Hash128 {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        Hasher::write(self, buf);
+        Ok(buf.len())
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        Hasher::write(self, buf);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
