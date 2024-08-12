@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use core::{mem, slice};
+use core::{hash, mem, slice};
 
 use crate::{IntoU128, IntoU32, IntoU64};
 
@@ -32,9 +32,15 @@ const DEFAULT_SECRET: [u8; 192] = [
     0x45, 0xcb, 0x3a, 0x8f, 0x95, 0x16, 0x04, 0x28, 0xaf, 0xd7, 0xfb, 0xca, 0xbb, 0x4b, 0x40, 0x7e,
 ];
 
+const DEFAULT_BUFFER_LEN: usize = 1024;
+
 pub const SECRET_MINIMUM_LENGTH: usize = 136;
 
-pub struct XxHash3_64;
+pub struct XxHash3_64 {
+    #[cfg(feature = "alloc")]
+    inner: with_alloc::AllocRawHasher,
+    _private: (),
+}
 
 impl XxHash3_64 {
     #[inline(never)]
@@ -44,13 +50,15 @@ impl XxHash3_64 {
 
     #[inline(never)]
     pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u64 {
-        let secret = if seed != 0 && input.len() > 240 {
-            &derive_secret(seed)
-        } else {
-            &DEFAULT_SECRET
-        };
+        let mut secret = DEFAULT_SECRET;
 
-        impl_oneshot(secret, seed, input)
+        // We know that the secret will only be used if we have more
+        // than 240 bytes, so don't waste time computing it otherwise.
+        if input.len() > 240 {
+            derive_secret(seed, &mut secret);
+        }
+
+        impl_oneshot(&secret, seed, input)
     }
 
     #[inline(never)]
@@ -60,10 +68,354 @@ impl XxHash3_64 {
     }
 }
 
+/// Holds secret and temporary buffers that are ensured to be
+/// appropriately sized.
+pub struct SecretBuffer<S, B> {
+    seed: u64,
+    secret: S,
+    buffer: B,
+}
+
+impl<S, B> SecretBuffer<S, B>
+where
+    S: AsRef<[u8]>,
+    B: AsRef<[u8]> + AsMut<[u8]>,
+{
+    /// Takes the seed, secret, and buffer and performs no
+    /// modifications to them, only validating that the sizes are
+    /// appropriate.
+    pub fn new(seed: u64, secret: S, buffer: B) -> Result<Self, (S, B)> {
+        let this = Self {
+            seed,
+            secret,
+            buffer,
+        };
+
+        if this.is_valid() {
+            Ok(this)
+        } else {
+            Err(this.decompose())
+        }
+    }
+
+    fn is_valid(&self) -> bool {
+        let secret = self.secret.as_ref();
+
+        assert!(secret.len() >= SECRET_MINIMUM_LENGTH); // TODO: return result
+
+        let required_buffer_len = block_size(secret);
+        let buffer_len = self.buffer.as_ref().len();
+
+        required_buffer_len == buffer_len
+    }
+
+    /// Returns the secret and buffer values.
+    pub fn decompose(self) -> (S, B) {
+        (self.secret, self.buffer)
+    }
+}
+
+impl SecretBuffer<&'static [u8; 192], [u8; 1024]> {
+    /// Use the default seed and secret values while allocating nothing.
+    ///
+    /// Note that this type may take up a surprising amount of stack space.
+    #[inline]
+    pub const fn default() -> Self {
+        SecretBuffer {
+            seed: DEFAULT_SEED,
+            secret: &DEFAULT_SECRET,
+            buffer: [0; DEFAULT_BUFFER_LEN],
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+mod with_alloc {
+    use ::alloc::{boxed::Box, vec};
+
+    use super::*;
+
+    impl XxHash3_64 {
+        pub fn new() -> Self {
+            Self {
+                inner: RawHasher::allocate_default(),
+                _private: (),
+            }
+        }
+
+        pub fn with_seed(seed: u64) -> Self {
+            Self {
+                inner: RawHasher::allocate_with_seed(seed),
+                _private: (),
+            }
+        }
+
+        pub fn with_seed_and_secret(seed: u64, secret: impl Into<Box<[u8]>>) -> Self {
+            Self {
+                inner: RawHasher::allocate_with_seed_and_secret(seed, secret),
+                _private: (),
+            }
+        }
+    }
+
+    impl Default for XxHash3_64 {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl hash::Hasher for XxHash3_64 {
+        #[inline]
+        fn write(&mut self, input: &[u8]) {
+            self.inner.write(input)
+        }
+
+        #[inline]
+        fn finish(&self) -> u64 {
+            self.inner.finish()
+        }
+    }
+
+    type AllocSecretBuffer = SecretBuffer<Box<[u8]>, Box<[u8]>>;
+
+    impl AllocSecretBuffer {
+        /// Allocates the secret and temporary buffers and fills them
+        /// with the default seed and secret values.
+        pub fn allocate_default() -> Self {
+            Self {
+                seed: DEFAULT_SEED,
+                secret: DEFAULT_SECRET.to_vec().into(),
+                buffer: vec![0; DEFAULT_BUFFER_LEN].into(),
+            }
+        }
+
+        /// Allocates the secret and temporary buffers and uses the
+        /// provided seed to construct the secret value.
+        pub fn allocate_with_seed(seed: u64) -> Self {
+            let mut secret = DEFAULT_SECRET;
+            derive_secret(seed, &mut secret);
+
+            Self {
+                seed,
+                secret: secret.to_vec().into(),
+                buffer: vec![0; DEFAULT_BUFFER_LEN].into(),
+            }
+        }
+
+        /// Allocates the temporary buffer and uses the provided seed
+        /// and secret buffer.
+        pub fn allocate_with_seed_and_secret(seed: u64, secret: impl Into<Box<[u8]>>) -> Self {
+            let secret = secret.into();
+            assert!(secret.len() > SECRET_MINIMUM_LENGTH); // todo result
+            let block_size = block_size(&secret);
+
+            Self {
+                seed,
+                secret,
+                buffer: vec![0; block_size].into(),
+            }
+        }
+    }
+
+    pub type AllocRawHasher = RawHasher<Box<[u8]>, Box<[u8]>>;
+
+    impl AllocRawHasher {
+        fn allocate_default() -> Self {
+            Self::new(SecretBuffer::allocate_default())
+        }
+
+        fn allocate_with_seed(seed: u64) -> Self {
+            Self::new(SecretBuffer::allocate_with_seed(seed))
+        }
+
+        fn allocate_with_seed_and_secret(seed: u64, secret: impl Into<Box<[u8]>>) -> Self {
+            Self::new(SecretBuffer::allocate_with_seed_and_secret(seed, secret))
+        }
+    }
+}
+
+impl<S, B> SecretBuffer<S, B>
+where
+    S: AsRef<[u8]> + AsMut<[u8]>,
+    B: AsRef<[u8]> + AsMut<[u8]>,
+{
+    /// Fills the secret buffer with a secret derived from the seed
+    /// and the default secret.
+    pub fn with_seed(seed: u64, mut secret: S, buffer: B) -> Result<Self, (S, B)> {
+        let secret_slice: &mut [u8; 192] = match secret.as_mut().try_into() {
+            Ok(s) => s,
+            Err(_) => return Err((secret, buffer)),
+        };
+
+        *secret_slice = DEFAULT_SECRET;
+        derive_secret(seed, secret_slice);
+
+        Self::new(seed, secret, buffer)
+    }
+}
+
+/// A lower-level interface for computing a hash from streaming data.
+///
+/// The algorithm requires two reasonably large pieces of data: the
+/// secret and a temporary buffer. [`XxHash3_64`][] makes one concrete
+/// implementation decision that uses dynamic memory allocation, but
+/// specialized usages may desire more flexibility. This type,
+/// combined with [`SecretBuffer`][], offer that flexibility at the
+/// cost of a generic type.
+pub struct RawHasher<S, B> {
+    secret_buffer: SecretBuffer<S, B>,
+    buffer_len: usize,
+    accumulator: [u64; 8],
+    total_bytes: usize,
+}
+
+impl<S, B> RawHasher<S, B> {
+    pub fn new(secret_buffer: SecretBuffer<S, B>) -> Self {
+        Self {
+            secret_buffer,
+            buffer_len: 0,
+            accumulator: INITIAL_ACCUMULATORS,
+            total_bytes: 0,
+        }
+    }
+}
+
+impl<S, B> hash::Hasher for RawHasher<S, B>
+where
+    S: AsRef<[u8]>,
+    B: AsRef<[u8]> + AsMut<[u8]>,
+{
+    #[inline]
+    fn write(&mut self, mut input: &[u8]) {
+        if input.is_empty() {
+            return;
+        }
+
+        let Self {
+            secret_buffer,
+            buffer_len,
+            accumulator,
+            total_bytes,
+        } = self;
+        let SecretBuffer {
+            seed: _,
+            secret,
+            buffer,
+        } = secret_buffer;
+        let secret = secret.as_ref();
+        let buffer = buffer.as_mut();
+        let input_len = input.len();
+
+        // Short-circuit if the buffer is empty and we have one or
+        // more full buffers-worth on the input.
+        if buffer.is_empty() {
+            let (blocks, remainder) = unsafe { chunks_and_last(input, buffer.len()) };
+            detect::rounds(accumulator, blocks, secret);
+            input = remainder;
+        }
+
+        while !input.is_empty() {
+            let remaining = &mut buffer[*buffer_len..];
+            let n_to_copy = usize::min(remaining.len(), input.len());
+
+            let (remaining_head, remaining_tail) = remaining.split_at_mut(n_to_copy);
+            let (input_head, input_tail) = input.split_at(n_to_copy);
+
+            remaining_head.copy_from_slice(input_head);
+            *buffer_len += n_to_copy;
+
+            // We have not filled the whole buffer, no need to
+            // process it now
+            if !remaining_tail.is_empty() {
+                break;
+            }
+
+            // We filled the buffer, but we don't know we have
+            // more data so we have to leave it in case it is the
+            // last full block.
+            if input_tail.is_empty() {
+                break;
+            }
+
+            // We have a full buffer *and* we know there's more
+            // data after the buffer, so we can process this as a
+            // full block.
+            detect::rounds(accumulator, [&*buffer], secret);
+            *buffer_len = 0;
+
+            input = input_tail;
+        }
+
+        *total_bytes += input_len;
+    }
+
+    #[inline]
+    fn finish(&self) -> u64 {
+        let Self {
+            ref secret_buffer,
+            buffer_len,
+            accumulator,
+            total_bytes,
+        } = *self;
+        let SecretBuffer {
+            seed,
+            ref secret,
+            ref buffer,
+        } = *secret_buffer;
+
+        let secret = secret.as_ref();
+        let buffer = buffer.as_ref();
+
+        let input = &buffer[..buffer_len];
+
+        match total_bytes {
+            241.. => {
+                let mut temp = [0; 64];
+
+                let last_stripe = match input.last_chunk() {
+                    Some(chunk) => chunk,
+                    None => {
+                        let n_to_reuse = 64 - input.len();
+                        let to_reuse = buffer.len() - n_to_reuse;
+
+                        let (temp_head, temp_tail) = temp.split_at_mut(n_to_reuse);
+                        temp_head.copy_from_slice(&buffer[to_reuse..]);
+                        temp_tail.copy_from_slice(input);
+
+                        &temp
+                    }
+                };
+
+                detect::finalize(accumulator, input, last_stripe, secret, total_bytes)
+            }
+
+            129..=240 => impl_129_to_240_bytes(&DEFAULT_SECRET, seed, input),
+
+            17..=128 => impl_17_to_128_bytes(&DEFAULT_SECRET, seed, input),
+
+            9..=16 => impl_9_to_16_bytes(&DEFAULT_SECRET, seed, input),
+
+            4..=8 => impl_4_to_8_bytes(&DEFAULT_SECRET, seed, input),
+
+            1..=3 => impl_1_to_3_bytes(&DEFAULT_SECRET, seed, input),
+
+            0 => impl_0_bytes(&DEFAULT_SECRET, seed),
+        }
+    }
+}
+
+/// # Correctness
+///
+/// This function assumes that the incoming buffer has been populated
+/// with the default secret.
 #[inline]
-fn derive_secret(seed: u64) -> [u8; 192] {
-    let mut derived_secret = DEFAULT_SECRET;
-    let base = derived_secret.as_mut_ptr().cast::<u64>();
+fn derive_secret(seed: u64, secret: &mut [u8; 192]) {
+    if seed == DEFAULT_SEED {
+        return;
+    }
+
+    let base = secret.as_mut_ptr().cast::<u64>();
 
     for i in 0..12 {
         let a_p = unsafe { base.add(i * 2) };
@@ -78,8 +430,6 @@ fn derive_secret(seed: u64) -> [u8; 192] {
         unsafe { a_p.write_unaligned(a) };
         unsafe { b_p.write_unaligned(b) };
     }
-
-    derived_secret
 }
 
 #[inline(always)]
@@ -286,6 +636,11 @@ fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
     detect::oneshot(secret, input)
 }
 
+fn block_size(secret: &[u8]) -> usize {
+    let stripes_per_block = (secret.len() - 64) / 8;
+    64 * stripes_per_block
+}
+
 struct Algorithm<V>(V);
 
 impl<V: Vector> Algorithm<V> {
@@ -296,42 +651,37 @@ impl<V: Vector> Algorithm<V> {
         assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
         assert!(input.len() >= 241);
 
-        let stripes_per_block = (secret.len() - 64) / 8;
-        let block_size = 64 * stripes_per_block;
+        let block_size = block_size(secret);
 
-        let mut blocks = input.chunks_exact(block_size);
-        let last_block = if blocks.remainder().is_empty() {
-            // SAFETY: We know that `input` is non-empty, which means
-            // that either there will be a remainder or one or more
-            // full blocks. That info isn't flowing to the optimizer,
-            // so we use `unwrap_unchecked`.
-            unsafe { blocks.next_back().unwrap_unchecked() }
-        } else {
-            blocks.remainder()
-        };
+        let (blocks, last_block) = unsafe { chunks_and_last(input, block_size) };
+
+        self.rounds(&mut acc, blocks, secret);
+
+        let len = input.len();
 
         let last_stripe: &[u8; 64] = unsafe {
             &*input
                 .as_ptr()
-                .add(input.len())
+                .add(len)
                 .sub(mem::size_of::<[u8; 64]>())
                 .cast()
         };
 
+        self.finalize(acc, last_block, last_stripe, secret, len)
+    }
+
+    #[inline]
+    fn rounds<'a>(
+        &self,
+        acc: &mut [u64; 8],
+        blocks: impl IntoIterator<Item = &'a [u8]>,
+        secret: &[u8],
+    ) {
         for block in blocks {
             let (stripes, _) = block.bp_as_chunks();
 
-            self.round(&mut acc, stripes, secret);
+            self.round(acc, stripes, secret);
         }
-
-        self.last_round(&mut acc, last_block, last_stripe, secret);
-
-        self.final_merge(
-            &mut acc,
-            input.len().into_u64().wrapping_mul(PRIME64_1),
-            secret,
-            11,
-        )
     }
 
     #[inline]
@@ -348,6 +698,20 @@ impl<V: Vector> Algorithm<V> {
         for (stripe, secret) in stripes.iter().zip(secrets) {
             self.0.accumulate(acc, stripe, secret);
         }
+    }
+
+    #[inline]
+    fn finalize(
+        &self,
+        mut acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &[u8],
+        len: usize,
+    ) -> u64 {
+        self.last_round(&mut acc, last_block, last_stripe, secret);
+
+        self.final_merge(&mut acc, len.into_u64().wrapping_mul(PRIME64_1), secret, 11)
     }
 
     #[inline]
@@ -399,6 +763,26 @@ impl<V: Vector> Algorithm<V> {
     }
 }
 
+/// # Safety
+/// `input` must be non-empty.
+unsafe fn chunks_and_last(input: &[u8], block_size: usize) -> (slice::ChunksExact<'_, u8>, &[u8]) {
+    debug_assert!(!input.is_empty());
+
+    let mut blocks = input.chunks_exact(block_size);
+
+    let last_block = if blocks.remainder().is_empty() {
+        // SAFETY: We know that `input` is non-empty, which means
+        // that either there will be a remainder or one or more
+        // full blocks. That info isn't flowing to the optimizer,
+        // so we use `unwrap_unchecked`.
+        unsafe { blocks.next_back().unwrap_unchecked() }
+    } else {
+        blocks.remainder()
+    };
+
+    (blocks, last_block)
+}
+
 trait Vector {
     fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]);
 
@@ -413,6 +797,26 @@ mod scalar {
     #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         super::Algorithm(Impl).oneshot(secret, input)
+    }
+
+    #[inline]
+    pub fn rounds<'a>(
+        acc: &mut [u64; 8],
+        blocks: impl IntoIterator<Item = &'a [u8]>,
+        secret: &[u8],
+    ) {
+        super::Algorithm(Impl).rounds(acc, blocks, secret)
+    }
+
+    #[inline]
+    pub fn finalize(
+        acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &[u8],
+        len: usize,
+    ) -> u64 {
+        super::Algorithm(Impl).finalize(acc, last_block, last_stripe, secret, len)
     }
 
     use super::{SliceBackport as _, Vector, PRIME32_1};
@@ -496,6 +900,32 @@ mod neon {
     #[target_feature(enable = "neon")]
     pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
         super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
+    }
+
+    /// # Safety
+    /// You must ensure that the CPU has the NEON feature
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub unsafe fn rounds_unchecked<'a>(
+        acc: &mut [u64; 8],
+        blocks: impl IntoIterator<Item = &'a [u8]>,
+        secret: &[u8],
+    ) {
+        super::Algorithm(Impl::new_unchecked()).rounds(acc, blocks, secret)
+    }
+
+    /// # Safety
+    /// You must ensure that the CPU has the NEON feature
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub unsafe fn finalize_unchecked(
+        acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &[u8],
+        len: usize,
+    ) -> u64 {
+        super::Algorithm(Impl::new_unchecked()).finalize(acc, last_block, last_stripe, secret, len)
     }
 
     struct Impl(());
@@ -668,13 +1098,40 @@ mod neon {
 
 #[cfg(all(target_arch = "aarch64", feature = "std"))]
 mod aarch64_detect {
+    macro_rules! pick {
+        ($f:ident, $s:ident, $($t:tt)+) => {
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                return unsafe { super::neon::$f $($t)+ };
+            }
+
+            super::scalar::$s $($t)+
+
+        };
+    }
+
     #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        if std::arch::is_aarch64_feature_detected!("neon") {
-            return unsafe { super::neon::oneshot_unchecked(secret, input) };
-        }
+        pick! { oneshot_unchecked, oneshot, (secret, input) }
+    }
 
-        super::scalar::oneshot(secret, input)
+    #[inline]
+    pub fn rounds<'a>(
+        acc: &mut [u64; 8],
+        blocks: impl IntoIterator<Item = &'a [u8]>,
+        secret: &[u8],
+    ) {
+        pick! { rounds_unchecked, rounds, (acc, blocks, secret) }
+    }
+
+    #[inline]
+    pub fn finalize(
+        acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &[u8],
+        len: usize,
+    ) -> u64 {
+        pick! { finalize_unchecked, finalize, (acc, last_block, last_stripe, secret, len) }
     }
 }
 
@@ -845,16 +1302,49 @@ mod x86_64_detect {
 }
 
 mod detect {
+    macro_rules! pick {
+        ($e:expr) => {
+            #[cfg(all(target_arch = "aarch64", feature = "std"))]
+            {
+                use super::aarch64_detect::*;
+                return $e;
+            }
+
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            {
+                use super::x86_64_detect::*;
+                return $e;
+            }
+
+            use super::scalar::*;
+            #[allow(unreachable_code)]
+            $e
+        };
+    }
+
     #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        #[cfg(all(target_arch = "aarch64", feature = "std"))]
-        return super::aarch64_detect::oneshot(secret, input);
+        pick! { oneshot(secret, input) }
+    }
 
-        #[cfg(all(target_arch = "x86_64", feature = "std"))]
-        return super::x86_64_detect::oneshot(secret, input);
+    #[inline]
+    pub fn rounds<'a>(
+        acc: &mut [u64; 8],
+        blocks: impl IntoIterator<Item = &'a [u8]>,
+        secret: &[u8],
+    ) {
+        pick! { rounds(acc, blocks, secret) }
+    }
 
-        #[allow(unreachable_code)]
-        super::scalar::oneshot(secret, input)
+    #[inline]
+    pub fn finalize(
+        acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &[u8],
+        len: usize,
+    ) -> u64 {
+        pick! { finalize(acc, last_block, last_stripe, secret, len) }
     }
 }
 
@@ -949,9 +1439,30 @@ impl<T> SliceBackport<T> for [T] {
 
 #[cfg(test)]
 mod test {
-    use std::array;
+    use std::{array, hash::Hasher};
 
     use super::*;
+
+    #[test]
+    fn secret_buffer_default_is_valid() {
+        assert!(SecretBuffer::default().is_valid());
+    }
+
+    #[test]
+    fn secret_buffer_allocate_default_is_valid() {
+        assert!(SecretBuffer::allocate_default().is_valid())
+    }
+
+    #[test]
+    fn secret_buffer_allocate_with_seed_is_valid() {
+        assert!(SecretBuffer::allocate_with_seed(0xdead_beef).is_valid())
+    }
+
+    #[test]
+    fn secret_buffer_allocate_with_seed_and_secret_is_valid() {
+        let secret = [42; 1024];
+        assert!(SecretBuffer::allocate_with_seed_and_secret(0xdead_beef, secret).is_valid())
+    }
 
     macro_rules! bytes {
         ($($n: literal),* $(,)?) => {
@@ -965,14 +1476,46 @@ mod test {
         array::from_fn(|i| (i % 251) as u8)
     }
 
+    fn hash_byte_by_byte(input: &[u8]) -> u64 {
+        let mut hasher = XxHash3_64::new();
+        for byte in input.chunks(1) {
+            hasher.write(byte)
+        }
+        hasher.finish()
+    }
+
+    fn hash_byte_by_byte_with_seed(seed: u64, input: &[u8]) -> u64 {
+        let mut hasher = XxHash3_64::with_seed(seed);
+        for byte in input.chunks(1) {
+            hasher.write(byte)
+        }
+        hasher.finish()
+    }
+
     #[test]
-    fn hash_empty() {
+    fn oneshot_empty() {
         let hash = XxHash3_64::oneshot(&[]);
         assert_eq!(hash, 0x2d06_8005_38d3_94c2);
     }
 
     #[test]
-    fn hash_1_to_3_bytes() {
+    fn streaming_empty() {
+        let hash = hash_byte_by_byte(&[]);
+        assert_eq!(hash, 0x2d06_8005_38d3_94c2);
+    }
+
+    #[test]
+    fn oneshot_1_to_3_bytes() {
+        test_1_to_3_bytes(XxHash3_64::oneshot)
+    }
+
+    #[test]
+    fn streaming_1_to_3_bytes() {
+        test_1_to_3_bytes(hash_byte_by_byte)
+    }
+
+    #[track_caller]
+    fn test_1_to_3_bytes(mut f: impl FnMut(&[u8]) -> u64) {
         let inputs = bytes![1, 2, 3];
 
         let expected = [
@@ -982,13 +1525,23 @@ mod test {
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
-            let hash = XxHash3_64::oneshot(input);
+            let hash = f(input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
     #[test]
-    fn hash_4_to_8_bytes() {
+    fn oneshot_4_to_8_bytes() {
+        test_4_to_8_bytes(XxHash3_64::oneshot)
+    }
+
+    #[test]
+    fn streaming_4_to_8_bytes() {
+        test_4_to_8_bytes(hash_byte_by_byte)
+    }
+
+    #[track_caller]
+    fn test_4_to_8_bytes(mut f: impl FnMut(&[u8]) -> u64) {
         let inputs = bytes![4, 5, 6, 7, 8];
 
         let expected = [
@@ -1000,13 +1553,23 @@ mod test {
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
-            let hash = XxHash3_64::oneshot(input);
+            let hash = f(input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
     #[test]
-    fn hash_9_to_16_bytes() {
+    fn oneshot_9_to_16_bytes() {
+        test_9_to_16_bytes(XxHash3_64::oneshot)
+    }
+
+    #[test]
+    fn streaming_9_to_16_bytes() {
+        test_9_to_16_bytes(hash_byte_by_byte)
+    }
+
+    #[track_caller]
+    fn test_9_to_16_bytes(mut f: impl FnMut(&[u8]) -> u64) {
         let inputs = bytes![9, 10, 11, 12, 13, 14, 15, 16];
 
         let expected = [
@@ -1021,13 +1584,23 @@ mod test {
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
-            let hash = XxHash3_64::oneshot(input);
+            let hash = f(input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
     #[test]
-    fn hash_17_to_128_bytes() {
+    fn oneshot_17_to_128_bytes() {
+        test_17_to_128_bytes(XxHash3_64::oneshot)
+    }
+
+    #[test]
+    fn streaming_17_to_128_bytes() {
+        test_17_to_128_bytes(hash_byte_by_byte)
+    }
+
+    #[track_caller]
+    fn test_17_to_128_bytes(mut f: impl FnMut(&[u8]) -> u64) {
         let lower_boundary = bytes![17, 18, 19];
         let chunk_boundary = bytes![31, 32, 33];
         let upper_boundary = bytes![126, 127, 128];
@@ -1053,13 +1626,23 @@ mod test {
         ];
 
         for (input, expected) in inputs.zip(expected) {
-            let hash = XxHash3_64::oneshot(input);
+            let hash = f(input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
     #[test]
-    fn hash_129_to_240_bytes() {
+    fn oneshot_129_to_240_bytes() {
+        test_129_to_240_bytes(XxHash3_64::oneshot)
+    }
+
+    #[test]
+    fn streaming_129_to_240_bytes() {
+        test_129_to_240_bytes(hash_byte_by_byte)
+    }
+
+    #[track_caller]
+    fn test_129_to_240_bytes(mut f: impl FnMut(&[u8]) -> u64) {
         let lower_boundary = bytes![129, 130, 131];
         let upper_boundary = bytes![238, 239, 240];
 
@@ -1077,13 +1660,23 @@ mod test {
         ];
 
         for (input, expected) in inputs.zip(expected) {
-            let hash = XxHash3_64::oneshot(input);
+            let hash = f(input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
     #[test]
-    fn hash_241_plus_bytes() {
+    fn oneshot_241_plus_bytes() {
+        test_241_plus_bytes(XxHash3_64::oneshot)
+    }
+
+    #[test]
+    fn streaming_241_plus_bytes() {
+        test_241_plus_bytes(hash_byte_by_byte)
+    }
+
+    #[track_caller]
+    fn test_241_plus_bytes(mut f: impl FnMut(&[u8]) -> u64) {
         let inputs = bytes![241, 242, 243, 244, 1024, 10240];
 
         let expected = [
@@ -1096,13 +1689,23 @@ mod test {
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
-            let hash = XxHash3_64::oneshot(input);
+            let hash = f(input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
 
     #[test]
-    fn hash_with_seed() {
+    fn oneshot_with_seed() {
+        test_with_seed(XxHash3_64::oneshot_with_seed)
+    }
+
+    #[test]
+    fn streaming_with_seed() {
+        test_with_seed(hash_byte_by_byte_with_seed)
+    }
+
+    #[track_caller]
+    fn test_with_seed(mut f: impl FnMut(u64, &[u8]) -> u64) {
         let inputs = bytes![0, 1, 4, 9, 17, 129, 241, 1024];
 
         let expected = [
@@ -1117,7 +1720,7 @@ mod test {
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
-            let hash = XxHash3_64::oneshot_with_seed(0xdead_cafe, input);
+            let hash = f(0xdead_cafe, input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }

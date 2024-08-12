@@ -143,6 +143,7 @@ extern "C" {
 
     fn XXH3_createState() -> *mut XXH3_state_t;
     fn XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
+    fn XXH3_64bits_reset_withSeed(state: *mut XXH3_state_t, seed: XXH64_hash_t) -> XXH_errorcode;
     fn XXH3_64bits_update(
         state: *mut XXH3_state_t,
         buffer: *const libc::c_void,
@@ -174,10 +175,20 @@ impl XxHash3_64 {
         }
     }
 
-    pub fn with_seed() -> Self {
+    pub fn new() -> Self {
         let state = unsafe {
             let state = XXH3_createState();
             XXH3_64bits_reset(state);
+            state
+        };
+
+        Self(state)
+    }
+
+    pub fn with_seed(seed: u64) -> Self {
+        let state = unsafe {
+            let state = XXH3_createState();
+            XXH3_64bits_reset_withSeed(state, seed);
             state
         };
 
@@ -222,6 +233,10 @@ pub mod scalar {
 
         fn scalar_XXH3_createState() -> *mut XXH3_state_t;
         fn scalar_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
+        fn scalar_XXH3_64bits_reset_withSeed(
+            state: *mut XXH3_state_t,
+            seed: XXH64_hash_t,
+        ) -> XXH_errorcode;
         fn scalar_XXH3_64bits_update(
             state: *mut XXH3_state_t,
             buffer: *const libc::c_void,
@@ -253,10 +268,20 @@ pub mod scalar {
             }
         }
 
-        pub fn with_seed() -> Self {
+        pub fn new() -> Self {
             let state = unsafe {
                 let state = scalar_XXH3_createState();
                 scalar_XXH3_64bits_reset(state);
+                state
+            };
+
+            Self(state)
+        }
+
+        pub fn with_seed(seed: u64) -> Self {
+            let state = unsafe {
+                let state = scalar_XXH3_createState();
+                scalar_XXH3_64bits_reset_withSeed(state, seed);
                 state
             };
 
@@ -304,6 +329,10 @@ pub mod neon {
 
         fn neon_XXH3_createState() -> *mut XXH3_state_t;
         fn neon_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
+        fn neon_XXH3_64bits_reset_withSeed(
+            state: *mut XXH3_state_t,
+            seed: XXH64_hash_t,
+        ) -> XXH_errorcode;
         fn neon_XXH3_64bits_update(
             state: *mut XXH3_state_t,
             buffer: *const libc::c_void,
@@ -335,10 +364,20 @@ pub mod neon {
             }
         }
 
-        pub fn with_seed() -> Self {
+        pub fn new() -> Self {
             let state = unsafe {
                 let state = neon_XXH3_createState();
                 neon_XXH3_64bits_reset(state);
+                state
+            };
+
+            Self(state)
+        }
+
+        pub fn with_seed(seed: u64) -> Self {
+            let state = unsafe {
+                let state = neon_XXH3_createState();
+                neon_XXH3_64bits_reset_withSeed(state, seed);
                 state
             };
 
@@ -417,7 +456,7 @@ pub mod avx2 {
             }
         }
 
-        pub fn with_seed() -> Self {
+        pub fn new() -> Self {
             let state = unsafe {
                 let state = avx2_XXH3_createState();
                 avx2_XXH3_64bits_reset(state);
@@ -497,7 +536,7 @@ pub mod sse2 {
             }
         }
 
-        pub fn with_seed() -> Self {
+        pub fn new() -> Self {
             let state = unsafe {
                 let state = sse2_XXH3_createState();
                 sse2_XXH3_64bits_reset(state);

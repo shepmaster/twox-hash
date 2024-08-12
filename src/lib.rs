@@ -69,7 +69,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-#[cfg(any(doc, test))]
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+#[cfg(any(feature = "std", doc, test))]
 extern crate std;
 
 #[cfg(feature = "xxhash32")]

@@ -251,7 +251,71 @@ mod xxhash3_64 {
         g.finish();
     }
 
-    criterion_group!(benches, tiny_data, oneshot);
+    fn streaming(c: &mut Criterion) {
+        let mut g = c.benchmark_group("xxhash3_64/streaming_many_chunks");
+
+        for size in half_sizes(BIG_DATA_SIZE).take_while(|&s| s >= MIN_BIG_DATA_SIZE) {
+            for n_chunks in half_sizes(MAX_CHUNKS) {
+                let (seed, chunks) = gen_chunked_data(size, n_chunks);
+                g.throughput(Throughput::Bytes(size as _));
+
+                let id = format!("impl-c/size-{size:07}/chunks-{n_chunks:02}");
+                g.bench_function(id, |b| {
+                    b.iter(|| {
+                        let mut hasher = c::XxHash3_64::with_seed(seed);
+                        for chunk in &chunks {
+                            hasher.write(chunk);
+                        }
+                        let hash = hasher.finish();
+                        black_box(hash);
+                    })
+                });
+
+                let id = format!("impl-c-scalar/size-{size:07}/chunks-{n_chunks:02}");
+                g.bench_function(id, |b| {
+                    b.iter(|| {
+                        let mut hasher = c::scalar::XxHash3_64::with_seed(seed);
+                        for chunk in &chunks {
+                            hasher.write(chunk);
+                        }
+                        let hash = hasher.finish();
+                        black_box(hash);
+                    })
+                });
+
+                #[cfg(target_arch = "aarch64")]
+                {
+                    let id = format!("impl-c-neon/size-{size:07}/chunks-{n_chunks:02}");
+                    g.bench_function(id, |b| {
+                        b.iter(|| {
+                            let mut hasher = c::neon::XxHash3_64::with_seed(seed);
+                            for chunk in &chunks {
+                                hasher.write(chunk);
+                            }
+                            let hash = hasher.finish();
+                            black_box(hash);
+                        })
+                    });
+                }
+
+                let id = format!("impl-rust/size-{size:07}/chunks-{n_chunks:02}");
+                g.bench_function(id, |b| {
+                    b.iter(|| {
+                        let mut hasher = rust::XxHash3_64::with_seed(seed);
+                        for chunk in &chunks {
+                            hasher.write(chunk);
+                        }
+                        let hash = hasher.finish();
+                        black_box(hash);
+                    })
+                });
+            }
+        }
+
+        g.finish();
+    }
+
+    criterion_group!(benches, tiny_data, oneshot, streaming);
 }
 
 criterion_group!(benches, tiny_data, oneshot, streaming);
