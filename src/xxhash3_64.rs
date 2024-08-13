@@ -286,7 +286,7 @@ where
     S: AsRef<[u8]>,
     B: AsRef<[u8]> + AsMut<[u8]>,
 {
-    #[inline]
+    #[inline(never)]
     fn write(&mut self, mut input: &[u8]) {
         if input.is_empty() {
             return;
@@ -350,7 +350,7 @@ where
         *total_bytes += input_len;
     }
 
-    #[inline]
+    #[inline(never)]
     fn finish(&self) -> u64 {
         let Self {
             ref secret_buffer,
@@ -765,6 +765,7 @@ impl<V: Vector> Algorithm<V> {
 
 /// # Safety
 /// `input` must be non-empty.
+#[inline]
 unsafe fn chunks_and_last(input: &[u8], block_size: usize) -> (slice::ChunksExact<'_, u8>, &[u8]) {
     debug_assert!(!input.is_empty());
 
@@ -1149,6 +1150,32 @@ mod avx2 {
         super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
     }
 
+    /// # Safety
+    /// You must ensure that the CPU has the AVX2 feature
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    pub unsafe fn rounds_unchecked<'a>(
+        acc: &mut [u64; 8],
+        blocks: impl IntoIterator<Item = &'a [u8]>,
+        secret: &[u8],
+    ) {
+        super::Algorithm(Impl::new_unchecked()).rounds(acc, blocks, secret)
+    }
+
+    /// # Safety
+    /// You must ensure that the CPU has the AVX2 feature
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    pub unsafe fn finalize_unchecked(
+        acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &[u8],
+        len: usize,
+    ) -> u64 {
+        super::Algorithm(Impl::new_unchecked()).finalize(acc, last_block, last_stripe, secret, len)
+    }
+
     pub struct Impl(super::scalar::Impl);
 
     impl Impl {
@@ -1224,6 +1251,32 @@ mod sse2 {
         super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
     }
 
+    /// # Safety
+    /// You must ensure that the CPU has the SSE2 feature
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    pub unsafe fn rounds_unchecked<'a>(
+        acc: &mut [u64; 8],
+        blocks: impl IntoIterator<Item = &'a [u8]>,
+        secret: &[u8],
+    ) {
+        super::Algorithm(Impl::new_unchecked()).rounds(acc, blocks, secret)
+    }
+
+    /// # Safety
+    /// You must ensure that the CPU has the SSE2 feature
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    pub unsafe fn finalize_unchecked(
+        acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &[u8],
+        len: usize,
+    ) -> u64 {
+        super::Algorithm(Impl::new_unchecked()).finalize(acc, last_block, last_stripe, secret, len)
+    }
+
     pub struct Impl(super::scalar::Impl);
 
     impl Impl {
@@ -1287,17 +1340,43 @@ mod sse2 {
 
 #[cfg(all(target_arch = "x86_64", feature = "std"))]
 mod x86_64_detect {
+    macro_rules! pick {
+        ($f:ident, $s:ident, $($t:tt)+) => {
+            if std::arch::is_x86_feature_detected!("avx2") {
+                return unsafe { super::avx2::$f $($t)+ };
+            }
+
+            if std::arch::is_x86_feature_detected!("sse2") {
+                return unsafe { super::sse2::$f $($t)+ };
+            }
+
+            super::scalar::$s $($t)+
+        };
+    }
+
     #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        if std::arch::is_x86_feature_detected!("avx2") {
-            return unsafe { super::avx2::oneshot_unchecked(secret, input) };
-        }
+        pick! { oneshot_unchecked, oneshot, (secret, input) }
+    }
 
-        if std::arch::is_x86_feature_detected!("sse2") {
-            return unsafe { super::sse2::oneshot_unchecked(secret, input) };
-        }
+    #[inline]
+    pub fn rounds<'a>(
+        acc: &mut [u64; 8],
+        blocks: impl IntoIterator<Item = &'a [u8]>,
+        secret: &[u8],
+    ) {
+        pick! { rounds_unchecked, rounds, (acc, blocks, secret) }
+    }
 
-        super::scalar::oneshot(secret, input)
+    #[inline]
+    pub fn finalize(
+        acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &[u8],
+        len: usize,
+    ) -> u64 {
+        pick! { finalize_unchecked, finalize, (acc, last_block, last_stripe, secret, len) }
     }
 }
 

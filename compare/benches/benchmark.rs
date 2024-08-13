@@ -298,6 +298,33 @@ mod xxhash3_64 {
                     });
                 }
 
+                #[cfg(target_arch = "x86_64")]
+                {
+                    let id = format!("impl-c-avx2/size-{size:07}/chunks-{n_chunks:02}");
+                    g.bench_function(id, |b| {
+                        b.iter(|| {
+                            let mut hasher = c::avx2::XxHash3_64::with_seed(seed);
+                            for chunk in &chunks {
+                                hasher.write(chunk);
+                            }
+                            let hash = hasher.finish();
+                            black_box(hash);
+                        })
+                    });
+
+                    let id = format!("impl-c-sse2/size-{size:07}/chunks-{n_chunks:02}");
+                    g.bench_function(id, |b| {
+                        b.iter(|| {
+                            let mut hasher = c::sse2::XxHash3_64::with_seed(seed);
+                            for chunk in &chunks {
+                                hasher.write(chunk);
+                            }
+                            let hash = hasher.finish();
+                            black_box(hash);
+                        })
+                    });
+                }
+
                 let id = format!("impl-rust/size-{size:07}/chunks-{n_chunks:02}");
                 g.bench_function(id, |b| {
                     b.iter(|| {

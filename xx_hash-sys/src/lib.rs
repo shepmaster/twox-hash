@@ -425,6 +425,10 @@ pub mod avx2 {
 
         fn avx2_XXH3_createState() -> *mut XXH3_state_t;
         fn avx2_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
+        fn avx2_XXH3_64bits_reset_withSeed(
+            state: *mut XXH3_state_t,
+            seed: XXH64_hash_t,
+        ) -> XXH_errorcode;
         fn avx2_XXH3_64bits_update(
             state: *mut XXH3_state_t,
             buffer: *const libc::c_void,
@@ -460,6 +464,16 @@ pub mod avx2 {
             let state = unsafe {
                 let state = avx2_XXH3_createState();
                 avx2_XXH3_64bits_reset(state);
+                state
+            };
+
+            Self(state)
+        }
+
+        pub fn with_seed(seed: u64) -> Self {
+            let state = unsafe {
+                let state = avx2_XXH3_createState();
+                avx2_XXH3_64bits_reset_withSeed(state, seed);
                 state
             };
 
@@ -505,6 +519,10 @@ pub mod sse2 {
 
         fn sse2_XXH3_createState() -> *mut XXH3_state_t;
         fn sse2_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
+        fn sse2_XXH3_64bits_reset_withSeed(
+            state: *mut XXH3_state_t,
+            seed: XXH64_hash_t,
+        ) -> XXH_errorcode;
         fn sse2_XXH3_64bits_update(
             state: *mut XXH3_state_t,
             buffer: *const libc::c_void,
@@ -540,6 +558,16 @@ pub mod sse2 {
             let state = unsafe {
                 let state = sse2_XXH3_createState();
                 sse2_XXH3_64bits_reset(state);
+                state
+            };
+
+            Self(state)
+        }
+
+        pub fn with_seed(seed: u64) -> Self {
+            let state = unsafe {
+                let state = sse2_XXH3_createState();
+                sse2_XXH3_64bits_reset_withSeed(state, seed);
                 state
             };
 
