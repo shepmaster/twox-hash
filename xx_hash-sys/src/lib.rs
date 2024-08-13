@@ -127,468 +127,126 @@ pub struct XXH3_state_t {
     _marker: core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 
-extern "C" {
-    fn XXH3_64bits(input: *const libc::c_void, length: libc::size_t) -> XXH64_hash_t;
-    fn XXH3_64bits_withSeed(
-        input: *const libc::c_void,
-        length: libc::size_t,
-        seed: XXH64_hash_t,
-    ) -> XXH64_hash_t;
-    fn XXH3_64bits_withSecret(
-        input: *const libc::c_void,
-        length: libc::size_t,
-        secret: *const libc::c_void,
-        secret_length: libc::size_t,
-    ) -> XXH64_hash_t;
+/// Constructs a wrapper around the XXH3_64bit familiy of functions as
+/// we compile the library in multiple modes to performance test
+/// against.
+macro_rules! xxh3_64b_template {
+    () => { crate::xxh3_64b_template!(@ XXH3); };
 
-    fn XXH3_createState() -> *mut XXH3_state_t;
-    fn XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
-    fn XXH3_64bits_reset_withSeed(state: *mut XXH3_state_t, seed: XXH64_hash_t) -> XXH_errorcode;
-    fn XXH3_64bits_update(
-        state: *mut XXH3_state_t,
-        buffer: *const libc::c_void,
-        length: libc::size_t,
-    ) -> XXH_errorcode;
-    fn XXH3_64bits_digest(state: *mut XXH3_state_t) -> XXH64_hash_t;
-    fn XXH3_freeState(state: *mut XXH3_state_t) -> XXH_errorcode;
-}
+    ($prefix: ident) => { ::paste::paste! { crate::xxh3_64b_template!(@ [< $prefix _XXH3 >]); } };
 
-pub struct XxHash3_64(*mut XXH3_state_t);
+    (@ $prefix: ident) => {
+        ::paste::paste! {
+            extern "C" {
+                fn [<$prefix _64bits>](input: *const libc::c_void, length: libc::size_t) -> crate::XXH64_hash_t;
+                fn [<$prefix _64bits_withSeed>](
+                    input: *const libc::c_void,
+                    length: libc::size_t,
+                    seed: crate::XXH64_hash_t,
+                ) -> crate::XXH64_hash_t;
+                fn [<$prefix _64bits_withSecret>](
+                    input: *const libc::c_void,
+                    length: libc::size_t,
+                    secret: *const libc::c_void,
+                    secret_length: libc::size_t,
+                ) -> crate::XXH64_hash_t;
 
-impl XxHash3_64 {
-    pub fn oneshot(data: &[u8]) -> u64 {
-        unsafe { XXH3_64bits(data.as_ptr().cast(), data.len()) }
-    }
+                fn [<$prefix _createState>]() -> *mut crate::XXH3_state_t;
+                fn [<$prefix _64bits_reset>](state: *mut crate::XXH3_state_t) -> crate::XXH_errorcode;
+                fn [<$prefix _64bits_reset_withSeed>](
+                    state: *mut crate::XXH3_state_t,
+                    seed: crate::XXH64_hash_t,
+                ) -> crate::XXH_errorcode;
+                fn [<$prefix _64bits_update>](
+                    state: *mut crate::XXH3_state_t,
+                    buffer: *const libc::c_void,
+                    length: libc::size_t,
+                ) -> crate::XXH_errorcode;
+                fn [<$prefix _64bits_digest>](state: *mut crate::XXH3_state_t) -> crate::XXH64_hash_t;
+                fn [<$prefix _freeState>](state: *mut crate::XXH3_state_t) -> crate::XXH_errorcode;
+            }
 
-    pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
-        unsafe { XXH3_64bits_withSeed(data.as_ptr().cast(), data.len(), seed) }
-    }
+            pub struct XxHash3_64(*mut crate::XXH3_state_t);
 
-    pub fn oneshot_with_secret(secret: &[u8], data: &[u8]) -> u64 {
-        unsafe {
-            XXH3_64bits_withSecret(
-                data.as_ptr().cast(),
-                data.len(),
-                secret.as_ptr().cast(),
-                secret.len(),
-            )
-        }
-    }
+            impl XxHash3_64 {
+                pub fn oneshot(data: &[u8]) -> u64 {
+                    unsafe { [<$prefix _64bits>](data.as_ptr().cast(), data.len()) }
+                }
 
-    pub fn new() -> Self {
-        let state = unsafe {
-            let state = XXH3_createState();
-            XXH3_64bits_reset(state);
-            state
-        };
+                pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
+                    unsafe { [<$prefix _64bits_withSeed>](data.as_ptr().cast(), data.len(), seed) }
+                }
 
-        Self(state)
-    }
+                pub fn oneshot_with_secret(secret: &[u8], data: &[u8]) -> u64 {
+                    unsafe {
+                        [<$prefix _64bits_withSecret>](
+                            data.as_ptr().cast(),
+                            data.len(),
+                            secret.as_ptr().cast(),
+                            secret.len(),
+                        )
+                    }
+                }
 
-    pub fn with_seed(seed: u64) -> Self {
-        let state = unsafe {
-            let state = XXH3_createState();
-            XXH3_64bits_reset_withSeed(state, seed);
-            state
-        };
+                pub fn new() -> Self {
+                    let state = unsafe {
+                        let state = [<$prefix _createState>]();
+                        [<$prefix _64bits_reset>](state);
+                        state
+                    };
 
-        Self(state)
-    }
+                    Self(state)
+                }
 
-    pub fn write(&mut self, data: &[u8]) {
-        let retval = unsafe { XXH3_64bits_update(self.0, data.as_ptr().cast(), data.len()) };
-        assert_eq!(retval, XXH_OK);
-    }
+                pub fn with_seed(seed: u64) -> Self {
+                    let state = unsafe {
+                        let state = [<$prefix _createState>]();
+                        [<$prefix _64bits_reset_withSeed>](state, seed);
+                        state
+                    };
 
-    pub fn finish(&mut self) -> u64 {
-        unsafe { XXH3_64bits_digest(self.0) }
-    }
-}
+                    Self(state)
+                }
 
-impl Drop for XxHash3_64 {
-    fn drop(&mut self) {
-        let retval = unsafe { XXH3_freeState(self.0) };
-        assert_eq!(retval, XXH_OK);
-    }
-}
+                pub fn write(&mut self, data: &[u8]) {
+                    let retval =
+                    unsafe { [<$prefix _64bits_update>](self.0, data.as_ptr().cast(), data.len()) };
+                    assert_eq!(retval, crate::XXH_OK);
+                }
 
-// ----------
+                pub fn finish(&mut self) -> u64 {
+                    unsafe { [<$prefix _64bits_digest>](self.0) }
+                }
+            }
 
-pub mod scalar {
-    use super::*;
-
-    extern "C" {
-        fn scalar_XXH3_64bits(input: *const libc::c_void, length: libc::size_t) -> XXH64_hash_t;
-        fn scalar_XXH3_64bits_withSeed(
-            input: *const libc::c_void,
-            length: libc::size_t,
-            seed: XXH64_hash_t,
-        ) -> XXH64_hash_t;
-        fn scalar_XXH3_64bits_withSecret(
-            input: *const libc::c_void,
-            length: libc::size_t,
-            secret: *const libc::c_void,
-            secret_length: libc::size_t,
-        ) -> XXH64_hash_t;
-
-        fn scalar_XXH3_createState() -> *mut XXH3_state_t;
-        fn scalar_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
-        fn scalar_XXH3_64bits_reset_withSeed(
-            state: *mut XXH3_state_t,
-            seed: XXH64_hash_t,
-        ) -> XXH_errorcode;
-        fn scalar_XXH3_64bits_update(
-            state: *mut XXH3_state_t,
-            buffer: *const libc::c_void,
-            length: libc::size_t,
-        ) -> XXH_errorcode;
-        fn scalar_XXH3_64bits_digest(state: *mut XXH3_state_t) -> XXH64_hash_t;
-        fn scalar_XXH3_freeState(state: *mut XXH3_state_t) -> XXH_errorcode;
-    }
-
-    pub struct XxHash3_64(*mut XXH3_state_t);
-
-    impl XxHash3_64 {
-        pub fn oneshot(data: &[u8]) -> u64 {
-            unsafe { scalar_XXH3_64bits(data.as_ptr().cast(), data.len()) }
-        }
-
-        pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
-            unsafe { scalar_XXH3_64bits_withSeed(data.as_ptr().cast(), data.len(), seed) }
-        }
-
-        pub fn oneshot_with_secret(secret: &[u8], data: &[u8]) -> u64 {
-            unsafe {
-                scalar_XXH3_64bits_withSecret(
-                    data.as_ptr().cast(),
-                    data.len(),
-                    secret.as_ptr().cast(),
-                    secret.len(),
-                )
+            impl Drop for XxHash3_64 {
+                fn drop(&mut self) {
+                    let retval = unsafe { [<$prefix _freeState>](self.0) };
+                    assert_eq!(retval, crate::XXH_OK);
+                }
             }
         }
-
-        pub fn new() -> Self {
-            let state = unsafe {
-                let state = scalar_XXH3_createState();
-                scalar_XXH3_64bits_reset(state);
-                state
-            };
-
-            Self(state)
-        }
-
-        pub fn with_seed(seed: u64) -> Self {
-            let state = unsafe {
-                let state = scalar_XXH3_createState();
-                scalar_XXH3_64bits_reset_withSeed(state, seed);
-                state
-            };
-
-            Self(state)
-        }
-
-        pub fn write(&mut self, data: &[u8]) {
-            let retval =
-                unsafe { scalar_XXH3_64bits_update(self.0, data.as_ptr().cast(), data.len()) };
-            assert_eq!(retval, XXH_OK);
-        }
-
-        pub fn finish(&mut self) -> u64 {
-            unsafe { scalar_XXH3_64bits_digest(self.0) }
-        }
-    }
-
-    impl Drop for XxHash3_64 {
-        fn drop(&mut self) {
-            let retval = unsafe { scalar_XXH3_freeState(self.0) };
-            assert_eq!(retval, XXH_OK);
-        }
-    }
+    };
 }
+pub(crate) use xxh3_64b_template;
 
-// ----------
+xxh3_64b_template!();
+
+pub mod scalar {
+    crate::xxh3_64b_template!(scalar);
+}
 
 #[cfg(target_arch = "aarch64")]
 pub mod neon {
-    use super::*;
-
-    extern "C" {
-        fn neon_XXH3_64bits(input: *const libc::c_void, length: libc::size_t) -> XXH64_hash_t;
-        fn neon_XXH3_64bits_withSeed(
-            input: *const libc::c_void,
-            length: libc::size_t,
-            seed: XXH64_hash_t,
-        ) -> XXH64_hash_t;
-        fn neon_XXH3_64bits_withSecret(
-            input: *const libc::c_void,
-            length: libc::size_t,
-            secret: *const libc::c_void,
-            secret_length: libc::size_t,
-        ) -> XXH64_hash_t;
-
-        fn neon_XXH3_createState() -> *mut XXH3_state_t;
-        fn neon_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
-        fn neon_XXH3_64bits_reset_withSeed(
-            state: *mut XXH3_state_t,
-            seed: XXH64_hash_t,
-        ) -> XXH_errorcode;
-        fn neon_XXH3_64bits_update(
-            state: *mut XXH3_state_t,
-            buffer: *const libc::c_void,
-            length: libc::size_t,
-        ) -> XXH_errorcode;
-        fn neon_XXH3_64bits_digest(state: *mut XXH3_state_t) -> XXH64_hash_t;
-        fn neon_XXH3_freeState(state: *mut XXH3_state_t) -> XXH_errorcode;
-    }
-
-    pub struct XxHash3_64(*mut XXH3_state_t);
-
-    impl XxHash3_64 {
-        pub fn oneshot(data: &[u8]) -> u64 {
-            unsafe { neon_XXH3_64bits(data.as_ptr().cast(), data.len()) }
-        }
-
-        pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
-            unsafe { neon_XXH3_64bits_withSeed(data.as_ptr().cast(), data.len(), seed) }
-        }
-
-        pub fn oneshot_with_secret(secret: &[u8], data: &[u8]) -> u64 {
-            unsafe {
-                neon_XXH3_64bits_withSecret(
-                    data.as_ptr().cast(),
-                    data.len(),
-                    secret.as_ptr().cast(),
-                    secret.len(),
-                )
-            }
-        }
-
-        pub fn new() -> Self {
-            let state = unsafe {
-                let state = neon_XXH3_createState();
-                neon_XXH3_64bits_reset(state);
-                state
-            };
-
-            Self(state)
-        }
-
-        pub fn with_seed(seed: u64) -> Self {
-            let state = unsafe {
-                let state = neon_XXH3_createState();
-                neon_XXH3_64bits_reset_withSeed(state, seed);
-                state
-            };
-
-            Self(state)
-        }
-
-        pub fn write(&mut self, data: &[u8]) {
-            let retval =
-                unsafe { neon_XXH3_64bits_update(self.0, data.as_ptr().cast(), data.len()) };
-            assert_eq!(retval, XXH_OK);
-        }
-
-        pub fn finish(&mut self) -> u64 {
-            unsafe { neon_XXH3_64bits_digest(self.0) }
-        }
-    }
-
-    impl Drop for XxHash3_64 {
-        fn drop(&mut self) {
-            let retval = unsafe { neon_XXH3_freeState(self.0) };
-            assert_eq!(retval, XXH_OK);
-        }
-    }
+    crate::xxh3_64b_template!(neon);
 }
-
-// ----------
 
 #[cfg(target_arch = "x86_64")]
 pub mod avx2 {
-    use super::*;
-
-    extern "C" {
-        fn avx2_XXH3_64bits(input: *const libc::c_void, length: libc::size_t) -> XXH64_hash_t;
-        fn avx2_XXH3_64bits_withSeed(
-            input: *const libc::c_void,
-            length: libc::size_t,
-            seed: XXH64_hash_t,
-        ) -> XXH64_hash_t;
-        fn avx2_XXH3_64bits_withSecret(
-            input: *const libc::c_void,
-            length: libc::size_t,
-            secret: *const libc::c_void,
-            secret_length: libc::size_t,
-        ) -> XXH64_hash_t;
-
-        fn avx2_XXH3_createState() -> *mut XXH3_state_t;
-        fn avx2_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
-        fn avx2_XXH3_64bits_reset_withSeed(
-            state: *mut XXH3_state_t,
-            seed: XXH64_hash_t,
-        ) -> XXH_errorcode;
-        fn avx2_XXH3_64bits_update(
-            state: *mut XXH3_state_t,
-            buffer: *const libc::c_void,
-            length: libc::size_t,
-        ) -> XXH_errorcode;
-        fn avx2_XXH3_64bits_digest(state: *mut XXH3_state_t) -> XXH64_hash_t;
-        fn avx2_XXH3_freeState(state: *mut XXH3_state_t) -> XXH_errorcode;
-    }
-
-    pub struct XxHash3_64(*mut XXH3_state_t);
-
-    impl XxHash3_64 {
-        pub fn oneshot(data: &[u8]) -> u64 {
-            unsafe { avx2_XXH3_64bits(data.as_ptr().cast(), data.len()) }
-        }
-
-        pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
-            unsafe { avx2_XXH3_64bits_withSeed(data.as_ptr().cast(), data.len(), seed) }
-        }
-
-        pub fn oneshot_with_secret(secret: &[u8], data: &[u8]) -> u64 {
-            unsafe {
-                avx2_XXH3_64bits_withSecret(
-                    data.as_ptr().cast(),
-                    data.len(),
-                    secret.as_ptr().cast(),
-                    secret.len(),
-                )
-            }
-        }
-
-        pub fn new() -> Self {
-            let state = unsafe {
-                let state = avx2_XXH3_createState();
-                avx2_XXH3_64bits_reset(state);
-                state
-            };
-
-            Self(state)
-        }
-
-        pub fn with_seed(seed: u64) -> Self {
-            let state = unsafe {
-                let state = avx2_XXH3_createState();
-                avx2_XXH3_64bits_reset_withSeed(state, seed);
-                state
-            };
-
-            Self(state)
-        }
-
-        pub fn write(&mut self, data: &[u8]) {
-            let retval =
-                unsafe { avx2_XXH3_64bits_update(self.0, data.as_ptr().cast(), data.len()) };
-            assert_eq!(retval, XXH_OK);
-        }
-
-        pub fn finish(&mut self) -> u64 {
-            unsafe { avx2_XXH3_64bits_digest(self.0) }
-        }
-    }
-
-    impl Drop for XxHash3_64 {
-        fn drop(&mut self) {
-            let retval = unsafe { avx2_XXH3_freeState(self.0) };
-            assert_eq!(retval, XXH_OK);
-        }
-    }
+    crate::xxh3_64b_template!(avx2);
 }
 
 #[cfg(target_arch = "x86_64")]
 pub mod sse2 {
-    use super::*;
-
-    extern "C" {
-        fn sse2_XXH3_64bits(input: *const libc::c_void, length: libc::size_t) -> XXH64_hash_t;
-        fn sse2_XXH3_64bits_withSeed(
-            input: *const libc::c_void,
-            length: libc::size_t,
-            seed: XXH64_hash_t,
-        ) -> XXH64_hash_t;
-        fn sse2_XXH3_64bits_withSecret(
-            input: *const libc::c_void,
-            length: libc::size_t,
-            secret: *const libc::c_void,
-            secret_length: libc::size_t,
-        ) -> XXH64_hash_t;
-
-        fn sse2_XXH3_createState() -> *mut XXH3_state_t;
-        fn sse2_XXH3_64bits_reset(state: *mut XXH3_state_t) -> XXH_errorcode;
-        fn sse2_XXH3_64bits_reset_withSeed(
-            state: *mut XXH3_state_t,
-            seed: XXH64_hash_t,
-        ) -> XXH_errorcode;
-        fn sse2_XXH3_64bits_update(
-            state: *mut XXH3_state_t,
-            buffer: *const libc::c_void,
-            length: libc::size_t,
-        ) -> XXH_errorcode;
-        fn sse2_XXH3_64bits_digest(state: *mut XXH3_state_t) -> XXH64_hash_t;
-        fn sse2_XXH3_freeState(state: *mut XXH3_state_t) -> XXH_errorcode;
-    }
-
-    pub struct XxHash3_64(*mut XXH3_state_t);
-
-    impl XxHash3_64 {
-        pub fn oneshot(data: &[u8]) -> u64 {
-            unsafe { sse2_XXH3_64bits(data.as_ptr().cast(), data.len()) }
-        }
-
-        pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
-            unsafe { sse2_XXH3_64bits_withSeed(data.as_ptr().cast(), data.len(), seed) }
-        }
-
-        pub fn oneshot_with_secret(secret: &[u8], data: &[u8]) -> u64 {
-            unsafe {
-                sse2_XXH3_64bits_withSecret(
-                    data.as_ptr().cast(),
-                    data.len(),
-                    secret.as_ptr().cast(),
-                    secret.len(),
-                )
-            }
-        }
-
-        pub fn new() -> Self {
-            let state = unsafe {
-                let state = sse2_XXH3_createState();
-                sse2_XXH3_64bits_reset(state);
-                state
-            };
-
-            Self(state)
-        }
-
-        pub fn with_seed(seed: u64) -> Self {
-            let state = unsafe {
-                let state = sse2_XXH3_createState();
-                sse2_XXH3_64bits_reset_withSeed(state, seed);
-                state
-            };
-
-            Self(state)
-        }
-
-        pub fn write(&mut self, data: &[u8]) {
-            let retval =
-                unsafe { sse2_XXH3_64bits_update(self.0, data.as_ptr().cast(), data.len()) };
-            assert_eq!(retval, XXH_OK);
-        }
-
-        pub fn finish(&mut self) -> u64 {
-            unsafe { sse2_XXH3_64bits_digest(self.0) }
-        }
-    }
-
-    impl Drop for XxHash3_64 {
-        fn drop(&mut self) {
-            let retval = unsafe { sse2_XXH3_freeState(self.0) };
-            assert_eq!(retval, XXH_OK);
-        }
-    }
+    crate::xxh3_64b_template!(sse2);
 }
