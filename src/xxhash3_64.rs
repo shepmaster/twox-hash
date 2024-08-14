@@ -667,8 +667,10 @@ impl<V: Vector> Algorithm<V> {
 
     #[inline]
     fn round(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
+        let secret_end = secret.last_chunk().unwrap();
+
         self.round_accumulate(acc, stripes, secret);
-        self.0.round_scramble(acc, secret);
+        self.0.round_scramble(acc, secret_end);
     }
 
     #[inline]
@@ -766,7 +768,7 @@ unsafe fn chunks_and_last(input: &[u8], block_size: usize) -> (slice::ChunksExac
 }
 
 trait Vector {
-    fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]);
+    fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]);
 
     fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]);
 }
@@ -774,8 +776,6 @@ trait Vector {
 // This module is not `cfg`-gated because it is used by some of the
 // SIMD implementations.
 mod scalar {
-    use core::mem;
-
     #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         super::Algorithm(Impl).oneshot(secret, input)
@@ -807,11 +807,8 @@ mod scalar {
 
     impl Vector for Impl {
         #[inline]
-        fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]) {
-            let last = secret
-                .last_chunk::<{ mem::size_of::<[u8; 64]>() }>()
-                .unwrap();
-            let (last, _) = last.bp_as_chunks();
+        fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+            let (last, _) = secret_end.bp_as_chunks();
             let last = last.iter().copied().map(u64::from_ne_bytes);
 
             for (acc, secret) in acc.iter_mut().zip(last) {
@@ -923,8 +920,8 @@ mod neon {
 
     impl Vector for Impl {
         #[inline]
-        fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]) {
-            unsafe { round_scramble_neon(acc, secret) }
+        fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+            unsafe { round_scramble_neon(acc, secret_end) }
         }
 
         #[inline]
@@ -935,9 +932,9 @@ mod neon {
 
     #[inline]
     #[target_feature(enable = "neon")]
-    unsafe fn round_scramble_neon(acc: &mut [u64; 8], secret: &[u8]) {
+    unsafe fn round_scramble_neon(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
         unsafe {
-            let secret_base = secret.as_ptr().add(secret.len()).sub(64).cast::<u64>();
+            let secret_base = secret_end.as_ptr().cast::<u64>();
             let (acc, _) = acc.bp_as_chunks_mut::<2>();
             for (i, acc) in acc.iter_mut().enumerate() {
                 let mut accv = vld1q_u64(acc.as_ptr());
@@ -1172,9 +1169,9 @@ mod avx2 {
 
     impl Vector for Impl {
         #[inline]
-        fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]) {
+        fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
             // The scalar implementation is autovectorized nicely enough
-            self.0.round_scramble(acc, secret)
+            self.0.round_scramble(acc, secret_end)
         }
 
         #[inline]
@@ -1273,9 +1270,9 @@ mod sse2 {
 
     impl Vector for Impl {
         #[inline]
-        fn round_scramble(&self, acc: &mut [u64; 8], secret: &[u8]) {
+        fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
             // The scalar implementation is autovectorized nicely enough
-            self.0.round_scramble(acc, secret)
+            self.0.round_scramble(acc, secret_end)
         }
 
         #[inline]
