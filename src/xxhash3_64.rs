@@ -275,6 +275,8 @@ impl Grug {
         }
     }
 
+    // TODO: NEXT: inline this? pass in secret_end?
+    #[inline]
     fn process_stripe(&mut self, stripe: &[u8; 64], n_stripes: usize, secret: &[u8]) {
         let Self {
             accumulator,
@@ -282,7 +284,7 @@ impl Grug {
             ..
         } = self;
 
-        let secret_end = secret.last_chunk().unwrap();
+        let secret_end = unsafe { secret.last_chunk().unwrap_unchecked() };
 
         // each stripe
         let secret = unsafe { &*secret.get_unchecked(*current_stripe * 8..).as_ptr().cast() };
