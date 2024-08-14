@@ -614,25 +614,6 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 
 #[inline]
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
-    #[cfg(_internal_xxhash3_force_scalar)]
-    return scalar::oneshot(secret, input);
-
-    #[cfg(_internal_xxhash3_force_neon)]
-    unsafe {
-        return neon::oneshot_unchecked(secret, input);
-    };
-
-    #[cfg(_internal_xxhash3_force_sse2)]
-    unsafe {
-        return sse2::oneshot_unchecked(secret, input);
-    };
-
-    #[cfg(_internal_xxhash3_force_avx2)]
-    unsafe {
-        return avx2::oneshot_unchecked(secret, input);
-    };
-
-    #[allow(unreachable_code)]
     detect::oneshot(secret, input)
 }
 
@@ -1101,12 +1082,14 @@ mod neon {
 mod aarch64_detect {
     macro_rules! pick {
         ($f:ident, $s:ident, $($t:tt)+) => {
+            #[cfg(_internal_xxhash3_force_neon)]
+            return unsafe { super::neon::$f $($t)+ };
+
             if std::arch::is_aarch64_feature_detected!("neon") {
                 return unsafe { super::neon::$f $($t)+ };
             }
 
             super::scalar::$s $($t)+
-
         };
     }
 
@@ -1342,6 +1325,12 @@ mod sse2 {
 mod x86_64_detect {
     macro_rules! pick {
         ($f:ident, $s:ident, $($t:tt)+) => {
+            #[cfg(_internal_xxhash3_force_avx2)]
+            return unsafe { super::avx2::$f $($t)+ };
+
+            #[cfg(_internal_xxhash3_force_sse2)]
+            return unsafe { super::sse2::$f $($t)+ };
+
             if std::arch::is_x86_feature_detected!("avx2") {
                 return unsafe { super::avx2::$f $($t)+ };
             }
@@ -1383,6 +1372,12 @@ mod x86_64_detect {
 mod detect {
     macro_rules! pick {
         ($e:expr) => {
+            #[cfg(_internal_xxhash3_force_scalar)]
+            {
+                use super::scalar::*;
+                return $e;
+            }
+
             #[cfg(all(target_arch = "aarch64", feature = "std"))]
             {
                 use super::aarch64_detect::*;
@@ -1395,9 +1390,11 @@ mod detect {
                 return $e;
             }
 
-            use super::scalar::*;
             #[allow(unreachable_code)]
-            $e
+            {
+                use super::scalar::*;
+                $e
+            }
         };
     }
 
