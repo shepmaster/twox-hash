@@ -32,8 +32,6 @@ const DEFAULT_SECRET: [u8; 192] = [
     0x45, 0xcb, 0x3a, 0x8f, 0x95, 0x16, 0x04, 0x28, 0xaf, 0xd7, 0xfb, 0xca, 0xbb, 0x4b, 0x40, 0x7e,
 ];
 
-const DEFAULT_BUFFER_LEN: usize = 1024;
-
 pub const SECRET_MINIMUM_LENGTH: usize = 136;
 
 pub struct XxHash3_64 {
@@ -68,27 +66,33 @@ impl XxHash3_64 {
     }
 }
 
+const STRIPE_BYTES: usize = 64;
+const BUFFERED_STRIPES: usize = 4;
+const BUFFERED_BYTES: usize = STRIPE_BYTES * BUFFERED_STRIPES;
+
+// Ensure that a full buffer always implies we are in the 241+ byte case.
+const _: () = assert!(BUFFERED_BYTES > 240);
+
 /// Holds secret and temporary buffers that are ensured to be
 /// appropriately sized.
-pub struct SecretBuffer<S, B> {
+pub struct SecretBuffer<S> {
     seed: u64,
     secret: S,
-    buffer: B,
+    buffer: [u8; BUFFERED_BYTES],
 }
 
-impl<S, B> SecretBuffer<S, B>
+impl<S> SecretBuffer<S>
 where
     S: AsRef<[u8]>,
-    B: AsRef<[u8]> + AsMut<[u8]>,
 {
     /// Takes the seed, secret, and buffer and performs no
     /// modifications to them, only validating that the sizes are
     /// appropriate.
-    pub fn new(seed: u64, secret: S, buffer: B) -> Result<Self, (S, B)> {
+    pub fn new(seed: u64, secret: S) -> Result<Self, S> {
         let this = Self {
             seed,
             secret,
-            buffer,
+            buffer: [0; BUFFERED_BYTES],
         };
 
         if this.is_valid() {
@@ -101,21 +105,24 @@ where
     fn is_valid(&self) -> bool {
         let secret = self.secret.as_ref();
 
-        assert!(secret.len() >= SECRET_MINIMUM_LENGTH); // TODO: return result
+        secret.len() >= SECRET_MINIMUM_LENGTH
+    }
 
-        let required_buffer_len = block_size(secret);
-        let buffer_len = self.buffer.as_ref().len();
+    #[inline]
+    fn n_stripes(&self) -> usize {
+        let secret = self.secret.as_ref();
 
-        required_buffer_len == buffer_len
+        // stripes_per_block
+        (secret.len() - 64) / 8
     }
 
     /// Returns the secret and buffer values.
-    pub fn decompose(self) -> (S, B) {
-        (self.secret, self.buffer)
+    pub fn decompose(self) -> S {
+        self.secret
     }
 }
 
-impl SecretBuffer<&'static [u8; 192], [u8; 1024]> {
+impl SecretBuffer<&'static [u8; 192]> {
     /// Use the default seed and secret values while allocating nothing.
     ///
     /// Note that this type may take up a surprising amount of stack space.
@@ -124,7 +131,7 @@ impl SecretBuffer<&'static [u8; 192], [u8; 1024]> {
         SecretBuffer {
             seed: DEFAULT_SEED,
             secret: &DEFAULT_SECRET,
-            buffer: [0; DEFAULT_BUFFER_LEN],
+            buffer: [0; BUFFERED_BYTES],
         }
     }
 }
@@ -132,7 +139,7 @@ impl SecretBuffer<&'static [u8; 192], [u8; 1024]> {
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod with_alloc {
-    use ::alloc::{boxed::Box, vec};
+    use ::alloc::boxed::Box;
 
     use super::*;
 
@@ -177,7 +184,7 @@ mod with_alloc {
         }
     }
 
-    type AllocSecretBuffer = SecretBuffer<Box<[u8]>, Box<[u8]>>;
+    type AllocSecretBuffer = SecretBuffer<Box<[u8]>>;
 
     impl AllocSecretBuffer {
         /// Allocates the secret and temporary buffers and fills them
@@ -186,7 +193,7 @@ mod with_alloc {
             Self {
                 seed: DEFAULT_SEED,
                 secret: DEFAULT_SECRET.to_vec().into(),
-                buffer: vec![0; DEFAULT_BUFFER_LEN].into(),
+                buffer: [0; BUFFERED_BYTES],
             }
         }
 
@@ -199,7 +206,7 @@ mod with_alloc {
             Self {
                 seed,
                 secret: secret.to_vec().into(),
-                buffer: vec![0; DEFAULT_BUFFER_LEN].into(),
+                buffer: [0; BUFFERED_BYTES],
             }
         }
 
@@ -208,17 +215,16 @@ mod with_alloc {
         pub fn allocate_with_seed_and_secret(seed: u64, secret: impl Into<Box<[u8]>>) -> Self {
             let secret = secret.into();
             assert!(secret.len() > SECRET_MINIMUM_LENGTH); // todo result
-            let block_size = block_size(&secret);
 
             Self {
                 seed,
                 secret,
-                buffer: vec![0; block_size].into(),
+                buffer: [0; BUFFERED_BYTES],
             }
         }
     }
 
-    pub type AllocRawHasher = RawHasher<Box<[u8]>, Box<[u8]>>;
+    pub type AllocRawHasher = RawHasher<Box<[u8]>>;
 
     impl AllocRawHasher {
         fn allocate_default() -> Self {
@@ -235,56 +241,92 @@ mod with_alloc {
     }
 }
 
-impl<S, B> SecretBuffer<S, B>
+impl<S> SecretBuffer<S>
 where
     S: AsRef<[u8]> + AsMut<[u8]>,
-    B: AsRef<[u8]> + AsMut<[u8]>,
 {
     /// Fills the secret buffer with a secret derived from the seed
     /// and the default secret.
-    pub fn with_seed(seed: u64, mut secret: S, buffer: B) -> Result<Self, (S, B)> {
+    pub fn with_seed(seed: u64, mut secret: S) -> Result<Self, S> {
         let secret_slice: &mut [u8; 192] = match secret.as_mut().try_into() {
             Ok(s) => s,
-            Err(_) => return Err((secret, buffer)),
+            Err(_) => return Err(secret),
         };
 
         *secret_slice = DEFAULT_SECRET;
         derive_secret(seed, secret_slice);
 
-        Self::new(seed, secret, buffer)
+        Self::new(seed, secret)
+    }
+}
+
+#[derive(Copy, Clone)]
+struct Grug {
+    // TODO FIXME
+    accumulator: [u64; 8],
+    current_stripe: usize,
+}
+
+impl Grug {
+    fn new() -> Self {
+        Self {
+            accumulator: INITIAL_ACCUMULATORS,
+            current_stripe: 0,
+        }
+    }
+
+    fn process_stripe(&mut self, stripe: &[u8; 64], n_stripes: usize, secret: &[u8]) {
+        let Self {
+            accumulator,
+            current_stripe,
+            ..
+        } = self;
+
+        let secret_end = secret.last_chunk().unwrap();
+
+        // each stripe
+        let secret = unsafe { &*secret.get_unchecked(*current_stripe * 8..).as_ptr().cast() };
+        detect::accumulate(accumulator, stripe, secret);
+
+        *current_stripe += 1;
+
+        if *current_stripe == n_stripes {
+            // after block's worth
+            detect::round_scramble(accumulator, secret_end);
+            *current_stripe = 0;
+        }
     }
 }
 
 /// A lower-level interface for computing a hash from streaming data.
 ///
-/// The algorithm requires two reasonably large pieces of data: the
-/// secret and a temporary buffer. [`XxHash3_64`][] makes one concrete
-/// implementation decision that uses dynamic memory allocation, but
-/// specialized usages may desire more flexibility. This type,
-/// combined with [`SecretBuffer`][], offer that flexibility at the
-/// cost of a generic type.
-pub struct RawHasher<S, B> {
-    secret_buffer: SecretBuffer<S, B>,
+/// The algorithm requires a secret which can be a reasonably large
+/// piece of data. [`XxHash3_64`][] makes one concrete implementation
+/// decision that uses dynamic memory allocation, but specialized
+/// usages may desire more flexibility. This type, combined with
+/// [`SecretBuffer`][], offer that flexibility at the cost of a
+/// generic type.
+pub struct RawHasher<S> {
+    secret_buffer: SecretBuffer<S>,
     buffer_len: usize,
-    accumulator: [u64; 8],
+    grug: Grug,
     total_bytes: usize,
 }
 
-impl<S, B> RawHasher<S, B> {
-    pub fn new(secret_buffer: SecretBuffer<S, B>) -> Self {
+impl<S> RawHasher<S> {
+    pub fn new(secret_buffer: SecretBuffer<S>) -> Self {
         Self {
             secret_buffer,
             buffer_len: 0,
-            accumulator: INITIAL_ACCUMULATORS,
+            grug: Grug::new(),
             total_bytes: 0,
         }
     }
 }
 
-impl<S, B> hash::Hasher for RawHasher<S, B>
+impl<S> hash::Hasher for RawHasher<S>
 where
     S: AsRef<[u8]>,
-    B: AsRef<[u8]> + AsMut<[u8]>,
 {
     #[inline(never)]
     fn write(&mut self, mut input: &[u8]) {
@@ -295,27 +337,20 @@ where
         let Self {
             secret_buffer,
             buffer_len,
-            accumulator,
+            grug,
             total_bytes,
+            ..
         } = self;
-        let SecretBuffer {
-            seed: _,
-            secret,
-            buffer,
-        } = secret_buffer;
+
+        let n_stripes = secret_buffer.n_stripes();
+
+        let SecretBuffer { secret, buffer, .. } = secret_buffer;
         let secret = secret.as_ref();
-        let buffer = buffer.as_mut();
-        let input_len = input.len();
 
-        // Short-circuit if the buffer is empty and we have one or
-        // more full buffers-worth on the input.
-        if buffer.is_empty() {
-            let (blocks, remainder) = unsafe { chunks_and_last(input, buffer.len()) };
-            detect::rounds(accumulator, blocks, secret);
-            input = remainder;
-        }
+        *total_bytes += input.len();
 
-        while !input.is_empty() {
+        // We have some previous data saved; try to fill it up and process it first
+        if !buffer.is_empty() {
             let remaining = &mut buffer[*buffer_len..];
             let n_to_copy = usize::min(remaining.len(), input.len());
 
@@ -325,29 +360,50 @@ where
             remaining_head.copy_from_slice(input_head);
             *buffer_len += n_to_copy;
 
-            // We have not filled the whole buffer, no need to
-            // process it now
-            if !remaining_tail.is_empty() {
-                break;
-            }
-
-            // We filled the buffer, but we don't know we have
-            // more data so we have to leave it in case it is the
-            // last full block.
-            if input_tail.is_empty() {
-                break;
-            }
-
-            // We have a full buffer *and* we know there's more
-            // data after the buffer, so we can process this as a
-            // full block.
-            detect::rounds(accumulator, [&*buffer], secret);
-            *buffer_len = 0;
-
             input = input_tail;
+
+            // We did not fill up the buffer
+            if !remaining_tail.is_empty() {
+                return;
+            }
+
+            // We don't know this isn't the last of the data
+            if input.is_empty() {
+                return;
+            }
+
+            let (stripes, _) = buffer.bp_as_chunks();
+            for stripe in stripes {
+                grug.process_stripe(stripe, n_stripes, secret);
+            }
+            *buffer_len = 0;
         }
 
-        *total_bytes += input_len;
+        debug_assert!(*buffer_len == 0);
+
+        // Process as much of the input data in-place as possible,
+        // while leaving at least one full stripe for the
+        // finalization.
+        if let Some(dd) = input.len().checked_sub(STRIPE_BYTES) {
+            let nn = dd / STRIPE_BYTES;
+            let nn = nn * STRIPE_BYTES;
+            let (aa, remainder) = input.split_at(nn);
+            let (stripes, _) = aa.bp_as_chunks();
+
+            for stripe in stripes {
+                grug.process_stripe(stripe, n_stripes, secret)
+            }
+            input = remainder;
+        }
+
+        // Any remaining data has to be less than the buffer, and the
+        // buffer is empty so just fill up the buffer.
+        debug_assert!(*buffer_len == 0);
+        debug_assert!(!input.is_empty());
+        debug_assert!(input.len() < buffer.len());
+
+        buffer[..input.len()].copy_from_slice(input);
+        *buffer_len = input.len();
     }
 
     #[inline(never)]
@@ -355,15 +411,15 @@ where
         let Self {
             ref secret_buffer,
             buffer_len,
-            accumulator,
+            mut grug,
             total_bytes,
         } = *self;
+        let n_stripes = secret_buffer.n_stripes();
         let SecretBuffer {
             seed,
             ref secret,
             ref buffer,
         } = *secret_buffer;
-
         let secret = secret.as_ref();
         let buffer = buffer.as_ref();
 
@@ -371,6 +427,12 @@ where
 
         match total_bytes {
             241.. => {
+                // Ingest final stripes
+                let (stripes, remainder) = fun_name(input);
+                for stripe in stripes {
+                    grug.process_stripe(stripe, n_stripes, secret);
+                }
+
                 let mut temp = [0; 64];
 
                 let last_stripe = match input.last_chunk() {
@@ -387,7 +449,13 @@ where
                     }
                 };
 
-                detect::finalize(accumulator, input, last_stripe, secret, total_bytes)
+                detect::finalize(
+                    grug.accumulator,
+                    remainder,
+                    last_stripe,
+                    secret,
+                    total_bytes,
+                )
             }
 
             129..=240 => impl_129_to_240_bytes(&DEFAULT_SECRET, seed, input),
@@ -675,6 +743,7 @@ impl<V: Vector> Algorithm<V> {
 
     #[inline]
     fn round_accumulate(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
+        // TODO: [unify]
         let secrets =
             (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
 
@@ -692,6 +761,7 @@ impl<V: Vector> Algorithm<V> {
         secret: &[u8],
         len: usize,
     ) -> u64 {
+        debug_assert!(!last_block.is_empty());
         self.last_round(&mut acc, last_block, last_stripe, secret);
 
         self.final_merge(&mut acc, len.into_u64().wrapping_mul(PRIME64_1), secret, 11)
@@ -701,10 +771,9 @@ impl<V: Vector> Algorithm<V> {
     fn last_round(&self, acc: &mut [u64; 8], block: &[u8], last_stripe: &[u8; 64], secret: &[u8]) {
         // Accumulation steps are run for the stripes in the last block,
         // except for the last stripe (whether it is full or not)
-        let stripes = match block.bp_as_chunks() {
-            ([stripes @ .., _last], []) => stripes,
-            (stripes, _last) => stripes,
-        };
+        let (stripes, _) = fun_name(block);
+
+        // TODO: [unify]
         let secrets =
             (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
 
@@ -746,6 +815,14 @@ impl<V: Vector> Algorithm<V> {
     }
 }
 
+#[inline]
+fn fun_name(block: &[u8]) -> (&[[u8; 64]], &[u8]) {
+    match block.bp_as_chunks() {
+        ([stripes @ .., last], []) => (stripes, last),
+        (stripes, last) => (stripes, last),
+    }
+}
+
 /// # Safety
 /// `input` must be non-empty.
 #[inline]
@@ -782,12 +859,13 @@ mod scalar {
     }
 
     #[inline]
-    pub fn rounds<'a>(
-        acc: &mut [u64; 8],
-        blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &[u8],
-    ) {
-        super::Algorithm(Impl).rounds(acc, blocks, secret)
+    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        Impl.accumulate(acc, stripe, secret)
+    }
+
+    #[inline]
+    pub fn round_scramble(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        Impl.round_scramble(acc, secret_end);
     }
 
     #[inline]
@@ -885,12 +963,16 @@ mod neon {
     /// You must ensure that the CPU has the NEON feature
     #[inline]
     #[target_feature(enable = "neon")]
-    pub unsafe fn rounds_unchecked<'a>(
-        acc: &mut [u64; 8],
-        blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &[u8],
-    ) {
-        super::Algorithm(Impl::new_unchecked()).rounds(acc, blocks, secret)
+    pub unsafe fn round_scramble_unchecked(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        Impl::new_unchecked().round_scramble(acc, secret_end)
+    }
+
+    /// # Safety
+    /// You must ensure that the CPU has the NEON feature
+    #[inline]
+    #[target_feature(enable = "neon")]
+    pub unsafe fn accumulate_unchecked(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        Impl::new_unchecked().accumulate(acc, stripe, secret)
     }
 
     /// # Safety
@@ -1096,12 +1178,13 @@ mod aarch64_detect {
     }
 
     #[inline]
-    pub fn rounds<'a>(
-        acc: &mut [u64; 8],
-        blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &[u8],
-    ) {
-        pick! { rounds_unchecked, rounds, (acc, blocks, secret) }
+    pub fn round_scramble(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        pick! { round_scramble_unchecked, round_scramble, (acc, secret_end) }
+    }
+
+    #[inline]
+    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        pick! { accumulate_unchecked, accumulate, (acc, stripe, secret) }
     }
 
     #[inline]
@@ -1134,12 +1217,16 @@ mod avx2 {
     /// You must ensure that the CPU has the AVX2 feature
     #[inline]
     #[target_feature(enable = "avx2")]
-    pub unsafe fn rounds_unchecked<'a>(
-        acc: &mut [u64; 8],
-        blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &[u8],
-    ) {
-        super::Algorithm(Impl::new_unchecked()).rounds(acc, blocks, secret)
+    pub unsafe fn round_scramble_unchecked(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        Impl::new_unchecked().round_scramble(acc, secret_end)
+    }
+
+    /// # Safety
+    /// You must ensure that the CPU has the AVX2 feature
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    pub unsafe fn accumulate_unchecked(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        Impl::new_unchecked().accumulate(acc, stripe, secret)
     }
 
     /// # Safety
@@ -1235,12 +1322,16 @@ mod sse2 {
     /// You must ensure that the CPU has the SSE2 feature
     #[inline]
     #[target_feature(enable = "sse2")]
-    pub unsafe fn rounds_unchecked<'a>(
-        acc: &mut [u64; 8],
-        blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &[u8],
-    ) {
-        super::Algorithm(Impl::new_unchecked()).rounds(acc, blocks, secret)
+    pub unsafe fn round_scramble_unchecked(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        Impl::new_unchecked().round_scramble(acc, secret_end)
+    }
+
+    /// # Safety
+    /// You must ensure that the CPU has the SSE2 feature
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    pub unsafe fn accumulate_unchecked(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        Impl::new_unchecked().accumulate(acc, stripe, secret)
     }
 
     /// # Safety
@@ -1346,12 +1437,13 @@ mod x86_64_detect {
     }
 
     #[inline]
-    pub fn rounds<'a>(
-        acc: &mut [u64; 8],
-        blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &[u8],
-    ) {
-        pick! { rounds_unchecked, rounds, (acc, blocks, secret) }
+    pub fn round_scramble(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        pick! { round_scramble_unchecked, round_scramble, (acc, secret_end) }
+    }
+
+    #[inline]
+    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        pick! { accumulate_unchecked, accumulate, (acc, stripe, secret) }
     }
 
     #[inline]
@@ -1401,12 +1493,13 @@ mod detect {
     }
 
     #[inline]
-    pub fn rounds<'a>(
-        acc: &mut [u64; 8],
-        blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &[u8],
-    ) {
-        pick! { rounds(acc, blocks, secret) }
+    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        pick! { accumulate(acc, stripe, secret) }
+    }
+
+    #[inline]
+    pub fn round_scramble(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        pick! { round_scramble(acc, secret_end) }
     }
 
     #[inline]
