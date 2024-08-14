@@ -3,7 +3,7 @@ pub mod sixty_four {
     use core::hash::BuildHasher;
     use rand::{self, Rng};
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug, Eq, PartialEq, Hash)]
     /// Constructs a randomized seed and reuses it for multiple hasher instances.
     pub struct RandomXxHashBuilder64(u64);
 
@@ -33,7 +33,7 @@ pub mod thirty_two {
     use core::hash::BuildHasher;
     use rand::{self, Rng};
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug, Eq, PartialEq, Hash)]
     /// Constructs a randomized seed and reuses it for multiple hasher instances. See the usage warning on `XxHash32`.
     pub struct RandomXxHashBuilder32(u32);
 
@@ -63,7 +63,7 @@ pub mod xxh3 {
     use core::hash::BuildHasher;
     use rand::{self, Rng};
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug, Eq, PartialEq, Hash)]
     /// Constructs a randomized seed and reuses it for multiple hasher instances.
     pub struct RandomHashBuilder64(u64);
 
@@ -87,7 +87,7 @@ pub mod xxh3 {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug, Eq, PartialEq, Hash)]
     /// Constructs a randomized seed and reuses it for multiple hasher instances.
     pub struct RandomHashBuilder128(u64);
 
