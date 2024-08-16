@@ -1154,7 +1154,8 @@ mod neon {
 
     // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
     #[inline]
-    fn reordering_barrier(r: uint64x2_t) {
+    #[target_feature(enable = "neon")]
+    unsafe fn reordering_barrier(r: uint64x2_t) {
         unsafe { core::arch::asm!("/* {r:v} */", r = in(vreg) r) }
     }
 }
