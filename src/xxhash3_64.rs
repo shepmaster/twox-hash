@@ -277,7 +277,13 @@ impl Grug {
 
     // TODO: NEXT: inline this? pass in secret_end?
     #[inline]
-    fn process_stripe(&mut self, stripe: &[u8; 64], n_stripes: usize, secret: &[u8]) {
+    fn process_stripe<V: Vector>(
+        &mut self,
+        vector: V,
+        stripe: &[u8; 64],
+        n_stripes: usize,
+        secret: &[u8],
+    ) {
         let Self {
             accumulator,
             current_stripe,
@@ -288,13 +294,13 @@ impl Grug {
 
         // each stripe
         let secret = unsafe { &*secret.get_unchecked(*current_stripe * 8..).as_ptr().cast() };
-        detect::accumulate(accumulator, stripe, secret);
+        vector.accumulate(accumulator, stripe, secret);
 
         *current_stripe += 1;
 
         if *current_stripe == n_stripes {
             // after block's worth
-            detect::round_scramble(accumulator, secret_end);
+            vector.round_scramble(accumulator, secret_end);
             *current_stripe = 0;
         }
     }
@@ -326,152 +332,239 @@ impl<S> RawHasher<S> {
     }
 }
 
+macro_rules! dispatch {
+    (
+        fn $fn_name:ident<$($gen:ident),*>($($arg_name:ident : $arg_ty:ty),*) $(-> $ret_ty:ty)?
+        [$($wheres:tt)*]
+    ) => {
+        #[inline]
+        fn do_scalar<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
+        where
+            $($wheres)*
+        {
+            $fn_name(scalar::Impl, $($arg_name),*)
+        }
+
+        #[inline]
+        #[target_feature(enable = "neon")]
+        #[cfg(target_arch = "aarch64")]
+        unsafe fn do_neon<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
+        where
+            $($wheres)*
+        {
+            $fn_name(neon::Impl::new_unchecked(), $($arg_name),*)
+        }
+
+        #[inline]
+        #[target_feature(enable = "avx2")]
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn do_avx2<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
+        where
+            $($wheres)*
+        {
+            $fn_name(avx2::Impl::new_unchecked(), $($arg_name),*)
+        }
+
+        #[inline]
+        #[target_feature(enable = "sse2")]
+        #[cfg(target_arch = "x86_64")]
+        unsafe fn do_sse2<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
+        where
+            $($wheres)*
+        {
+            $fn_name(sse2::Impl::new_unchecked(), $($arg_name),*)
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            if std::arch::is_aarch64_feature_detected!("neon") {
+                return unsafe { do_neon($($arg_name),*) };
+            }
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx2") {
+                return unsafe { do_avx2($($arg_name),*) };
+            } else if is_x86_feature_detected!("sse2") {
+                return unsafe { do_sse2($($arg_name),*) };
+            }
+        }
+
+        do_scalar($($arg_name),*)
+    };
+}
+
 impl<S> hash::Hasher for RawHasher<S>
 where
     S: AsRef<[u8]>,
 {
     #[inline(never)]
-    fn write(&mut self, mut input: &[u8]) {
-        if input.is_empty() {
-            return;
+    fn write(&mut self, input: &[u8]) {
+        let this = self;
+        dispatch! {
+            fn write_impl<S>(this: &mut RawHasher<S>, input: &[u8])
+            [S: AsRef<[u8]>]
         }
-
-        let Self {
-            secret_buffer,
-            buffer_len,
-            grug,
-            total_bytes,
-            ..
-        } = self;
-
-        let n_stripes = secret_buffer.n_stripes();
-
-        let SecretBuffer { secret, buffer, .. } = secret_buffer;
-        let secret = secret.as_ref();
-
-        *total_bytes += input.len();
-
-        // We have some previous data saved; try to fill it up and process it first
-        if !buffer.is_empty() {
-            let remaining = &mut buffer[*buffer_len..];
-            let n_to_copy = usize::min(remaining.len(), input.len());
-
-            let (remaining_head, remaining_tail) = remaining.split_at_mut(n_to_copy);
-            let (input_head, input_tail) = input.split_at(n_to_copy);
-
-            remaining_head.copy_from_slice(input_head);
-            *buffer_len += n_to_copy;
-
-            input = input_tail;
-
-            // We did not fill up the buffer
-            if !remaining_tail.is_empty() {
-                return;
-            }
-
-            // We don't know this isn't the last of the data
-            if input.is_empty() {
-                return;
-            }
-
-            let (stripes, _) = buffer.bp_as_chunks();
-            for stripe in stripes {
-                grug.process_stripe(stripe, n_stripes, secret);
-            }
-            *buffer_len = 0;
-        }
-
-        debug_assert!(*buffer_len == 0);
-
-        // Process as much of the input data in-place as possible,
-        // while leaving at least one full stripe for the
-        // finalization.
-        if let Some(dd) = input.len().checked_sub(STRIPE_BYTES) {
-            let nn = dd / STRIPE_BYTES;
-            let nn = nn * STRIPE_BYTES;
-            let (aa, remainder) = input.split_at(nn);
-            let (stripes, _) = aa.bp_as_chunks();
-
-            for stripe in stripes {
-                grug.process_stripe(stripe, n_stripes, secret)
-            }
-            input = remainder;
-        }
-
-        // Any remaining data has to be less than the buffer, and the
-        // buffer is empty so just fill up the buffer.
-        debug_assert!(*buffer_len == 0);
-        debug_assert!(!input.is_empty());
-        debug_assert!(input.len() < buffer.len());
-
-        buffer[..input.len()].copy_from_slice(input);
-        *buffer_len = input.len();
     }
 
     #[inline(never)]
     fn finish(&self) -> u64 {
-        let Self {
-            ref secret_buffer,
-            buffer_len,
-            mut grug,
-            total_bytes,
-        } = *self;
-        let n_stripes = secret_buffer.n_stripes();
-        let SecretBuffer {
-            seed,
-            ref secret,
-            ref buffer,
-        } = *secret_buffer;
-        let secret = secret.as_ref();
-        let buffer = buffer.as_ref();
+        let this = self;
+        dispatch! {
+            fn finish_impl<S>(this: &RawHasher<S>) -> u64
+            [S: AsRef<[u8]>]
+        }
+    }
+}
 
-        let input = &buffer[..buffer_len];
+#[inline(always)]
+fn write_impl<S>(vector: impl Vector, this: &mut RawHasher<S>, mut input: &[u8])
+where
+    S: AsRef<[u8]>,
+{
+    if input.is_empty() {
+        return;
+    }
 
-        match total_bytes {
-            241.. => {
-                // Ingest final stripes
-                let (stripes, remainder) = fun_name(input);
-                for stripe in stripes {
-                    grug.process_stripe(stripe, n_stripes, secret);
-                }
+    let RawHasher {
+        secret_buffer,
+        buffer_len,
+        grug,
+        total_bytes,
+        ..
+    } = this;
 
-                let mut temp = [0; 64];
+    let n_stripes = secret_buffer.n_stripes();
 
-                let last_stripe = match input.last_chunk() {
-                    Some(chunk) => chunk,
-                    None => {
-                        let n_to_reuse = 64 - input.len();
-                        let to_reuse = buffer.len() - n_to_reuse;
+    let SecretBuffer { secret, buffer, .. } = secret_buffer;
+    let secret = secret.as_ref();
 
-                        let (temp_head, temp_tail) = temp.split_at_mut(n_to_reuse);
-                        temp_head.copy_from_slice(&buffer[to_reuse..]);
-                        temp_tail.copy_from_slice(input);
+    *total_bytes += input.len();
 
-                        &temp
-                    }
-                };
+    // We have some previous data saved; try to fill it up and process it first
+    if !buffer.is_empty() {
+        let remaining = &mut buffer[*buffer_len..];
+        let n_to_copy = usize::min(remaining.len(), input.len());
 
-                detect::finalize(
-                    grug.accumulator,
-                    remainder,
-                    last_stripe,
-                    secret,
-                    total_bytes,
-                )
+        let (remaining_head, remaining_tail) = remaining.split_at_mut(n_to_copy);
+        let (input_head, input_tail) = input.split_at(n_to_copy);
+
+        remaining_head.copy_from_slice(input_head);
+        *buffer_len += n_to_copy;
+
+        input = input_tail;
+
+        // We did not fill up the buffer
+        if !remaining_tail.is_empty() {
+            return;
+        }
+
+        // We don't know this isn't the last of the data
+        if input.is_empty() {
+            return;
+        }
+
+        let (stripes, _) = buffer.bp_as_chunks();
+        for stripe in stripes {
+            grug.process_stripe(vector, stripe, n_stripes, secret);
+        }
+        *buffer_len = 0;
+    }
+
+    debug_assert!(*buffer_len == 0);
+
+    // Process as much of the input data in-place as possible,
+    // while leaving at least one full stripe for the
+    // finalization.
+    if let Some(dd) = input.len().checked_sub(STRIPE_BYTES) {
+        let nn = dd / STRIPE_BYTES;
+        let nn = nn * STRIPE_BYTES;
+        let (aa, remainder) = input.split_at(nn);
+        let (stripes, _) = aa.bp_as_chunks();
+
+        for stripe in stripes {
+            grug.process_stripe(vector, stripe, n_stripes, secret)
+        }
+        input = remainder;
+    }
+
+    // Any remaining data has to be less than the buffer, and the
+    // buffer is empty so just fill up the buffer.
+    debug_assert!(*buffer_len == 0);
+    debug_assert!(!input.is_empty());
+    debug_assert!(input.len() < buffer.len());
+
+    buffer[..input.len()].copy_from_slice(input);
+    *buffer_len = input.len();
+}
+
+#[inline(always)]
+fn finish_impl<S>(vector: impl Vector, this: &RawHasher<S>) -> u64
+where
+    S: AsRef<[u8]>,
+{
+    let RawHasher {
+        ref secret_buffer,
+        buffer_len,
+        mut grug,
+        total_bytes,
+    } = *this;
+    let n_stripes = secret_buffer.n_stripes();
+    let SecretBuffer {
+        seed,
+        ref secret,
+        ref buffer,
+    } = *secret_buffer;
+    let secret = secret.as_ref();
+    let buffer = buffer.as_ref();
+
+    let input = &buffer[..buffer_len];
+
+    match total_bytes {
+        241.. => {
+            // Ingest final stripes
+            let (stripes, remainder) = fun_name(input);
+            for stripe in stripes {
+                grug.process_stripe(vector, stripe, n_stripes, secret);
             }
 
-            129..=240 => impl_129_to_240_bytes(&DEFAULT_SECRET, seed, input),
+            let mut temp = [0; 64];
 
-            17..=128 => impl_17_to_128_bytes(&DEFAULT_SECRET, seed, input),
+            let last_stripe = match input.last_chunk() {
+                Some(chunk) => chunk,
+                None => {
+                    let n_to_reuse = 64 - input.len();
+                    let to_reuse = buffer.len() - n_to_reuse;
 
-            9..=16 => impl_9_to_16_bytes(&DEFAULT_SECRET, seed, input),
+                    let (temp_head, temp_tail) = temp.split_at_mut(n_to_reuse);
+                    temp_head.copy_from_slice(&buffer[to_reuse..]);
+                    temp_tail.copy_from_slice(input);
 
-            4..=8 => impl_4_to_8_bytes(&DEFAULT_SECRET, seed, input),
+                    &temp
+                }
+            };
 
-            1..=3 => impl_1_to_3_bytes(&DEFAULT_SECRET, seed, input),
-
-            0 => impl_0_bytes(&DEFAULT_SECRET, seed),
+            Algorithm(vector).finalize(
+                grug.accumulator,
+                remainder,
+                last_stripe,
+                secret,
+                total_bytes,
+            )
         }
+
+        129..=240 => impl_129_to_240_bytes(&DEFAULT_SECRET, seed, input),
+
+        17..=128 => impl_17_to_128_bytes(&DEFAULT_SECRET, seed, input),
+
+        9..=16 => impl_9_to_16_bytes(&DEFAULT_SECRET, seed, input),
+
+        4..=8 => impl_4_to_8_bytes(&DEFAULT_SECRET, seed, input),
+
+        1..=3 => impl_1_to_3_bytes(&DEFAULT_SECRET, seed, input),
+
+        0 => impl_0_bytes(&DEFAULT_SECRET, seed),
     }
 }
 
@@ -846,7 +939,7 @@ unsafe fn chunks_and_last(input: &[u8], block_size: usize) -> (slice::ChunksExac
     (blocks, last_block)
 }
 
-trait Vector {
+trait Vector: Copy {
     fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]);
 
     fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]);
@@ -860,29 +953,9 @@ mod scalar {
         super::Algorithm(Impl).oneshot(secret, input)
     }
 
-    #[inline]
-    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        Impl.accumulate(acc, stripe, secret)
-    }
-
-    #[inline]
-    pub fn round_scramble(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-        Impl.round_scramble(acc, secret_end);
-    }
-
-    #[inline]
-    pub fn finalize(
-        acc: [u64; 8],
-        last_block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &[u8],
-        len: usize,
-    ) -> u64 {
-        super::Algorithm(Impl).finalize(acc, last_block, last_stripe, secret, len)
-    }
-
     use super::{SliceBackport as _, Vector, PRIME32_1};
 
+    #[derive(Copy, Clone)]
     pub struct Impl;
 
     impl Vector for Impl {
@@ -961,43 +1034,14 @@ mod neon {
         super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
     }
 
-    /// # Safety
-    /// You must ensure that the CPU has the NEON feature
-    #[inline]
-    #[target_feature(enable = "neon")]
-    pub unsafe fn round_scramble_unchecked(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-        Impl::new_unchecked().round_scramble(acc, secret_end)
-    }
-
-    /// # Safety
-    /// You must ensure that the CPU has the NEON feature
-    #[inline]
-    #[target_feature(enable = "neon")]
-    pub unsafe fn accumulate_unchecked(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        Impl::new_unchecked().accumulate(acc, stripe, secret)
-    }
-
-    /// # Safety
-    /// You must ensure that the CPU has the NEON feature
-    #[inline]
-    #[target_feature(enable = "neon")]
-    pub unsafe fn finalize_unchecked(
-        acc: [u64; 8],
-        last_block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &[u8],
-        len: usize,
-    ) -> u64 {
-        super::Algorithm(Impl::new_unchecked()).finalize(acc, last_block, last_stripe, secret, len)
-    }
-
-    struct Impl(());
+    #[derive(Copy, Clone)]
+    pub struct Impl(());
 
     impl Impl {
         /// # Safety
         /// You must ensure that the CPU has the NEON feature
         #[inline]
-        unsafe fn new_unchecked() -> Self {
+        pub unsafe fn new_unchecked() -> Self {
             Self(())
         }
     }
@@ -1179,34 +1223,13 @@ mod aarch64_detect {
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         pick! { oneshot_unchecked, oneshot, (secret, input) }
     }
-
-    #[inline]
-    pub fn round_scramble(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-        pick! { round_scramble_unchecked, round_scramble, (acc, secret_end) }
-    }
-
-    #[inline]
-    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        pick! { accumulate_unchecked, accumulate, (acc, stripe, secret) }
-    }
-
-    #[inline]
-    pub fn finalize(
-        acc: [u64; 8],
-        last_block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &[u8],
-        len: usize,
-    ) -> u64 {
-        pick! { finalize_unchecked, finalize, (acc, last_block, last_stripe, secret, len) }
-    }
 }
 
 #[cfg(target_arch = "x86_64")]
 mod avx2 {
     use core::arch::x86_64::*;
 
-    use super::Vector;
+    use super::{scalar, Vector};
 
     /// # Safety
     /// You must ensure that the CPU has the AVX2 feature
@@ -1216,52 +1239,23 @@ mod avx2 {
         super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
     }
 
-    /// # Safety
-    /// You must ensure that the CPU has the AVX2 feature
-    #[inline]
-    #[target_feature(enable = "avx2")]
-    pub unsafe fn round_scramble_unchecked(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-        Impl::new_unchecked().round_scramble(acc, secret_end)
-    }
-
-    /// # Safety
-    /// You must ensure that the CPU has the AVX2 feature
-    #[inline]
-    #[target_feature(enable = "avx2")]
-    pub unsafe fn accumulate_unchecked(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        Impl::new_unchecked().accumulate(acc, stripe, secret)
-    }
-
-    /// # Safety
-    /// You must ensure that the CPU has the AVX2 feature
-    #[inline]
-    #[target_feature(enable = "avx2")]
-    pub unsafe fn finalize_unchecked(
-        acc: [u64; 8],
-        last_block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &[u8],
-        len: usize,
-    ) -> u64 {
-        super::Algorithm(Impl::new_unchecked()).finalize(acc, last_block, last_stripe, secret, len)
-    }
-
-    pub struct Impl(super::scalar::Impl);
+    #[derive(Copy, Clone)]
+    pub struct Impl(());
 
     impl Impl {
         /// # Safety
         /// You must ensure that the CPU has the AVX2 feature
         #[inline]
         pub unsafe fn new_unchecked() -> Impl {
-            Impl(super::scalar::Impl)
+            Impl(())
         }
     }
 
     impl Vector for Impl {
         #[inline]
         fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-            // The scalar implementation is autovectorized nicely enough
-            self.0.round_scramble(acc, secret_end)
+            // SAFETY: Type can only be constructed when AVX2 feature is present
+            unsafe { round_scramble_avx2(acc, secret_end) }
         }
 
         #[inline]
@@ -1269,6 +1263,13 @@ mod avx2 {
             // SAFETY: Type can only be constructed when AVX2 feature is present
             unsafe { accumulate_avx2(acc, stripe, secret) }
         }
+    }
+
+    #[inline]
+    #[target_feature(enable = "avx2")]
+    unsafe fn round_scramble_avx2(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        // The scalar implementation is autovectorized nicely enough
+        scalar::Impl.round_scramble(acc, secret_end)
     }
 
     #[inline]
@@ -1311,7 +1312,7 @@ mod avx2 {
 mod sse2 {
     use core::arch::x86_64::*;
 
-    use super::Vector;
+    use super::{scalar, Vector};
 
     /// # Safety
     /// You must ensure that the CPU has the SSE2 feature
@@ -1321,52 +1322,23 @@ mod sse2 {
         super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
     }
 
-    /// # Safety
-    /// You must ensure that the CPU has the SSE2 feature
-    #[inline]
-    #[target_feature(enable = "sse2")]
-    pub unsafe fn round_scramble_unchecked(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-        Impl::new_unchecked().round_scramble(acc, secret_end)
-    }
-
-    /// # Safety
-    /// You must ensure that the CPU has the SSE2 feature
-    #[inline]
-    #[target_feature(enable = "sse2")]
-    pub unsafe fn accumulate_unchecked(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        Impl::new_unchecked().accumulate(acc, stripe, secret)
-    }
-
-    /// # Safety
-    /// You must ensure that the CPU has the SSE2 feature
-    #[inline]
-    #[target_feature(enable = "sse2")]
-    pub unsafe fn finalize_unchecked(
-        acc: [u64; 8],
-        last_block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &[u8],
-        len: usize,
-    ) -> u64 {
-        super::Algorithm(Impl::new_unchecked()).finalize(acc, last_block, last_stripe, secret, len)
-    }
-
-    pub struct Impl(super::scalar::Impl);
+    #[derive(Copy, Clone)]
+    pub struct Impl(());
 
     impl Impl {
         /// # Safety
         /// You must ensure that the CPU has the SSE2 feature
         #[inline]
         pub unsafe fn new_unchecked() -> Impl {
-            Impl(super::scalar::Impl)
+            Impl(())
         }
     }
 
     impl Vector for Impl {
         #[inline]
         fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-            // The scalar implementation is autovectorized nicely enough
-            self.0.round_scramble(acc, secret_end)
+            // SAFETY: Type can only be constructed when SSE2 feature is present
+            unsafe { round_scramble_sse2(acc, secret_end) }
         }
 
         #[inline]
@@ -1374,6 +1346,13 @@ mod sse2 {
             // SAFETY: Type can only be constructed when SSE2 feature is present
             unsafe { accumulate_sse2(acc, stripe, secret) }
         }
+    }
+
+    #[inline]
+    #[target_feature(enable = "sse2")]
+    unsafe fn round_scramble_sse2(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        // The scalar implementation is autovectorized nicely enough
+        scalar::Impl.round_scramble(acc, secret_end)
     }
 
     #[inline]
@@ -1438,27 +1417,6 @@ mod x86_64_detect {
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         pick! { oneshot_unchecked, oneshot, (secret, input) }
     }
-
-    #[inline]
-    pub fn round_scramble(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-        pick! { round_scramble_unchecked, round_scramble, (acc, secret_end) }
-    }
-
-    #[inline]
-    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        pick! { accumulate_unchecked, accumulate, (acc, stripe, secret) }
-    }
-
-    #[inline]
-    pub fn finalize(
-        acc: [u64; 8],
-        last_block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &[u8],
-        len: usize,
-    ) -> u64 {
-        pick! { finalize_unchecked, finalize, (acc, last_block, last_stripe, secret, len) }
-    }
 }
 
 mod detect {
@@ -1493,27 +1451,6 @@ mod detect {
     #[inline]
     pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
         pick! { oneshot(secret, input) }
-    }
-
-    #[inline]
-    pub fn accumulate(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-        pick! { accumulate(acc, stripe, secret) }
-    }
-
-    #[inline]
-    pub fn round_scramble(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-        pick! { round_scramble(acc, secret_end) }
-    }
-
-    #[inline]
-    pub fn finalize(
-        acc: [u64; 8],
-        last_block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &[u8],
-        len: usize,
-    ) -> u64 {
-        pick! { finalize(acc, last_block, last_stripe, secret, len) }
     }
 }
 
