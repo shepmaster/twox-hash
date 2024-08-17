@@ -33,7 +33,75 @@ const DEFAULT_SECRET: [u8; 192] = [
     0x45, 0xcb, 0x3a, 0x8f, 0x95, 0x16, 0x04, 0x28, 0xaf, 0xd7, 0xfb, 0xca, 0xbb, 0x4b, 0x40, 0x7e,
 ];
 
+const DEFAULT_SECRET2: &Secret = unsafe { Secret::new_unchecked(&DEFAULT_SECRET) };
+
 pub const SECRET_MINIMUM_LENGTH: usize = 136;
+
+#[repr(transparent)]
+struct Secret([u8]);
+
+impl Secret {
+    #[inline]
+    fn new(bytes: &[u8]) -> Result<&Self, ()> {
+        if bytes.len() >= SECRET_MINIMUM_LENGTH {
+            unsafe { Ok(Self::new_unchecked(bytes)) }
+        } else {
+            Err(()) // TODO error
+        }
+    }
+
+    #[inline]
+    const unsafe fn new_unchecked(bytes: &[u8]) -> &Self {
+        unsafe { mem::transmute(bytes) }
+    }
+
+    #[inline]
+    fn words_for_0(&self) -> [u64; 2] {
+        // unsafe { self.0.as_ptr().add(56).cast::<[u64; 2]>().read_unaligned() }
+
+        let (q, _) = self.0[56..].bp_as_chunks();
+        [q[0], q[1]].map(u64::from_ne_bytes)
+    }
+
+    #[inline]
+    fn words_for_1_to_3(&self) -> [u32; 2] {
+        // unsafe { self.0.as_ptr().cast::<[u32; 2]>().read_unaligned() }
+
+        let (q, _) = self.0.bp_as_chunks();
+        [q[0], q[1]].map(u32::from_ne_bytes)
+    }
+
+    #[inline]
+    fn words_for_4_to_8(&self) -> [u64; 2] {
+        //unsafe { self.0.as_ptr().add(8).cast::<[u64; 2]>().read_unaligned() }
+
+        let (q, _) = self.0[8..].bp_as_chunks();
+        [q[0], q[1]].map(u64::from_ne_bytes)
+    }
+
+    #[inline]
+    fn words_for_9_to_16(&self) -> [u64; 4] {
+        // unsafe { self.0.as_ptr().add(24).cast::<[u64; 4]>().read_unaligned() }
+
+        let (q, _) = self.0[24..].bp_as_chunks();
+        [q[0], q[1], q[2], q[3]].map(u64::from_ne_bytes)
+    }
+
+    #[inline]
+    fn stripe(&self, i: usize) -> &[u8; 64] {
+        unsafe { &*self.0.get_unchecked(i * 8..).as_ptr().cast() }
+    }
+
+    #[inline]
+    fn end(&self) -> &[u8; 64] {
+        unsafe { self.0.last_chunk().unwrap_unchecked() }
+    }
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
 
 pub struct XxHash3_64 {
     #[cfg(feature = "alloc")]
@@ -44,7 +112,7 @@ pub struct XxHash3_64 {
 impl XxHash3_64 {
     #[inline(never)]
     pub fn oneshot(input: &[u8]) -> u64 {
-        impl_oneshot(&DEFAULT_SECRET, DEFAULT_SEED, input)
+        impl_oneshot(DEFAULT_SECRET2, DEFAULT_SEED, input)
     }
 
     #[inline(never)]
@@ -57,12 +125,14 @@ impl XxHash3_64 {
             derive_secret(seed, &mut secret);
         }
 
-        impl_oneshot(&secret, seed, input)
+        let s = unsafe { Secret::new_unchecked(&secret) };
+
+        impl_oneshot(s, seed, input)
     }
 
     #[inline(never)]
     pub fn oneshot_with_secret(secret: &[u8], input: &[u8]) -> u64 {
-        assert!(secret.len() >= SECRET_MINIMUM_LENGTH); // TODO: ERROR
+        let secret = Secret::new(secret).unwrap(); // TODO: ERROR
         impl_oneshot(secret, DEFAULT_SEED, input)
     }
 }
@@ -283,7 +353,7 @@ impl StripeAccumulator {
         vector: V,
         stripe: &[u8; 64],
         n_stripes: usize,
-        secret: &[u8],
+        secret: &Secret,
     ) {
         let Self {
             accumulator,
@@ -291,10 +361,10 @@ impl StripeAccumulator {
             ..
         } = self;
 
-        let secret_end = unsafe { secret.last_chunk().unwrap_unchecked() };
+        let secret_end = secret.end();
 
         // each stripe
-        let secret = unsafe { &*secret.get_unchecked(*current_stripe * 8..).as_ptr().cast() };
+        let secret = secret.stripe(*current_stripe);
         vector.accumulate(accumulator, stripe, secret);
 
         *current_stripe += 1;
@@ -459,6 +529,7 @@ where
 
     let SecretBuffer { secret, buffer, .. } = secret_buffer;
     let secret = secret.as_ref();
+    let secret = unsafe { Secret::new_unchecked(secret) };
 
     *total_bytes += input.len();
 
@@ -537,6 +608,7 @@ where
         ref buffer,
     } = *secret_buffer;
     let secret = secret.as_ref();
+    let secret = unsafe { Secret::new_unchecked(secret) };
     let buffer = buffer.as_ref();
 
     let input = &buffer[..buffer_len];
@@ -574,17 +646,17 @@ where
             )
         }
 
-        129..=240 => impl_129_to_240_bytes(&DEFAULT_SECRET, seed, input),
+        129..=240 => impl_129_to_240_bytes(DEFAULT_SECRET2, seed, input),
 
-        17..=128 => impl_17_to_128_bytes(&DEFAULT_SECRET, seed, input),
+        17..=128 => impl_17_to_128_bytes(DEFAULT_SECRET2, seed, input),
 
-        9..=16 => impl_9_to_16_bytes(&DEFAULT_SECRET, seed, input),
+        9..=16 => impl_9_to_16_bytes(DEFAULT_SECRET2, seed, input),
 
-        4..=8 => impl_4_to_8_bytes(&DEFAULT_SECRET, seed, input),
+        4..=8 => impl_4_to_8_bytes(DEFAULT_SECRET2, seed, input),
 
-        1..=3 => impl_1_to_3_bytes(&DEFAULT_SECRET, seed, input),
+        1..=3 => impl_1_to_3_bytes(DEFAULT_SECRET2, seed, input),
 
-        0 => impl_0_bytes(&DEFAULT_SECRET, seed),
+        0 => impl_0_bytes(DEFAULT_SECRET2, seed),
     }
 }
 
@@ -616,7 +688,7 @@ fn derive_secret(seed: u64, secret: &mut [u8; 192]) {
 }
 
 #[inline(always)]
-fn impl_oneshot(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     match input.len() {
         241.. => impl_241_plus_bytes(secret, input),
 
@@ -635,13 +707,13 @@ fn impl_oneshot(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
 }
 
 #[inline]
-fn impl_0_bytes(secret: &[u8], seed: u64) -> u64 {
-    let secret_words = unsafe { secret.as_ptr().add(56).cast::<[u64; 2]>().read_unaligned() };
+fn impl_0_bytes(secret: &Secret, seed: u64) -> u64 {
+    let secret_words = secret.words_for_0();
     avalanche_xxh64(seed ^ secret_words[0] ^ secret_words[1])
 }
 
 #[inline]
-fn impl_1_to_3_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let input_length = input.len() as u8; // OK as we checked that the length fits
 
     let combined = input[input.len() - 1].into_u32()
@@ -649,7 +721,7 @@ fn impl_1_to_3_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
         | input[0].into_u32() << 16
         | input[input.len() >> 1].into_u32() << 24;
 
-    let secret_words = unsafe { secret.as_ptr().cast::<[u32; 2]>().read_unaligned() };
+    let secret_words = secret.words_for_1_to_3();
 
     let value = ((secret_words[0] ^ secret_words[1]).into_u64() + seed) ^ combined.into_u64();
 
@@ -658,7 +730,7 @@ fn impl_1_to_3_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
 }
 
 #[inline]
-fn impl_4_to_8_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let input_first = unsafe { input.as_ptr().cast::<u32>().read_unaligned() };
     let input_last = unsafe {
         input
@@ -670,7 +742,7 @@ fn impl_4_to_8_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
     };
 
     let modified_seed = seed ^ (seed.lower_half().swap_bytes().into_u64() << 32);
-    let secret_words = unsafe { secret.as_ptr().add(8).cast::<[u64; 2]>().read_unaligned() };
+    let secret_words = secret.words_for_4_to_8();
 
     let combined = input_last.into_u64() | (input_first.into_u64() << 32);
 
@@ -688,7 +760,7 @@ fn impl_4_to_8_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
 }
 
 #[inline]
-fn impl_9_to_16_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let input_first = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
     let input_last = unsafe {
         input
@@ -699,7 +771,7 @@ fn impl_9_to_16_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
             .read_unaligned()
     };
 
-    let secret_words = unsafe { secret.as_ptr().add(24).cast::<[u64; 4]>().read_unaligned() };
+    let secret_words = secret.words_for_9_to_16();
     let low = ((secret_words[0] ^ secret_words[1]).wrapping_add(seed)) ^ input_first;
     let high = ((secret_words[2] ^ secret_words[3]).wrapping_sub(seed)) ^ input_last;
     let mul_result = low.into_u128().wrapping_mul(high.into_u128());
@@ -714,10 +786,10 @@ fn impl_9_to_16_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
 }
 
 #[inline]
-fn impl_17_to_128_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+fn impl_17_to_128_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
-    let (secret, _) = secret.bp_as_chunks();
+    let (secret, _) = secret.0.bp_as_chunks();
     let (secret, _) = secret.bp_as_chunks::<2>();
     let (fwd, _) = input.bp_as_chunks();
     let (_, bwd) = input.bp_as_rchunks();
@@ -746,15 +818,15 @@ fn impl_17_to_128_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
 }
 
 #[inline]
-fn impl_129_to_240_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
+fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
     let (head, _) = input.bp_as_chunks();
     let last_chunk = input.last_chunk().unwrap();
     let mut head = head.iter();
 
-    let (ss, _) = secret.bp_as_chunks();
-    let (ss2, _) = secret[3..].bp_as_chunks();
+    let (ss, _) = secret.0.bp_as_chunks();
+    let (ss2, _) = secret.0[3..].bp_as_chunks();
 
     let qq = head.by_ref().zip(ss);
 
@@ -768,7 +840,7 @@ fn impl_129_to_240_bytes(secret: &[u8], seed: u64, input: &[u8]) -> u64 {
         acc = acc.wrapping_add(mix_step(chunk, s, seed));
     }
 
-    let ss3 = &secret[119..].first_chunk().unwrap();
+    let ss3 = &secret.0[119..].first_chunk().unwrap();
     acc = acc.wrapping_add(mix_step(last_chunk, ss3, seed));
 
     avalanche(acc)
@@ -796,15 +868,15 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 ];
 
 #[inline]
-fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
+fn impl_241_plus_bytes(secret: &Secret, input: &[u8]) -> u64 {
     dispatch! {
-        fn oneshot_impl<>(secret: &[u8], input: &[u8]) -> u64
+        fn oneshot_impl<>(secret: &Secret, input: &[u8]) -> u64
         []
     }
 }
 
 #[inline(always)]
-fn oneshot_impl(vector: impl Vector, secret: &[u8], input: &[u8]) -> u64 {
+fn oneshot_impl(vector: impl Vector, secret: &Secret, input: &[u8]) -> u64 {
     Algorithm(vector).oneshot(secret, input)
 }
 
@@ -812,10 +884,10 @@ struct Algorithm<V>(V);
 
 impl<V: Vector> Algorithm<V> {
     #[inline]
-    fn oneshot(&self, secret: &[u8], input: &[u8]) -> u64 {
+    fn oneshot(&self, secret: &Secret, input: &[u8]) -> u64 {
         let mut acc = INITIAL_ACCUMULATORS;
 
-        assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
+        //assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
         assert!(input.len() >= 241);
 
         let stripes_per_block = (secret.len() - 64) / 8;
@@ -846,7 +918,7 @@ impl<V: Vector> Algorithm<V> {
         &self,
         acc: &mut [u64; 8],
         blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &[u8],
+        secret: &Secret,
     ) {
         for block in blocks {
             let (stripes, _) = block.bp_as_chunks();
@@ -856,18 +928,17 @@ impl<V: Vector> Algorithm<V> {
     }
 
     #[inline]
-    fn round(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
-        let secret_end = secret.last_chunk().unwrap();
+    fn round(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &Secret) {
+        let secret_end = secret.0.last_chunk().unwrap();
 
         self.round_accumulate(acc, stripes, secret);
         self.0.round_scramble(acc, secret_end);
     }
 
     #[inline]
-    fn round_accumulate(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &[u8]) {
+    fn round_accumulate(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &Secret) {
         // TODO: [unify]
-        let secrets =
-            (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
+        let secrets = (0..stripes.len()).map(|i| secret.stripe(i));
 
         for (stripe, secret) in stripes.iter().zip(secrets) {
             self.0.accumulate(acc, stripe, secret);
@@ -880,7 +951,7 @@ impl<V: Vector> Algorithm<V> {
         mut acc: [u64; 8],
         last_block: &[u8],
         last_stripe: &[u8; 64],
-        secret: &[u8],
+        secret: &Secret,
         len: usize,
     ) -> u64 {
         debug_assert!(!last_block.is_empty());
@@ -890,20 +961,25 @@ impl<V: Vector> Algorithm<V> {
     }
 
     #[inline]
-    fn last_round(&self, acc: &mut [u64; 8], block: &[u8], last_stripe: &[u8; 64], secret: &[u8]) {
+    fn last_round(
+        &self,
+        acc: &mut [u64; 8],
+        block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &Secret,
+    ) {
         // Accumulation steps are run for the stripes in the last block,
         // except for the last stripe (whether it is full or not)
         let (stripes, _) = stripes_with_tail(block);
 
         // TODO: [unify]
-        let secrets =
-            (0..stripes.len()).map(|i| unsafe { &*secret.get_unchecked(i * 8..).as_ptr().cast() });
+        let secrets = (0..stripes.len()).map(|i| secret.stripe(i));
 
         for (stripe, secret) in stripes.iter().zip(secrets) {
             self.0.accumulate(acc, stripe, secret);
         }
 
-        let q = secret[secret.len() - 71..].first_chunk().unwrap();
+        let q = secret.0[secret.len() - 71..].first_chunk().unwrap();
         self.0.accumulate(acc, last_stripe, q);
     }
 
@@ -912,10 +988,10 @@ impl<V: Vector> Algorithm<V> {
         &self,
         acc: &mut [u64; 8],
         init_value: u64,
-        secret: &[u8],
+        secret: &Secret,
         secret_offset: usize,
     ) -> u64 {
-        let secrets = secret[secret_offset..].first_chunk::<64>().unwrap();
+        let secrets = secret.0[secret_offset..].first_chunk::<64>().unwrap();
         let (secrets, _) = secrets.bp_as_chunks();
         let mut result = init_value;
         for i in 0..4 {
