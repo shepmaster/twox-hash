@@ -375,14 +375,28 @@ macro_rules! dispatch {
             $fn_name(sse2::Impl::new_unchecked(), $($arg_name),*)
         }
 
-        #[cfg(target_arch = "aarch64")]
+        // Now we invoke the right function
+
+        #[cfg(_internal_xxhash3_force_neon)]
+        return unsafe { do_neon($($arg_name),*) };
+
+        #[cfg(_internal_xxhash3_force_avx2)]
+        return unsafe { do_avx2($($arg_name),*) };
+
+        #[cfg(_internal_xxhash3_force_sse2)]
+        return unsafe { do_sse2($($arg_name),*) };
+
+        #[cfg(_internal_xxhash3_force_scalar)]
+        return do_scalar($($arg_name),*);
+
+        #[cfg(all(target_arch = "aarch64", feature = "std"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") {
                 return unsafe { do_neon($($arg_name),*) };
             }
         }
 
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", feature = "std"))]
         {
             if is_x86_feature_detected!("avx2") {
                 return unsafe { do_avx2($($arg_name),*) };
@@ -777,7 +791,15 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 
 #[inline]
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
-    detect::oneshot(secret, input)
+    dispatch! {
+        fn oneshot_x<>(secret: &[u8], input: &[u8]) -> u64
+        []
+    }
+}
+
+#[inline(always)]
+fn oneshot_x(vector: impl Vector, secret: &[u8], input: &[u8]) -> u64 {
+    Algorithm(vector).oneshot(secret, input)
 }
 
 fn block_size(secret: &[u8]) -> usize {
@@ -948,11 +970,6 @@ trait Vector: Copy {
 // This module is not `cfg`-gated because it is used by some of the
 // SIMD implementations.
 mod scalar {
-    #[inline]
-    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        super::Algorithm(Impl).oneshot(secret, input)
-    }
-
     use super::{SliceBackport as _, Vector, PRIME32_1};
 
     #[derive(Copy, Clone)]
@@ -1024,14 +1041,6 @@ mod neon {
     use core::arch::aarch64::*;
 
     use super::{SliceBackport as _, Vector, PRIME32_1};
-
-    /// # Safety
-    /// You must ensure that the CPU has the NEON feature
-    #[inline]
-    #[target_feature(enable = "neon")]
-    pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
-        super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
-    }
 
     #[derive(Copy, Clone)]
     pub struct Impl(());
@@ -1203,40 +1212,11 @@ mod neon {
     }
 }
 
-#[cfg(all(target_arch = "aarch64", feature = "std"))]
-mod aarch64_detect {
-    macro_rules! pick {
-        ($f:ident, $s:ident, $($t:tt)+) => {
-            #[cfg(_internal_xxhash3_force_neon)]
-            return unsafe { super::neon::$f $($t)+ };
-
-            if std::arch::is_aarch64_feature_detected!("neon") {
-                return unsafe { super::neon::$f $($t)+ };
-            }
-
-            super::scalar::$s $($t)+
-        };
-    }
-
-    #[inline]
-    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        pick! { oneshot_unchecked, oneshot, (secret, input) }
-    }
-}
-
 #[cfg(target_arch = "x86_64")]
 mod avx2 {
     use core::arch::x86_64::*;
 
     use super::{scalar, Vector};
-
-    /// # Safety
-    /// You must ensure that the CPU has the AVX2 feature
-    #[inline]
-    #[target_feature(enable = "avx2")]
-    pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
-        super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
-    }
 
     #[derive(Copy, Clone)]
     pub struct Impl(());
@@ -1315,14 +1295,6 @@ mod sse2 {
 
     use super::{scalar, Vector};
 
-    /// # Safety
-    /// You must ensure that the CPU has the SSE2 feature
-    #[inline]
-    #[target_feature(enable = "sse2")]
-    pub unsafe fn oneshot_unchecked(secret: &[u8], input: &[u8]) -> u64 {
-        super::Algorithm(Impl::new_unchecked()).oneshot(secret, input)
-    }
-
     #[derive(Copy, Clone)]
     pub struct Impl(());
 
@@ -1389,69 +1361,6 @@ mod sse2 {
 
             _mm_storeu_si128(acc.add(i), acc_0);
         }
-    }
-}
-
-#[cfg(all(target_arch = "x86_64", feature = "std"))]
-mod x86_64_detect {
-    macro_rules! pick {
-        ($f:ident, $s:ident, $($t:tt)+) => {
-            #[cfg(_internal_xxhash3_force_avx2)]
-            return unsafe { super::avx2::$f $($t)+ };
-
-            #[cfg(_internal_xxhash3_force_sse2)]
-            return unsafe { super::sse2::$f $($t)+ };
-
-            if std::arch::is_x86_feature_detected!("avx2") {
-                return unsafe { super::avx2::$f $($t)+ };
-            }
-
-            if std::arch::is_x86_feature_detected!("sse2") {
-                return unsafe { super::sse2::$f $($t)+ };
-            }
-
-            super::scalar::$s $($t)+
-        };
-    }
-
-    #[inline]
-    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        pick! { oneshot_unchecked, oneshot, (secret, input) }
-    }
-}
-
-mod detect {
-    macro_rules! pick {
-        ($e:expr) => {
-            #[cfg(_internal_xxhash3_force_scalar)]
-            {
-                use super::scalar::*;
-                return $e;
-            }
-
-            #[cfg(all(target_arch = "aarch64", feature = "std"))]
-            {
-                use super::aarch64_detect::*;
-                return $e;
-            }
-
-            #[cfg(all(target_arch = "x86_64", feature = "std"))]
-            {
-                use super::x86_64_detect::*;
-                return $e;
-            }
-
-            #[allow(unreachable_code)]
-            {
-                use super::scalar::*;
-                $e
-            }
-        };
-    }
-
-    #[inline]
-    pub fn oneshot(secret: &[u8], input: &[u8]) -> u64 {
-        pick! { oneshot(secret, input) }
     }
 }
 
