@@ -831,14 +831,7 @@ impl<V: Vector> Algorithm<V> {
 
         let len = input.len();
 
-        let last_stripe: &[u8; 64] = unsafe {
-            &*input
-                .as_ptr()
-                .add(len)
-                .sub(mem::size_of::<[u8; 64]>())
-                .cast()
-        };
-
+        let last_stripe = input.last_chunk().unwrap();
         self.finalize(acc, last_block, last_stripe, secret, len)
     }
 
