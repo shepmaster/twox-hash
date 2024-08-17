@@ -1,4 +1,5 @@
 #![allow(missing_docs)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 use core::{hash, mem, slice};
 
@@ -345,6 +346,8 @@ macro_rules! dispatch {
             $fn_name(scalar::Impl, $($arg_name),*)
         }
 
+        /// # Safety
+        /// You must ensure that the CPU has the NEON feature
         #[inline]
         #[target_feature(enable = "neon")]
         #[cfg(target_arch = "aarch64")]
@@ -352,7 +355,10 @@ macro_rules! dispatch {
         where
             $($wheres)*
         {
-            $fn_name(neon::Impl::new_unchecked(), $($arg_name),*)
+            // SAFETY: the caller has ensured we have the NEON feature
+            unsafe {
+                $fn_name(neon::Impl::new_unchecked(), $($arg_name),*)
+            }
         }
 
         #[inline]
