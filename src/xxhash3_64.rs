@@ -538,7 +538,7 @@ where
     match total_bytes {
         241.. => {
             // Ingest final stripes
-            let (stripes, remainder) = fun_name(input);
+            let (stripes, remainder) = stripes_with_tail(input);
             for stripe in stripes {
                 stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
             }
@@ -792,13 +792,13 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 #[inline]
 fn impl_241_plus_bytes(secret: &[u8], input: &[u8]) -> u64 {
     dispatch! {
-        fn oneshot_x<>(secret: &[u8], input: &[u8]) -> u64
+        fn oneshot_impl<>(secret: &[u8], input: &[u8]) -> u64
         []
     }
 }
 
 #[inline(always)]
-fn oneshot_x(vector: impl Vector, secret: &[u8], input: &[u8]) -> u64 {
+fn oneshot_impl(vector: impl Vector, secret: &[u8], input: &[u8]) -> u64 {
     Algorithm(vector).oneshot(secret, input)
 }
 
@@ -894,7 +894,7 @@ impl<V: Vector> Algorithm<V> {
     fn last_round(&self, acc: &mut [u64; 8], block: &[u8], last_stripe: &[u8; 64], secret: &[u8]) {
         // Accumulation steps are run for the stripes in the last block,
         // except for the last stripe (whether it is full or not)
-        let (stripes, _) = fun_name(block);
+        let (stripes, _) = stripes_with_tail(block);
 
         // TODO: [unify]
         let secrets =
@@ -939,7 +939,7 @@ impl<V: Vector> Algorithm<V> {
 }
 
 #[inline]
-fn fun_name(block: &[u8]) -> (&[[u8; 64]], &[u8]) {
+fn stripes_with_tail(block: &[u8]) -> (&[[u8; 64]], &[u8]) {
     match block.bp_as_chunks() {
         ([stripes @ .., last], []) => (stripes, last),
         (stripes, last) => (stripes, last),
