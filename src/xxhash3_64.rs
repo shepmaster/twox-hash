@@ -802,11 +802,6 @@ fn oneshot_x(vector: impl Vector, secret: &[u8], input: &[u8]) -> u64 {
     Algorithm(vector).oneshot(secret, input)
 }
 
-fn block_size(secret: &[u8]) -> usize {
-    let stripes_per_block = (secret.len() - 64) / 8;
-    64 * stripes_per_block
-}
-
 struct Algorithm<V>(V);
 
 impl<V: Vector> Algorithm<V> {
@@ -817,9 +812,20 @@ impl<V: Vector> Algorithm<V> {
         assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
         assert!(input.len() >= 241);
 
-        let block_size = block_size(secret);
+        let stripes_per_block = (secret.len() - 64) / 8;
+        let block_size = 64 * stripes_per_block;
 
-        let (blocks, last_block) = unsafe { chunks_and_last(input, block_size) };
+        let mut blocks = input.chunks_exact(block_size);
+
+        let last_block = if blocks.remainder().is_empty() {
+            // SAFETY: We know that `input` is non-empty, which means
+            // that either there will be a remainder or one or more
+            // full blocks. That info isn't flowing to the optimizer,
+            // so we use `unwrap_unchecked`.
+            unsafe { blocks.next_back().unwrap_unchecked() }
+        } else {
+            blocks.remainder()
+        };
 
         self.rounds(&mut acc, blocks, secret);
 
@@ -938,27 +944,6 @@ fn fun_name(block: &[u8]) -> (&[[u8; 64]], &[u8]) {
         ([stripes @ .., last], []) => (stripes, last),
         (stripes, last) => (stripes, last),
     }
-}
-
-/// # Safety
-/// `input` must be non-empty.
-#[inline]
-unsafe fn chunks_and_last(input: &[u8], block_size: usize) -> (slice::ChunksExact<'_, u8>, &[u8]) {
-    debug_assert!(!input.is_empty());
-
-    let mut blocks = input.chunks_exact(block_size);
-
-    let last_block = if blocks.remainder().is_empty() {
-        // SAFETY: We know that `input` is non-empty, which means
-        // that either there will be a remainder or one or more
-        // full blocks. That info isn't flowing to the optimizer,
-        // so we use `unwrap_unchecked`.
-        unsafe { blocks.next_back().unwrap_unchecked() }
-    } else {
-        blocks.remainder()
-    };
-
-    (blocks, last_block)
 }
 
 trait Vector: Copy {
