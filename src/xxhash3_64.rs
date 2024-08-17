@@ -260,14 +260,15 @@ where
     }
 }
 
+/// Tracks which stripe we are currently on to know which part of the
+/// secret we should be using.
 #[derive(Copy, Clone)]
-struct Grug {
-    // TODO FIXME
+struct StripeAccumulator {
     accumulator: [u64; 8],
     current_stripe: usize,
 }
 
-impl Grug {
+impl StripeAccumulator {
     fn new() -> Self {
         Self {
             accumulator: INITIAL_ACCUMULATORS,
@@ -275,7 +276,6 @@ impl Grug {
         }
     }
 
-    // TODO: NEXT: inline this? pass in secret_end?
     #[inline]
     fn process_stripe<V: Vector>(
         &mut self,
@@ -317,7 +317,7 @@ impl Grug {
 pub struct RawHasher<S> {
     secret_buffer: SecretBuffer<S>,
     buffer_len: usize,
-    grug: Grug,
+    stripe_accumulator: StripeAccumulator,
     total_bytes: usize,
 }
 
@@ -326,7 +326,7 @@ impl<S> RawHasher<S> {
         Self {
             secret_buffer,
             buffer_len: 0,
-            grug: Grug::new(),
+            stripe_accumulator: StripeAccumulator::new(),
             total_bytes: 0,
         }
     }
@@ -430,7 +430,7 @@ where
     let RawHasher {
         secret_buffer,
         buffer_len,
-        grug,
+        stripe_accumulator,
         total_bytes,
         ..
     } = this;
@@ -467,7 +467,7 @@ where
 
         let (stripes, _) = buffer.bp_as_chunks();
         for stripe in stripes {
-            grug.process_stripe(vector, stripe, n_stripes, secret);
+            stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
         }
         *buffer_len = 0;
     }
@@ -484,7 +484,7 @@ where
         let (stripes, _) = aa.bp_as_chunks();
 
         for stripe in stripes {
-            grug.process_stripe(vector, stripe, n_stripes, secret)
+            stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret)
         }
         input = remainder;
     }
@@ -507,7 +507,7 @@ where
     let RawHasher {
         ref secret_buffer,
         buffer_len,
-        mut grug,
+        mut stripe_accumulator,
         total_bytes,
     } = *this;
     let n_stripes = secret_buffer.n_stripes();
@@ -526,7 +526,7 @@ where
             // Ingest final stripes
             let (stripes, remainder) = fun_name(input);
             for stripe in stripes {
-                grug.process_stripe(vector, stripe, n_stripes, secret);
+                stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
             }
 
             let mut temp = [0; 64];
@@ -546,7 +546,7 @@ where
             };
 
             Algorithm(vector).finalize(
-                grug.accumulator,
+                stripe_accumulator.accumulator,
                 remainder,
                 last_stripe,
                 secret,
@@ -999,7 +999,6 @@ mod scalar {
     #[inline]
     // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5595-L5610
     // https://github.com/llvm/llvm-project/issues/98481
-    // TODO: this is probably if NEON, yeah?
     #[cfg(target_arch = "aarch64")]
     fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
         use core::arch::asm;
@@ -1280,7 +1279,9 @@ mod avx2 {
         let secret = secret.as_ptr().cast::<__m256i>();
 
         for i in 0..2 {
-            // todo: align the accumulator and avoid the unaligned load and store
+            // [align-acc]: The C code aligns the accumulator to avoid
+            // the unaligned load and store here, but that doesn't
+            // seem to be a big performance loss.
             let mut acc_0 = _mm256_loadu_si256(acc.add(i));
             let stripe_0 = _mm256_loadu_si256(stripe.add(i));
             let secret_0 = _mm256_loadu_si256(secret.add(i));
@@ -1363,7 +1364,7 @@ mod sse2 {
         let secret = secret.as_ptr().cast::<__m128i>();
 
         for i in 0..4 {
-            // todo: align the accumulator and avoid the unaligned load and store
+            // See [align-acc].
             let mut acc_0 = _mm_loadu_si128(acc.add(i));
             let stripe_0 = _mm_loadu_si128(stripe.add(i));
             let secret_0 = _mm_loadu_si128(secret.add(i));
