@@ -897,8 +897,7 @@ impl<V: Vector> Algorithm<V> {
             self.0.accumulate(acc, stripe, secret);
         }
 
-        let q = &secret[secret.len() - 71..];
-        let q: &[u8; 64] = unsafe { &*q.as_ptr().cast() };
+        let q = secret[secret.len() - 71..].first_chunk().unwrap();
         self.0.accumulate(acc, last_stripe, q);
     }
 
@@ -910,19 +909,17 @@ impl<V: Vector> Algorithm<V> {
         secret: &[u8],
         secret_offset: usize,
     ) -> u64 {
-        let secret_words = unsafe {
-            secret
-                .as_ptr()
-                .add(secret_offset)
-                .cast::<[u64; 8]>()
-                .read_unaligned()
-        };
+        let secrets = secret[secret_offset..].first_chunk::<64>().unwrap();
+        let (secrets, _) = secrets.bp_as_chunks();
         let mut result = init_value;
         for i in 0..4 {
             // 64-bit by 64-bit multiplication to 128-bit full result
             let mul_result = {
-                let a = (acc[i * 2] ^ secret_words[i * 2]).into_u128();
-                let b = (acc[i * 2 + 1] ^ secret_words[i * 2 + 1]).into_u128();
+                let sa = u64::from_ne_bytes(secrets[i * 2]);
+                let sb = u64::from_ne_bytes(secrets[i * 2 + 1]);
+
+                let a = (acc[i * 2] ^ sa).into_u128();
+                let b = (acc[i * 2 + 1] ^ sb).into_u128();
                 a.wrapping_mul(b)
             };
             result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
@@ -968,9 +965,12 @@ mod scalar {
 
         #[inline]
         fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+            let (stripe, _) = stripe.bp_as_chunks();
+            let (secret, _) = secret.bp_as_chunks();
+
             for i in 0..8 {
-                let stripe = unsafe { stripe.as_ptr().cast::<u64>().add(i).read_unaligned() };
-                let secret = unsafe { secret.as_ptr().cast::<u64>().add(i).read_unaligned() };
+                let stripe = u64::from_ne_bytes(stripe[i]);
+                let secret = u64::from_ne_bytes(secret[i]);
 
                 let value = stripe ^ secret;
                 acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);
