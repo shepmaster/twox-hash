@@ -177,7 +177,7 @@ mod xxhash3_64 {
 
         // Visual inspection of all the data points showed these as
         // examples of thier nearby neighbors.
-        let categories = [0, 2, 9, 25, 50, 80, 113, 135, 150, 165, 185, 200, 215, 230];
+        let categories = [0, 2, 6, 13, 25, 50, 80, 113, 135, 150, 165, 185, 200, 215, 230];
 
         for size in categories {
             let data = &data[..size];
