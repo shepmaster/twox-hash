@@ -706,13 +706,13 @@ fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     }
 }
 
-#[inline]
+#[inline(always)]
 fn impl_0_bytes(secret: &Secret, seed: u64) -> u64 {
     let secret_words = secret.words_for_0();
     avalanche_xxh64(seed ^ secret_words[0] ^ secret_words[1])
 }
 
-#[inline]
+#[inline(always)]
 fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let input_length = input.len() as u8; // OK as we checked that the length fits
 
@@ -729,7 +729,7 @@ fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     avalanche_xxh64(value)
 }
 
-#[inline]
+#[inline(always)]
 fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let input_first = unsafe { input.as_ptr().cast::<u32>().read_unaligned() };
     let input_last = unsafe {
@@ -759,7 +759,7 @@ fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     value
 }
 
-#[inline]
+#[inline(always)]
 fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let input_first = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
     let input_last = unsafe {
@@ -875,7 +875,7 @@ fn impl_241_plus_bytes(secret: &Secret, input: &[u8]) -> u64 {
     }
 }
 
-#[inline(always)]
+#[inline]
 fn oneshot_impl(vector: impl Vector, secret: &Secret, input: &[u8]) -> u64 {
     Algorithm(vector).oneshot(secret, input)
 }
