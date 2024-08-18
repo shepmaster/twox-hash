@@ -110,12 +110,12 @@ pub struct XxHash3_64 {
 }
 
 impl XxHash3_64 {
-    #[inline(never)]
+    #[inline]
     pub fn oneshot(input: &[u8]) -> u64 {
         impl_oneshot(DEFAULT_SECRET2, DEFAULT_SEED, input)
     }
 
-    #[inline(never)]
+    #[inline]
     pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u64 {
         let mut secret = DEFAULT_SECRET;
 
@@ -130,7 +130,7 @@ impl XxHash3_64 {
         impl_oneshot(s, seed, input)
     }
 
-    #[inline(never)]
+    #[inline]
     pub fn oneshot_with_secret(secret: &[u8], input: &[u8]) -> u64 {
         let secret = Secret::new(secret).unwrap(); // TODO: ERROR
         impl_oneshot(secret, DEFAULT_SEED, input)
@@ -489,7 +489,7 @@ impl<S> hash::Hasher for RawHasher<S>
 where
     S: AsRef<[u8]>,
 {
-    #[inline(never)]
+    #[inline]
     fn write(&mut self, input: &[u8]) {
         let this = self;
         dispatch! {
@@ -498,7 +498,7 @@ where
         }
     }
 
-    #[inline(never)]
+    #[inline]
     fn finish(&self) -> u64 {
         let this = self;
         dispatch! {
