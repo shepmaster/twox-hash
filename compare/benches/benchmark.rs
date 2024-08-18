@@ -140,7 +140,7 @@ fn gen_data(length: usize) -> (u64, Vec<u8>) {
 }
 
 fn gen_chunked_data(length: usize, n_chunks: usize) -> (u64, Vec<Vec<u8>>) {
-    assert!(length > n_chunks);
+    assert!(length >= n_chunks);
 
     let mut rng = rand::rngs::StdRng::seed_from_u64(SEED);
 
@@ -254,8 +254,8 @@ mod xxhash3_64 {
     fn streaming(c: &mut Criterion) {
         let mut g = c.benchmark_group("xxhash3_64/streaming_many_chunks");
 
-        for size in half_sizes(BIG_DATA_SIZE).take_while(|&s| s >= MIN_BIG_DATA_SIZE) {
-            for n_chunks in half_sizes(MAX_CHUNKS) {
+        for size in [1024 * 1024] {
+            for n_chunks in half_sizes(size) {
                 let (seed, chunks) = gen_chunked_data(size, n_chunks);
                 g.throughput(Throughput::Bytes(size as _));
 
