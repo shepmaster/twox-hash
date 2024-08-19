@@ -1,7 +1,7 @@
 #![allow(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
-use core::{hash, mem, slice};
+use core::{hash, hint::assert_unchecked, mem, slice};
 
 use crate::{IntoU128, IntoU32, IntoU64};
 
@@ -59,6 +59,7 @@ impl Secret {
     fn words_for_0(&self) -> [u64; 2] {
         // unsafe { self.0.as_ptr().add(56).cast::<[u64; 2]>().read_unaligned() }
 
+        self.reassert_preconditions();
         let (q, _) = self.0[56..].bp_as_chunks();
         [q[0], q[1]].map(u64::from_ne_bytes)
     }
@@ -67,6 +68,7 @@ impl Secret {
     fn words_for_1_to_3(&self) -> [u32; 2] {
         // unsafe { self.0.as_ptr().cast::<[u32; 2]>().read_unaligned() }
 
+        self.reassert_preconditions();
         let (q, _) = self.0.bp_as_chunks();
         [q[0], q[1]].map(u32::from_ne_bytes)
     }
@@ -75,6 +77,7 @@ impl Secret {
     fn words_for_4_to_8(&self) -> [u64; 2] {
         //unsafe { self.0.as_ptr().add(8).cast::<[u64; 2]>().read_unaligned() }
 
+        self.reassert_preconditions();
         let (q, _) = self.0[8..].bp_as_chunks();
         [q[0], q[1]].map(u64::from_ne_bytes)
     }
@@ -83,8 +86,16 @@ impl Secret {
     fn words_for_9_to_16(&self) -> [u64; 4] {
         // unsafe { self.0.as_ptr().add(24).cast::<[u64; 4]>().read_unaligned() }
 
+        self.reassert_preconditions();
         let (q, _) = self.0[24..].bp_as_chunks();
         [q[0], q[1], q[2], q[3]].map(u64::from_ne_bytes)
+    }
+
+    #[inline]
+    fn words_for_17_to_128(&self) -> &[[u8; 16]] {
+        self.reassert_preconditions();
+        let (words, _) = self.0.bp_as_chunks();
+        words
     }
 
     #[inline]
@@ -93,13 +104,19 @@ impl Secret {
     }
 
     #[inline]
-    fn end(&self) -> &[u8; 64] {
-        unsafe { self.0.last_chunk().unwrap_unchecked() }
+    fn last_stripe(&self) -> &[u8; 64] {
+        self.reassert_preconditions();
+        self.0.last_chunk().unwrap()
     }
 
     #[inline]
     fn len(&self) -> usize {
         self.0.len()
+    }
+
+    #[inline(always)]
+    fn reassert_preconditions(&self) {
+        unsafe { assert_unchecked(self.0.len() >= SECRET_MINIMUM_LENGTH) }
     }
 }
 
@@ -361,7 +378,7 @@ impl StripeAccumulator {
             ..
         } = self;
 
-        let secret_end = secret.end();
+        let secret_end = secret.last_stripe();
 
         // each stripe
         let secret = secret.stripe(*current_stripe);
@@ -533,6 +550,9 @@ where
 
     *total_bytes += input.len();
 
+    debug_assert!(*buffer_len <= buffer.len());
+    unsafe { assert_unchecked(*buffer_len <= buffer.len()) };
+
     // We have some previous data saved; try to fill it up and process it first
     if !buffer.is_empty() {
         let remaining = &mut buffer[*buffer_len..];
@@ -568,11 +588,15 @@ where
     // Process as much of the input data in-place as possible,
     // while leaving at least one full stripe for the
     // finalization.
-    if let Some(dd) = input.len().checked_sub(STRIPE_BYTES) {
-        let nn = dd / STRIPE_BYTES;
-        let nn = nn * STRIPE_BYTES;
-        let (aa, remainder) = input.split_at(nn);
-        let (stripes, _) = aa.bp_as_chunks();
+    if let Some(len) = input.len().checked_sub(STRIPE_BYTES) {
+        let full_block_point = (len / STRIPE_BYTES) * STRIPE_BYTES;
+        // Safety: We know that `full_block_point` must be less than
+        // `input.len()` as we subtracted and then integer-divided
+        // (which rounds down) and then multiplied back. That's not
+        // evident to the compiler and `split_at` results in a
+        // potential panic.
+        let (stripes, remainder) = unsafe { input.split_at_unchecked(full_block_point) };
+        let (stripes, _) = stripes.bp_as_chunks();
 
         for stripe in stripes {
             stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret)
@@ -584,9 +608,13 @@ where
     // buffer is empty so just fill up the buffer.
     debug_assert!(*buffer_len == 0);
     debug_assert!(!input.is_empty());
-    debug_assert!(input.len() < buffer.len());
+    debug_assert!(input.len() < 2 * STRIPE_BYTES);
+    debug_assert!(2 * STRIPE_BYTES < buffer.len());
 
-    buffer[..input.len()].copy_from_slice(input);
+    // SAFETY: We have parsed all the full blocks of input except one
+    // and potentially a full block minus one byte. That amount of
+    // data must be less than the buffer.
+    unsafe { buffer.get_unchecked_mut(..input.len()) }.copy_from_slice(input);
     *buffer_len = input.len();
 }
 
@@ -611,52 +639,43 @@ where
     let secret = unsafe { Secret::new_unchecked(secret) };
     let buffer = buffer.as_ref();
 
-    let input = &buffer[..buffer_len];
+    unsafe { assert_unchecked(buffer_len <= buffer.len()) };
 
-    match total_bytes {
-        241.. => {
-            // Ingest final stripes
-            let (stripes, remainder) = stripes_with_tail(input);
-            for stripe in stripes {
-                stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
-            }
 
-            let mut temp = [0; 64];
+    if total_bytes >= 241 {
+        let input = &buffer[..buffer_len];
 
-            let last_stripe = match input.last_chunk() {
-                Some(chunk) => chunk,
-                None => {
-                    let n_to_reuse = 64 - input.len();
-                    let to_reuse = buffer.len() - n_to_reuse;
-
-                    let (temp_head, temp_tail) = temp.split_at_mut(n_to_reuse);
-                    temp_head.copy_from_slice(&buffer[to_reuse..]);
-                    temp_tail.copy_from_slice(input);
-
-                    &temp
-                }
-            };
-
-            Algorithm(vector).finalize(
-                stripe_accumulator.accumulator,
-                remainder,
-                last_stripe,
-                secret,
-                total_bytes,
-            )
+        // Ingest final stripes
+        let (stripes, remainder) = stripes_with_tail(input);
+        for stripe in stripes {
+            stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
         }
 
-        129..=240 => impl_129_to_240_bytes(DEFAULT_SECRET2, seed, input),
+        let mut temp = [0; 64];
 
-        17..=128 => impl_17_to_128_bytes(DEFAULT_SECRET2, seed, input),
+        let last_stripe = match input.last_chunk() {
+            Some(chunk) => chunk,
+            None => {
+                let n_to_reuse = 64 - input.len();
+                let to_reuse = buffer.len() - n_to_reuse;
 
-        9..=16 => impl_9_to_16_bytes(DEFAULT_SECRET2, seed, input),
+                let (temp_head, temp_tail) = temp.split_at_mut(n_to_reuse);
+                temp_head.copy_from_slice(&buffer[to_reuse..]);
+                temp_tail.copy_from_slice(input);
 
-        4..=8 => impl_4_to_8_bytes(DEFAULT_SECRET2, seed, input),
+                &temp
+            }
+        };
 
-        1..=3 => impl_1_to_3_bytes(DEFAULT_SECRET2, seed, input),
-
-        0 => impl_0_bytes(DEFAULT_SECRET2, seed),
+        Algorithm(vector).finalize(
+            stripe_accumulator.accumulator,
+            remainder,
+            last_stripe,
+            secret,
+            total_bytes,
+        )
+    } else {
+        impl_oneshot(&DEFAULT_SECRET2, seed, &buffer[..total_bytes])
     }
 }
 
@@ -706,6 +725,16 @@ fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     }
 }
 
+macro_rules! assert_input_range {
+    ($min:literal.., $len:expr) => {
+        assert!($min <= $len);
+    };
+    ($min:literal..=$max:literal, $len:expr) => {
+        assert!($min <= $len);
+        assert!($len <= $max);
+    };
+}
+
 #[inline(always)]
 fn impl_0_bytes(secret: &Secret, seed: u64) -> u64 {
     let secret_words = secret.words_for_0();
@@ -714,6 +743,7 @@ fn impl_0_bytes(secret: &Secret, seed: u64) -> u64 {
 
 #[inline(always)]
 fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
+    assert_input_range!(1..=3, input.len());
     let input_length = input.len() as u8; // OK as we checked that the length fits
 
     let combined = input[input.len() - 1].into_u32()
@@ -731,6 +761,7 @@ fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 
 #[inline(always)]
 fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
+    assert_input_range!(4..=8, input.len());
     let input_first = unsafe { input.as_ptr().cast::<u32>().read_unaligned() };
     let input_last = unsafe {
         input
@@ -761,6 +792,7 @@ fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 
 #[inline(always)]
 fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
+    assert_input_range!(9..=16, input.len());
     let input_first = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
     let input_last = unsafe {
         input
@@ -787,9 +819,10 @@ fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 
 #[inline]
 fn impl_17_to_128_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
+    assert_input_range!(17..=128, input.len());
     let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
-    let (secret, _) = secret.0.bp_as_chunks();
+    let secret = secret.words_for_17_to_128();
     let (secret, _) = secret.bp_as_chunks::<2>();
     let (fwd, _) = input.bp_as_chunks();
     let (_, bwd) = input.bp_as_rchunks();
@@ -819,6 +852,7 @@ fn impl_17_to_128_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 
 #[inline]
 fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
+    assert_input_range!(129..=240, input.len());
     let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
     let (head, _) = input.bp_as_chunks();
@@ -869,6 +903,7 @@ const INITIAL_ACCUMULATORS: [u64; 8] = [
 
 #[inline]
 fn impl_241_plus_bytes(secret: &Secret, input: &[u8]) -> u64 {
+    assert_input_range!(241.., input.len());
     dispatch! {
         fn oneshot_impl<>(secret: &Secret, input: &[u8]) -> u64
         []
@@ -978,6 +1013,8 @@ impl<V: Vector> Algorithm<V> {
         for (stripe, secret) in stripes.iter().zip(secrets) {
             self.0.accumulate(acc, stripe, secret);
         }
+
+        unsafe { assert_unchecked(secret.len() >= SECRET_MINIMUM_LENGTH) };
 
         let q = secret.0[secret.len() - 71..].first_chunk().unwrap();
         self.0.accumulate(acc, last_stripe, q);
