@@ -18,7 +18,7 @@ const PRIME_MX2: u64 = 0x9FB21C651E98DF25;
 
 const DEFAULT_SEED: u64 = 0;
 
-const DEFAULT_SECRET: [u8; 192] = [
+const DEFAULT_SECRET_RAW: [u8; 192] = [
     0xb8, 0xfe, 0x6c, 0x39, 0x23, 0xa4, 0x4b, 0xbe, 0x7c, 0x01, 0x81, 0x2c, 0xf7, 0x21, 0xad, 0x1c,
     0xde, 0xd4, 0x6d, 0xe9, 0x83, 0x90, 0x97, 0xdb, 0x72, 0x40, 0xa4, 0xa4, 0xb7, 0xb3, 0x67, 0x1f,
     0xcb, 0x79, 0xe6, 0x4e, 0xcc, 0xc0, 0xe5, 0x78, 0x82, 0x5a, 0xd0, 0x7d, 0xcc, 0xff, 0x72, 0x21,
@@ -33,7 +33,8 @@ const DEFAULT_SECRET: [u8; 192] = [
     0x45, 0xcb, 0x3a, 0x8f, 0x95, 0x16, 0x04, 0x28, 0xaf, 0xd7, 0xfb, 0xca, 0xbb, 0x4b, 0x40, 0x7e,
 ];
 
-const DEFAULT_SECRET2: &Secret = unsafe { Secret::new_unchecked(&DEFAULT_SECRET) };
+// Safety: The default secret is long enough
+const DEFAULT_SECRET: &Secret = unsafe { Secret::new_unchecked(&DEFAULT_SECRET_RAW) };
 
 pub const SECRET_MINIMUM_LENGTH: usize = 136;
 
@@ -43,50 +44,56 @@ struct Secret([u8]);
 impl Secret {
     #[inline]
     fn new(bytes: &[u8]) -> Result<&Self, ()> {
-        if bytes.len() >= SECRET_MINIMUM_LENGTH {
-            unsafe { Ok(Self::new_unchecked(bytes)) }
-        } else {
-            Err(()) // TODO error
+        // Safety: We check for validity before returning.
+        unsafe {
+            let this = Self::new_unchecked(bytes);
+            if this.is_valid() {
+                Ok(this)
+            } else {
+                Err(()) // TODO error
+            }
         }
     }
 
+    /// # Safety
+    ///
+    /// You must ensure that the secret byte length is >=
+    /// SECRET_MINIMUM_LENGTH.
     #[inline]
     const unsafe fn new_unchecked(bytes: &[u8]) -> &Self {
+        // Safety: We are `#[repr(transparent)]`. It's up to the
+        // caller to ensure the length
         unsafe { mem::transmute(bytes) }
     }
 
     #[inline]
     fn words_for_0(&self) -> [u64; 2] {
-        // unsafe { self.0.as_ptr().add(56).cast::<[u64; 2]>().read_unaligned() }
-
         self.reassert_preconditions();
+
         let (q, _) = self.0[56..].bp_as_chunks();
         [q[0], q[1]].map(u64::from_ne_bytes)
     }
 
     #[inline]
     fn words_for_1_to_3(&self) -> [u32; 2] {
-        // unsafe { self.0.as_ptr().cast::<[u32; 2]>().read_unaligned() }
-
         self.reassert_preconditions();
+
         let (q, _) = self.0.bp_as_chunks();
         [q[0], q[1]].map(u32::from_ne_bytes)
     }
 
     #[inline]
     fn words_for_4_to_8(&self) -> [u64; 2] {
-        //unsafe { self.0.as_ptr().add(8).cast::<[u64; 2]>().read_unaligned() }
-
         self.reassert_preconditions();
+
         let (q, _) = self.0[8..].bp_as_chunks();
         [q[0], q[1]].map(u64::from_ne_bytes)
     }
 
     #[inline]
     fn words_for_9_to_16(&self) -> [u64; 4] {
-        // unsafe { self.0.as_ptr().add(24).cast::<[u64; 4]>().read_unaligned() }
-
         self.reassert_preconditions();
+
         let (q, _) = self.0[24..].bp_as_chunks();
         [q[0], q[1], q[2], q[3]].map(u64::from_ne_bytes)
     }
@@ -94,19 +101,60 @@ impl Secret {
     #[inline]
     fn words_for_17_to_128(&self) -> &[[u8; 16]] {
         self.reassert_preconditions();
+
         let (words, _) = self.0.bp_as_chunks();
         words
     }
 
     #[inline]
+    fn words_for_127_to_240_part1(&self) -> &[[u8; 16]] {
+        self.reassert_preconditions();
+
+        let (ss, _) = self.0.bp_as_chunks();
+        ss
+    }
+
+    #[inline]
+    fn words_for_127_to_240_part2(&self) -> &[[u8; 16]] {
+        self.reassert_preconditions();
+
+        let (ss, _) = self.0[3..].bp_as_chunks();
+        ss
+    }
+
+    #[inline]
+    fn words_for_127_to_240_part3(&self) -> &[u8; 16] {
+        self.reassert_preconditions();
+
+        self.0[119..].first_chunk().unwrap()
+    }
+
+    #[inline]
     fn stripe(&self, i: usize) -> &[u8; 64] {
+        self.reassert_preconditions();
+
         unsafe { &*self.0.get_unchecked(i * 8..).as_ptr().cast() }
     }
 
     #[inline]
     fn last_stripe(&self) -> &[u8; 64] {
         self.reassert_preconditions();
+
         self.0.last_chunk().unwrap()
+    }
+
+    #[inline]
+    fn last_stripe_secret_better_name(&self) -> &[u8; 64] {
+        self.reassert_preconditions();
+
+        self.0[self.0.len() - 71..].first_chunk().unwrap()
+    }
+
+    #[inline]
+    fn final_secret(&self) -> &[u8; 64] {
+        self.reassert_preconditions();
+
+        self.0[11..].first_chunk().unwrap()
     }
 
     #[inline]
@@ -116,7 +164,17 @@ impl Secret {
 
     #[inline(always)]
     fn reassert_preconditions(&self) {
-        unsafe { assert_unchecked(self.0.len() >= SECRET_MINIMUM_LENGTH) }
+        // Safety: The length of the bytes was checked at value
+        // construction time.
+        unsafe {
+            debug_assert!(self.is_valid());
+            assert_unchecked(self.is_valid());
+        }
+    }
+
+    #[inline(always)]
+    fn is_valid(&self) -> bool {
+        self.0.len() >= SECRET_MINIMUM_LENGTH
     }
 }
 
@@ -129,12 +187,12 @@ pub struct XxHash3_64 {
 impl XxHash3_64 {
     #[inline]
     pub fn oneshot(input: &[u8]) -> u64 {
-        impl_oneshot(DEFAULT_SECRET2, DEFAULT_SEED, input)
+        impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
     }
 
     #[inline]
     pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u64 {
-        let mut secret = DEFAULT_SECRET;
+        let mut secret = DEFAULT_SECRET_RAW;
 
         // We know that the secret will only be used if we have more
         // than 240 bytes, so don't waste time computing it otherwise.
@@ -142,9 +200,9 @@ impl XxHash3_64 {
             derive_secret(seed, &mut secret);
         }
 
-        let s = unsafe { Secret::new_unchecked(&secret) };
+        let secret = Secret::new(&secret).expect("The default secret length is invalid");
 
-        impl_oneshot(s, seed, input)
+        impl_oneshot(secret, seed, input)
     }
 
     #[inline]
@@ -157,21 +215,36 @@ impl XxHash3_64 {
 const STRIPE_BYTES: usize = 64;
 const BUFFERED_STRIPES: usize = 4;
 const BUFFERED_BYTES: usize = STRIPE_BYTES * BUFFERED_STRIPES;
+type Buffer = [u8; BUFFERED_BYTES];
 
 // Ensure that a full buffer always implies we are in the 241+ byte case.
 const _: () = assert!(BUFFERED_BYTES > 240);
+
+/// # Safety
+///
+/// Must always return a slice with the same number of elements.
+pub unsafe trait FixedBuffer: AsRef<[u8]> {}
+
+// Safety: An array will never change size.
+unsafe impl<const N: usize> FixedBuffer for [u8; N] {}
+
+// Safety: An array will never change size.
+unsafe impl<const N: usize> FixedBuffer for &[u8; N] {}
+
+// Safety: A plain slice will never change size.
+unsafe impl FixedBuffer for Box<[u8]> {}
 
 /// Holds secret and temporary buffers that are ensured to be
 /// appropriately sized.
 pub struct SecretBuffer<S> {
     seed: u64,
     secret: S,
-    buffer: [u8; BUFFERED_BYTES],
+    buffer: Buffer,
 }
 
 impl<S> SecretBuffer<S>
 where
-    S: AsRef<[u8]>,
+    S: FixedBuffer,
 {
     /// Takes the seed, secret, and buffer and performs no
     /// modifications to them, only validating that the sizes are
@@ -190,6 +263,7 @@ where
         }
     }
 
+    #[inline(always)]
     fn is_valid(&self) -> bool {
         let secret = self.secret.as_ref();
 
@@ -208,6 +282,26 @@ where
     pub fn decompose(self) -> S {
         self.secret
     }
+
+    #[inline]
+    fn parts(&self) -> (u64, &Secret, &Buffer) {
+        let secret = self.secret.as_ref();
+        // Safety: We established the length at construction and the
+        // length is not allowed to change.
+        let secret = unsafe { Secret::new_unchecked(secret) };
+
+        (self.seed, secret, &self.buffer)
+    }
+
+    #[inline]
+    fn parts_mut(&mut self) -> (u64, &Secret, &mut Buffer) {
+        let secret = self.secret.as_ref();
+        // Safety: We established the length at construction and the
+        // length is not allowed to change.
+        let secret = unsafe { Secret::new_unchecked(secret) };
+
+        (self.seed, secret, &mut self.buffer)
+    }
 }
 
 impl SecretBuffer<&'static [u8; 192]> {
@@ -218,7 +312,7 @@ impl SecretBuffer<&'static [u8; 192]> {
     pub const fn default() -> Self {
         SecretBuffer {
             seed: DEFAULT_SEED,
-            secret: &DEFAULT_SECRET,
+            secret: &DEFAULT_SECRET_RAW,
             buffer: [0; BUFFERED_BYTES],
         }
     }
@@ -280,7 +374,7 @@ mod with_alloc {
         pub fn allocate_default() -> Self {
             Self {
                 seed: DEFAULT_SEED,
-                secret: DEFAULT_SECRET.to_vec().into(),
+                secret: DEFAULT_SECRET_RAW.to_vec().into(),
                 buffer: [0; BUFFERED_BYTES],
             }
         }
@@ -288,7 +382,7 @@ mod with_alloc {
         /// Allocates the secret and temporary buffers and uses the
         /// provided seed to construct the secret value.
         pub fn allocate_with_seed(seed: u64) -> Self {
-            let mut secret = DEFAULT_SECRET;
+            let mut secret = DEFAULT_SECRET_RAW;
             derive_secret(seed, &mut secret);
 
             Self {
@@ -331,7 +425,7 @@ mod with_alloc {
 
 impl<S> SecretBuffer<S>
 where
-    S: AsRef<[u8]> + AsMut<[u8]>,
+    S: FixedBuffer + AsMut<[u8]>,
 {
     /// Fills the secret buffer with a secret derived from the seed
     /// and the default secret.
@@ -341,7 +435,7 @@ where
             Err(_) => return Err(secret),
         };
 
-        *secret_slice = DEFAULT_SECRET;
+        *secret_slice = DEFAULT_SECRET_RAW;
         derive_secret(seed, secret_slice);
 
         Self::new(seed, secret)
@@ -404,7 +498,7 @@ impl StripeAccumulator {
 /// generic type.
 pub struct RawHasher<S> {
     secret_buffer: SecretBuffer<S>,
-    buffer_len: usize,
+    buffer_usage: usize,
     stripe_accumulator: StripeAccumulator,
     total_bytes: usize,
 }
@@ -413,7 +507,7 @@ impl<S> RawHasher<S> {
     pub fn new(secret_buffer: SecretBuffer<S>) -> Self {
         Self {
             secret_buffer,
-            buffer_len: 0,
+            buffer_usage: 0,
             stripe_accumulator: StripeAccumulator::new(),
             total_bytes: 0,
         }
@@ -442,7 +536,7 @@ macro_rules! dispatch {
         where
             $($wheres)*
         {
-            // SAFETY: the caller has ensured we have the NEON feature
+            // Safety: The caller has ensured we have the NEON feature
             unsafe {
                 $fn_name(neon::Impl::new_unchecked(), $($arg_name),*)
             }
@@ -485,6 +579,7 @@ macro_rules! dispatch {
         #[cfg(all(target_arch = "aarch64", feature = "std"))]
         {
             if std::arch::is_aarch64_feature_detected!("neon") {
+                // Safety: We just ensured we have the NEON feature
                 return unsafe { do_neon($($arg_name),*) };
             }
         }
@@ -492,8 +587,10 @@ macro_rules! dispatch {
         #[cfg(all(target_arch = "x86_64", feature = "std"))]
         {
             if is_x86_feature_detected!("avx2") {
+                // Safety: We just ensured we have the AVX2 feature
                 return unsafe { do_avx2($($arg_name),*) };
             } else if is_x86_feature_detected!("sse2") {
+                // Safety: We just ensured we have the SSE2 feature
                 return unsafe { do_sse2($($arg_name),*) };
             }
         }
@@ -504,14 +601,14 @@ macro_rules! dispatch {
 
 impl<S> hash::Hasher for RawHasher<S>
 where
-    S: AsRef<[u8]>,
+    S: FixedBuffer,
 {
     #[inline]
     fn write(&mut self, input: &[u8]) {
         let this = self;
         dispatch! {
             fn write_impl<S>(this: &mut RawHasher<S>, input: &[u8])
-            [S: AsRef<[u8]>]
+            [S: FixedBuffer]
         }
     }
 
@@ -520,7 +617,7 @@ where
         let this = self;
         dispatch! {
             fn finish_impl<S>(this: &RawHasher<S>) -> u64
-            [S: AsRef<[u8]>]
+            [S: FixedBuffer]
         }
     }
 }
@@ -528,7 +625,7 @@ where
 #[inline(always)]
 fn write_impl<S>(vector: impl Vector, this: &mut RawHasher<S>, mut input: &[u8])
 where
-    S: AsRef<[u8]>,
+    S: FixedBuffer,
 {
     if input.is_empty() {
         return;
@@ -536,33 +633,33 @@ where
 
     let RawHasher {
         secret_buffer,
-        buffer_len,
+        buffer_usage,
         stripe_accumulator,
         total_bytes,
         ..
     } = this;
 
     let n_stripes = secret_buffer.n_stripes();
-
-    let SecretBuffer { secret, buffer, .. } = secret_buffer;
-    let secret = secret.as_ref();
-    let secret = unsafe { Secret::new_unchecked(secret) };
+    let (_, secret, buffer) = secret_buffer.parts_mut();
 
     *total_bytes += input.len();
 
-    debug_assert!(*buffer_len <= buffer.len());
-    unsafe { assert_unchecked(*buffer_len <= buffer.len()) };
+    // Safety: This is an invariant of the buffer.
+    unsafe {
+        debug_assert!(*buffer_usage <= buffer.len());
+        assert_unchecked(*buffer_usage <= buffer.len())
+    };
 
     // We have some previous data saved; try to fill it up and process it first
     if !buffer.is_empty() {
-        let remaining = &mut buffer[*buffer_len..];
+        let remaining = &mut buffer[*buffer_usage..];
         let n_to_copy = usize::min(remaining.len(), input.len());
 
         let (remaining_head, remaining_tail) = remaining.split_at_mut(n_to_copy);
         let (input_head, input_tail) = input.split_at(n_to_copy);
 
         remaining_head.copy_from_slice(input_head);
-        *buffer_len += n_to_copy;
+        *buffer_usage += n_to_copy;
 
         input = input_tail;
 
@@ -580,10 +677,10 @@ where
         for stripe in stripes {
             stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
         }
-        *buffer_len = 0;
+        *buffer_usage = 0;
     }
 
-    debug_assert!(*buffer_len == 0);
+    debug_assert!(*buffer_usage == 0);
 
     // Process as much of the input data in-place as possible,
     // while leaving at least one full stripe for the
@@ -608,44 +705,45 @@ where
 
     // Any remaining data has to be less than the buffer, and the
     // buffer is empty so just fill up the buffer.
-    debug_assert!(*buffer_len == 0);
+    debug_assert!(*buffer_usage == 0);
     debug_assert!(!input.is_empty());
-    debug_assert!(input.len() < 2 * STRIPE_BYTES);
-    debug_assert!(2 * STRIPE_BYTES < buffer.len());
 
-    // SAFETY: We have parsed all the full blocks of input except one
+    // Safety: We have parsed all the full blocks of input except one
     // and potentially a full block minus one byte. That amount of
     // data must be less than the buffer.
-    unsafe { buffer.get_unchecked_mut(..input.len()) }.copy_from_slice(input);
-    *buffer_len = input.len();
+    let buffer_head = unsafe {
+        debug_assert!(input.len() < 2 * STRIPE_BYTES);
+        debug_assert!(2 * STRIPE_BYTES < buffer.len());
+        buffer.get_unchecked_mut(..input.len())
+    };
+
+    buffer_head.copy_from_slice(input);
+    *buffer_usage = input.len();
 }
 
 #[inline(always)]
 fn finish_impl<S>(vector: impl Vector, this: &RawHasher<S>) -> u64
 where
-    S: AsRef<[u8]>,
+    S: FixedBuffer,
 {
     let RawHasher {
         ref secret_buffer,
-        buffer_len,
+        buffer_usage,
         mut stripe_accumulator,
         total_bytes,
     } = *this;
+
     let n_stripes = secret_buffer.n_stripes();
-    let SecretBuffer {
-        seed,
-        ref secret,
-        ref buffer,
-    } = *secret_buffer;
-    let secret = secret.as_ref();
-    let secret = unsafe { Secret::new_unchecked(secret) };
-    let buffer = buffer.as_ref();
+    let (seed, secret, buffer) = secret_buffer.parts();
 
-    unsafe { assert_unchecked(buffer_len <= buffer.len()) };
-
+    // Safety: This is an invariant of the buffer.
+    unsafe {
+        debug_assert!(buffer_usage <= buffer.len());
+        assert_unchecked(buffer_usage <= buffer.len())
+    };
 
     if total_bytes >= 241 {
-        let input = &buffer[..buffer_len];
+        let input = &buffer[..buffer_usage];
 
         // Ingest final stripes
         let (stripes, remainder) = stripes_with_tail(input);
@@ -677,7 +775,7 @@ where
             total_bytes,
         )
     } else {
-        impl_oneshot(&DEFAULT_SECRET2, seed, &buffer[..total_bytes])
+        impl_oneshot(DEFAULT_SECRET, seed, &buffer[..total_bytes])
     }
 }
 
@@ -691,20 +789,18 @@ fn derive_secret(seed: u64, secret: &mut [u8; 192]) {
         return;
     }
 
-    let base = secret.as_mut_ptr().cast::<u64>();
+    let (words, _) = secret.bp_as_chunks_mut();
+    let (pairs, _) = words.bp_as_chunks_mut();
 
-    for i in 0..12 {
-        let a_p = unsafe { base.add(i * 2) };
-        let b_p = unsafe { base.add(i * 2 + 1) };
+    for [a_p, b_p] in pairs {
+        let a = u64::from_ne_bytes(*a_p);
+        let b = u64::from_ne_bytes(*b_p);
 
-        let mut a = unsafe { a_p.read_unaligned() };
-        let mut b = unsafe { b_p.read_unaligned() };
+        let a = a.wrapping_add(seed);
+        let b = b.wrapping_sub(seed);
 
-        a = a.wrapping_add(seed);
-        b = b.wrapping_sub(seed);
-
-        unsafe { a_p.write_unaligned(a) };
-        unsafe { b_p.write_unaligned(b) };
+        *a_p = a.to_ne_bytes();
+        *b_p = b.to_ne_bytes();
     }
 }
 
@@ -764,15 +860,8 @@ fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 #[inline(always)]
 fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     assert_input_range!(4..=8, input.len());
-    let input_first = unsafe { input.as_ptr().cast::<u32>().read_unaligned() };
-    let input_last = unsafe {
-        input
-            .as_ptr()
-            .add(input.len())
-            .sub(mem::size_of::<u32>())
-            .cast::<u32>()
-            .read_unaligned()
-    };
+    let input_first = input.first_u32().unwrap();
+    let input_last = input.last_u32().unwrap();
 
     let modified_seed = seed ^ (seed.lower_half().swap_bytes().into_u64() << 32);
     let secret_words = secret.words_for_4_to_8();
@@ -795,15 +884,8 @@ fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 #[inline(always)]
 fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     assert_input_range!(9..=16, input.len());
-    let input_first = unsafe { input.as_ptr().cast::<u64>().read_unaligned() };
-    let input_last = unsafe {
-        input
-            .as_ptr()
-            .add(input.len())
-            .sub(mem::size_of::<u64>())
-            .cast::<u64>()
-            .read_unaligned()
-    };
+    let input_first = input.first_u64().unwrap();
+    let input_last = input.last_u64().unwrap();
 
     let secret_words = secret.words_for_9_to_16();
     let low = ((secret_words[0] ^ secret_words[1]).wrapping_add(seed)) ^ input_first;
@@ -858,34 +940,37 @@ fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
     let (head, _) = input.bp_as_chunks();
-    let last_chunk = input.last_chunk().unwrap();
     let mut head = head.iter();
 
-    let (ss, _) = secret.0.bp_as_chunks();
-    let (ss2, _) = secret.0[3..].bp_as_chunks();
-
-    let qq = head.by_ref().zip(ss);
-
-    for (chunk, s) in qq.take(8) {
-        acc = acc.wrapping_add(mix_step(chunk, s, seed));
+    let ss = secret.words_for_127_to_240_part1();
+    for (chunk, secret) in head.by_ref().zip(ss).take(8) {
+        acc = acc.wrapping_add(mix_step(chunk, secret, seed));
     }
 
     acc = avalanche(acc);
 
-    for (chunk, s) in head.zip(ss2) {
-        acc = acc.wrapping_add(mix_step(chunk, s, seed));
+    let ss = secret.words_for_127_to_240_part2();
+    for (chunk, secret) in head.zip(ss) {
+        acc = acc.wrapping_add(mix_step(chunk, secret, seed));
     }
 
-    let ss3 = &secret.0[119..].first_chunk().unwrap();
-    acc = acc.wrapping_add(mix_step(last_chunk, ss3, seed));
+    let last_chunk = input.last_chunk().unwrap();
+    let ss = secret.words_for_127_to_240_part3();
+    acc = acc.wrapping_add(mix_step(last_chunk, ss, seed));
 
     avalanche(acc)
 }
 
 #[inline]
 fn mix_step(data: &[u8; 16], secret: &[u8; 16], seed: u64) -> u64 {
-    let data_words = unsafe { data.as_ptr().cast::<[u64; 2]>().read_unaligned() };
-    let secret_words = unsafe { secret.as_ptr().cast::<[u64; 2]>().read_unaligned() };
+    #[inline]
+    fn to_u64s(bytes: &[u8; 16]) -> [u64; 2] {
+        let (pair, _) = bytes.bp_as_chunks::<8>();
+        [pair[0], pair[1]].map(u64::from_ne_bytes)
+    }
+
+    let data_words = to_u64s(data);
+    let secret_words = to_u64s(secret);
 
     let mul_result = {
         let a = (data_words[0] ^ secret_words[0].wrapping_add(seed)).into_u128();
@@ -922,10 +1007,8 @@ struct Algorithm<V>(V);
 impl<V: Vector> Algorithm<V> {
     #[inline]
     fn oneshot(&self, secret: &Secret, input: &[u8]) -> u64 {
+        assert_input_range!(241.., input.len());
         let mut acc = INITIAL_ACCUMULATORS;
-
-        //assert!(secret.len() >= SECRET_MINIMUM_LENGTH);
-        assert!(input.len() >= 241);
 
         let stripes_per_block = (secret.len() - 64) / 8;
         let block_size = 64 * stripes_per_block;
@@ -933,7 +1016,7 @@ impl<V: Vector> Algorithm<V> {
         let mut blocks = input.chunks_exact(block_size);
 
         let last_block = if blocks.remainder().is_empty() {
-            // SAFETY: We know that `input` is non-empty, which means
+            // Safety: We know that `input` is non-empty, which means
             // that either there will be a remainder or one or more
             // full blocks. That info isn't flowing to the optimizer,
             // so we use `unwrap_unchecked`.
@@ -966,7 +1049,7 @@ impl<V: Vector> Algorithm<V> {
 
     #[inline]
     fn round(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &Secret) {
-        let secret_end = secret.0.last_chunk().unwrap();
+        let secret_end = secret.last_stripe();
 
         self.round_accumulate(acc, stripes, secret);
         self.0.round_scramble(acc, secret_end);
@@ -994,7 +1077,7 @@ impl<V: Vector> Algorithm<V> {
         debug_assert!(!last_block.is_empty());
         self.last_round(&mut acc, last_block, last_stripe, secret);
 
-        self.final_merge(&mut acc, len.into_u64().wrapping_mul(PRIME64_1), secret, 11)
+        self.final_merge(&mut acc, len.into_u64().wrapping_mul(PRIME64_1), secret)
     }
 
     #[inline]
@@ -1016,22 +1099,14 @@ impl<V: Vector> Algorithm<V> {
             self.0.accumulate(acc, stripe, secret);
         }
 
-        unsafe { assert_unchecked(secret.len() >= SECRET_MINIMUM_LENGTH) };
-
-        let q = secret.0[secret.len() - 71..].first_chunk().unwrap();
-        self.0.accumulate(acc, last_stripe, q);
+        let last_stripe_secret = secret.last_stripe_secret_better_name();
+        self.0.accumulate(acc, last_stripe, last_stripe_secret);
     }
 
     #[inline]
-    fn final_merge(
-        &self,
-        acc: &mut [u64; 8],
-        init_value: u64,
-        secret: &Secret,
-        secret_offset: usize,
-    ) -> u64 {
-        let secrets = secret.0[secret_offset..].first_chunk::<64>().unwrap();
-        let (secrets, _) = secrets.bp_as_chunks();
+    fn final_merge(&self, acc: &mut [u64; 8], init_value: u64, secret: &Secret) -> u64 {
+        let secret = secret.final_secret();
+        let (secrets, _) = secret.bp_as_chunks();
         let mut result = init_value;
         for i in 0..4 {
             // 64-bit by 64-bit multiplication to 128-bit full result
@@ -1117,17 +1192,18 @@ mod scalar {
     // https://github.com/llvm/llvm-project/issues/98481
     #[cfg(target_arch = "aarch64")]
     fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
-        use core::arch::asm;
-
         let res;
 
+        // Safety: We only compute using our argument values and do
+        // not change memory.
         unsafe {
-            asm!(
+            core::arch::asm!(
                 "umaddl {res}, {lhs:w}, {rhs:w}, {acc}",
                 lhs = in(reg) lhs,
                 rhs = in(reg) rhs,
                 acc = in(reg) acc,
                 res = out(reg) res,
+                options(pure, nomem, nostack),
             )
         }
 
@@ -1146,6 +1222,7 @@ mod neon {
 
     impl Impl {
         /// # Safety
+        ///
         /// You must ensure that the CPU has the NEON feature
         #[inline]
         pub unsafe fn new_unchecked() -> Self {
@@ -1156,11 +1233,13 @@ mod neon {
     impl Vector for Impl {
         #[inline]
         fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+            // Safety: Type can only be constructed when NEON feature is present
             unsafe { round_scramble_neon(acc, secret_end) }
         }
 
         #[inline]
         fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+            // Safety: Type can only be constructed when NEON feature is present
             unsafe { accumulate_neon(acc, stripe, secret) }
         }
     }
@@ -1199,7 +1278,7 @@ mod neon {
     #[inline]
     unsafe fn accumulate_neon(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
         let (acc2, _) = acc.bp_as_chunks_mut::<4>();
-        for (i, acc) in acc2.into_iter().enumerate() {
+        for (i, acc) in acc2.iter_mut().enumerate() {
             unsafe {
                 let mut accv_0 = vld1q_u64(acc.as_ptr().cast::<u64>());
                 let mut accv_1 = vld1q_u64(acc.as_ptr().cast::<u64>().add(2));
@@ -1289,6 +1368,8 @@ mod neon {
     // operation.
     #[inline]
     pub fn xx_vmulq_u32_u64(input: uint64x2_t, og_factor: u32) -> uint64x2_t {
+        // Safety: We only compute using our argument values and do
+        // not change memory.
         unsafe {
             let input_as_u32 = vreinterpretq_u32_u64(input);
             let factor = vmov_n_u32(og_factor);
@@ -1303,11 +1384,24 @@ mod neon {
         }
     }
 
+    /// # Safety
+    ///
+    /// You must ensure that the CPU has the NEON feature
+    //
     // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5312-L5323
     #[inline]
     #[target_feature(enable = "neon")]
     unsafe fn reordering_barrier(r: uint64x2_t) {
-        unsafe { core::arch::asm!("/* {r:v} */", r = in(vreg) r) }
+        // Safety: The caller has ensured we have the NEON feature. We
+        // aren't doing anything with the argument, so we shouldn't be
+        // able to cause unsafety!
+        unsafe {
+            core::arch::asm!(
+                "/* {r:v} */",
+                r = in(vreg) r,
+                options(nomem, nostack),
+            )
+        }
     }
 }
 
@@ -1332,13 +1426,13 @@ mod avx2 {
     impl Vector for Impl {
         #[inline]
         fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-            // SAFETY: Type can only be constructed when AVX2 feature is present
+            // Safety: Type can only be constructed when AVX2 feature is present
             unsafe { round_scramble_avx2(acc, secret_end) }
         }
 
         #[inline]
         fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-            // SAFETY: Type can only be constructed when AVX2 feature is present
+            // Safety: Type can only be constructed when AVX2 feature is present
             unsafe { accumulate_avx2(acc, stripe, secret) }
         }
     }
@@ -1409,13 +1503,13 @@ mod sse2 {
     impl Vector for Impl {
         #[inline]
         fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-            // SAFETY: Type can only be constructed when SSE2 feature is present
+            // Safety: Type can only be constructed when SSE2 feature is present
             unsafe { round_scramble_sse2(acc, secret_end) }
         }
 
         #[inline]
         fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
-            // SAFETY: Type can only be constructed when SSE2 feature is present
+            // Safety: Type can only be constructed when SSE2 feature is present
             unsafe { accumulate_sse2(acc, stripe, secret) }
         }
     }
@@ -1516,6 +1610,38 @@ impl Halves for u128 {
     }
 }
 
+trait U8SliceExt {
+    fn first_u32(&self) -> Option<u32>;
+
+    fn last_u32(&self) -> Option<u32>;
+
+    fn first_u64(&self) -> Option<u64>;
+
+    fn last_u64(&self) -> Option<u64>;
+}
+
+impl U8SliceExt for [u8] {
+    #[inline]
+    fn first_u32(&self) -> Option<u32> {
+        self.first_chunk().copied().map(u32::from_ne_bytes)
+    }
+
+    #[inline]
+    fn last_u32(&self) -> Option<u32> {
+        self.last_chunk().copied().map(u32::from_ne_bytes)
+    }
+
+    #[inline]
+    fn first_u64(&self) -> Option<u64> {
+        self.first_chunk().copied().map(u64::from_ne_bytes)
+    }
+
+    #[inline]
+    fn last_u64(&self) -> Option<u64> {
+        self.last_chunk().copied().map(u64::from_ne_bytes)
+    }
+}
+
 trait SliceBackport<T> {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]);
 
@@ -1529,7 +1655,12 @@ impl<T> SliceBackport<T> for [T] {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]) {
         assert_ne!(N, 0);
         let len = self.len() / N;
+        // Safety: `(len / N) * N` has to be less-than-or-equal to `len`
         let (head, tail) = unsafe { self.split_at_unchecked(len * N) };
+        // Safety: (1) `head` points to valid data, (2) the alignment
+        // of an array and the individual type are the same, (3) the
+        // valid elements are less-than-or-equal to the original
+        // slice.
         let head = unsafe { slice::from_raw_parts(head.as_ptr().cast(), len) };
         (head, tail)
     }
@@ -1538,7 +1669,12 @@ impl<T> SliceBackport<T> for [T] {
     fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]) {
         assert_ne!(N, 0);
         let len = self.len() / N;
+        // Safety: `(len / N) * N` has to be less than or equal to `len`
         let (head, tail) = unsafe { self.split_at_mut_unchecked(len * N) };
+        // Safety: (1) `head` points to valid data, (2) the alignment
+        // of an array and the individual type are the same, (3) the
+        // valid elements are less-than-or-equal to the original
+        // slice.
         let head = unsafe { slice::from_raw_parts_mut(head.as_mut_ptr().cast(), len) };
         (head, tail)
     }
@@ -1546,7 +1682,12 @@ impl<T> SliceBackport<T> for [T] {
     fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]) {
         assert_ne!(N, 0);
         let len = self.len() / N;
+        // Safety: `(len / N) * N` has to be less than or equal to `len`
         let (head, tail) = unsafe { self.split_at_unchecked(self.len() - len * N) };
+        // Safety: (1) `tail` points to valid data, (2) the alignment
+        // of an array and the individual type are the same, (3) the
+        // valid elements are less-than-or-equal to the original
+        // slice.
         let tail = unsafe { slice::from_raw_parts(tail.as_ptr().cast(), len) };
         (head, tail)
     }
@@ -1557,6 +1698,11 @@ mod test {
     use std::{array, hash::Hasher};
 
     use super::*;
+
+    #[test]
+    fn default_secret_is_valid() {
+        assert!(DEFAULT_SECRET.is_valid())
+    }
 
     #[test]
     fn secret_buffer_default_is_valid() {
