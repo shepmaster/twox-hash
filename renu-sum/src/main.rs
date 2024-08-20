@@ -7,7 +7,7 @@ use std::{
     sync::mpsc::{self, SendError},
     thread,
 };
-use xx_renu::XxHash64;
+use xx_renu::XxHash3_64;
 
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 type Result<T, E = Error> = std::result::Result<T, E>;
@@ -53,9 +53,10 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[inline(never)]
 fn hash_one_file(config: &Config, path: &Path, buffer: &mut [u8]) -> Result<u64> {
     let mut file = File::open(path)?;
-    let mut hasher = XxHash64::with_seed(0);
+    let mut hasher = XxHash3_64::with_seed(0);
 
     let (tx_empty, rx_empty) = mpsc::channel();
     let (tx_filled, rx_filled) = mpsc::channel();
