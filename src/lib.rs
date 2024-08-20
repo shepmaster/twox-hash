@@ -25,7 +25,7 @@
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
 
-#![no_std]
+#![cfg_attr(not(feature = "std"), no_std)]
 
 extern crate alloc;
 
