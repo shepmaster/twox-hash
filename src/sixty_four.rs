@@ -13,6 +13,7 @@ pub const PRIME_4: u64 = 9_650_029_242_287_828_579;
 pub const PRIME_5: u64 = 2_870_177_450_012_600_261;
 
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Copy, Clone, PartialEq)]
 struct XxCore {
     v1: u64,
@@ -23,6 +24,7 @@ struct XxCore {
 
 /// Calculates the 64-bit hash.
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct XxHash64 {
     total_len: u64,
@@ -125,9 +127,11 @@ impl core::fmt::Debug for XxCore {
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
 #[repr(align(8))]
 #[cfg_attr(feature = "serialize", serde(transparent))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 struct AlignToU64<T>(T);
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
 struct Buffer {
     #[cfg_attr(feature = "serialize", serde(rename = "buffer"))]

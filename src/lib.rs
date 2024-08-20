@@ -72,6 +72,7 @@ pub type XxHash = XxHash64;
 /// `RandomXxHashBuilder64` instead.
 pub type RandomXxHashBuilder = RandomXxHashBuilder64;
 
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 /// An unaligned buffer with iteration support for `UnalignedItem`.
 struct UnalignedBuffer<'a, T> {
     buf: &'a [u8],
