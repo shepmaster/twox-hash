@@ -595,6 +595,8 @@ where
         // (which rounds down) and then multiplied back. That's not
         // evident to the compiler and `split_at` results in a
         // potential panic.
+        //
+        // https://github.com/llvm/llvm-project/issues/104827
         let (stripes, remainder) = unsafe { input.split_at_unchecked(full_block_point) };
         let (stripes, _) = stripes.bp_as_chunks();
 
