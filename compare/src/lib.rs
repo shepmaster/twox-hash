@@ -292,7 +292,7 @@ mod xxhash3_64 {
 
     fn oneshot_with_secret_impl(secret: &[u8], data: &[u8]) -> TestCaseResult {
         let native = c::XxHash3_64::oneshot_with_secret(secret, data);
-        let rust = rust::XxHash3_64::oneshot_with_secret(secret, data);
+        let rust = rust::XxHash3_64::oneshot_with_secret(secret, data).unwrap();
 
         prop_assert_eq!(native, rust);
         Ok(())
