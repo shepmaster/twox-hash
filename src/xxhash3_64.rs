@@ -549,7 +549,9 @@ macro_rules! dispatch {
         where
             $($wheres)*
         {
-            $fn_name(avx2::Impl::new_unchecked(), $($arg_name),*)
+            unsafe {
+                $fn_name(avx2::Impl::new_unchecked(), $($arg_name),*)
+            }
         }
 
         #[inline]
@@ -559,7 +561,9 @@ macro_rules! dispatch {
         where
             $($wheres)*
         {
-            $fn_name(sse2::Impl::new_unchecked(), $($arg_name),*)
+            unsafe {
+                $fn_name(sse2::Impl::new_unchecked(), $($arg_name),*)
+            }
         }
 
         // Now we invoke the right function
@@ -1451,6 +1455,7 @@ mod avx2 {
         let stripe = stripe.as_ptr().cast::<__m256i>();
         let secret = secret.as_ptr().cast::<__m256i>();
 
+        unsafe {
         for i in 0..2 {
             // [align-acc]: The C code aligns the accumulator to avoid
             // the unaligned load and store here, but that doesn't
@@ -1479,6 +1484,7 @@ mod avx2 {
 
             _mm256_storeu_si256(acc.add(i), acc_0);
         }
+    }
     }
 }
 
@@ -1528,6 +1534,7 @@ mod sse2 {
         let stripe = stripe.as_ptr().cast::<__m128i>();
         let secret = secret.as_ptr().cast::<__m128i>();
 
+        unsafe {
         for i in 0..4 {
             // See [align-acc].
             let mut acc_0 = _mm_loadu_si128(acc.add(i));
@@ -1554,6 +1561,7 @@ mod sse2 {
 
             _mm_storeu_si128(acc.add(i), acc_0);
         }
+    }
     }
 }
 
@@ -1645,7 +1653,6 @@ impl U8SliceExt for [u8] {
 trait SliceBackport<T> {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]);
 
-    #[cfg(target_arch = "aarch64")]
     fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]);
 
     fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]);
@@ -1665,7 +1672,6 @@ impl<T> SliceBackport<T> for [T] {
         (head, tail)
     }
 
-    #[cfg(target_arch = "aarch64")]
     fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]) {
         assert_ne!(N, 0);
         let len = self.len() / N;
