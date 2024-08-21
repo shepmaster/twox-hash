@@ -1248,13 +1248,22 @@ mod neon {
         }
     }
 
-    #[inline]
+    /// # Safety
+    ///
+    /// You must ensure that the CPU has the NEON feature
     #[target_feature(enable = "neon")]
+    #[inline]
     unsafe fn round_scramble_neon(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
-        unsafe {
-            let secret_base = secret_end.as_ptr().cast::<u64>();
-            let (acc, _) = acc.bp_as_chunks_mut::<2>();
-            for (i, acc) in acc.iter_mut().enumerate() {
+        let secret_base = secret_end.as_ptr().cast::<u64>();
+        let (acc, _) = acc.bp_as_chunks_mut::<2>();
+
+        for (i, acc) in acc.iter_mut().enumerate() {
+            // Safety: The caller has ensured we have the NEON
+            // feature. We load from and store to references so we
+            // know that data is valid. We use unaligned loads /
+            // stores. Data manipulation is otherwise done on
+            // intermediate values.
+            unsafe {
                 let mut accv = vld1q_u64(acc.as_ptr());
                 let secret = vld1q_u64(secret_base.add(i * 2));
 
@@ -1275,14 +1284,23 @@ mod neon {
         }
     }
 
-    // We process 4x u64 at a time as that allows us to completely
-    // fill a `uint64x2_t` with useful values when performing the
-    // multiplication.
+    /// We process 4x u64 at a time as that allows us to completely
+    /// fill a `uint64x2_t` with useful values when performing the
+    /// multiplication.
+    ///
+    /// # Safety
+    ///
+    /// You must ensure that the CPU has the NEON feature
     #[target_feature(enable = "neon")]
     #[inline]
     unsafe fn accumulate_neon(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
         let (acc2, _) = acc.bp_as_chunks_mut::<4>();
         for (i, acc) in acc2.iter_mut().enumerate() {
+            // Safety: The caller has ensured we have the NEON
+            // feature. We load from and store to references so we
+            // know that data is valid. We use unaligned loads /
+            // stores. Data manipulation is otherwise done on
+            // intermediate values.
             unsafe {
                 let mut accv_0 = vld1q_u64(acc.as_ptr().cast::<u64>());
                 let mut accv_1 = vld1q_u64(acc.as_ptr().cast::<u64>().add(2));
