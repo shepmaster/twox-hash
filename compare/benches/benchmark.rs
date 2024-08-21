@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, RngCore, SeedableRng};
-use std::{hash::Hasher, hint::black_box, iter};
+use std::{hash::Hasher, iter};
 
 use xx_hash_sys as c;
 use xx_renu as rust;
@@ -20,42 +20,26 @@ fn tiny_data(c: &mut Criterion) {
         g.throughput(Throughput::Bytes(data.len() as _));
 
         let id = format!("impl-c/fn-oneshot/size-{size:02}");
-        g.bench_function(id, |b| {
-            b.iter(|| {
-                let hash = c::XxHash64::oneshot(seed, data);
-                black_box(hash);
-            })
-        });
+        g.bench_function(id, |b| b.iter(|| c::XxHash64::oneshot(seed, data)));
 
         let id = format!("impl-c/fn-streaming/size-{size:02}");
         g.bench_function(id, |b| {
             b.iter(|| {
-                let hash = {
-                    let mut hasher = c::XxHash64::with_seed(seed);
-                    hasher.write(data);
-                    hasher.finish()
-                };
-                black_box(hash);
+                let mut hasher = c::XxHash64::with_seed(seed);
+                hasher.write(data);
+                hasher.finish()
             })
         });
 
         let id = format!("impl-rust/fn-oneshot/size-{size:02}");
-        g.bench_function(id, |b| {
-            b.iter(|| {
-                let hash = rust::XxHash64::oneshot(seed, data);
-                black_box(hash);
-            })
-        });
+        g.bench_function(id, |b| b.iter(|| rust::XxHash64::oneshot(seed, data)));
 
         let id = format!("impl-rust/fn-streaming/size-{size:02}");
         g.bench_function(id, |b| {
             b.iter(|| {
-                let hash = {
-                    let mut hasher = rust::XxHash64::with_seed(seed);
-                    hasher.write(data);
-                    hasher.finish()
-                };
-                black_box(hash);
+                let mut hasher = rust::XxHash64::with_seed(seed);
+                hasher.write(data);
+                hasher.finish()
             })
         });
     }
@@ -72,20 +56,10 @@ fn oneshot(c: &mut Criterion) {
         g.throughput(Throughput::Bytes(data.len() as _));
 
         let id = format!("impl-c/size-{size:07}");
-        g.bench_function(id, |b| {
-            b.iter(|| {
-                let hash = c::XxHash64::oneshot(seed, data);
-                black_box(hash);
-            })
-        });
+        g.bench_function(id, |b| b.iter(|| c::XxHash64::oneshot(seed, data)));
 
         let id = format!("impl-rust/size-{size:07}");
-        g.bench_function(id, |b| {
-            b.iter(|| {
-                let hash = rust::XxHash64::oneshot(seed, data);
-                black_box(hash);
-            })
-        });
+        g.bench_function(id, |b| b.iter(|| rust::XxHash64::oneshot(seed, data)));
     }
 
     g.finish();
@@ -106,8 +80,7 @@ fn streaming(c: &mut Criterion) {
                     for chunk in &chunks {
                         hasher.write(chunk);
                     }
-                    let hash = hasher.finish();
-                    black_box(hash);
+                    hasher.finish()
                 })
             });
 
@@ -118,8 +91,7 @@ fn streaming(c: &mut Criterion) {
                     for chunk in &chunks {
                         hasher.write(chunk);
                     }
-                    let hash = hasher.finish();
-                    black_box(hash);
+                    hasher.finish()
                 })
             });
         }
@@ -187,18 +159,12 @@ mod xxhash3_64 {
 
             let id = format!("impl-c/fn-oneshot/size-{size:03}");
             g.bench_function(id, |b| {
-                b.iter(|| {
-                    let hash = c::XxHash3_64::oneshot_with_seed(seed, data);
-                    black_box(hash);
-                })
+                b.iter(|| c::XxHash3_64::oneshot_with_seed(seed, data))
             });
 
             let id = format!("impl-rust/fn-oneshot/size-{size:03}");
             g.bench_function(id, |b| {
-                b.iter(|| {
-                    let hash = rust::XxHash3_64::oneshot_with_seed(seed, data);
-                    black_box(hash);
-                })
+                b.iter(|| rust::XxHash3_64::oneshot_with_seed(seed, data))
             });
         }
 
@@ -268,8 +234,7 @@ mod xxhash3_64 {
                         for chunk in &chunks {
                             hasher.write(chunk);
                         }
-                        let hash = hasher.finish();
-                        black_box(hash);
+                        hasher.finish()
                     })
                 });
 
@@ -280,8 +245,7 @@ mod xxhash3_64 {
                         for chunk in &chunks {
                             hasher.write(chunk);
                         }
-                        let hash = hasher.finish();
-                        black_box(hash);
+                        hasher.finish()
                     })
                 });
 
@@ -294,8 +258,7 @@ mod xxhash3_64 {
                             for chunk in &chunks {
                                 hasher.write(chunk);
                             }
-                            let hash = hasher.finish();
-                            black_box(hash);
+                            hasher.finish()
                         })
                     });
                 }
@@ -309,8 +272,7 @@ mod xxhash3_64 {
                             for chunk in &chunks {
                                 hasher.write(chunk);
                             }
-                            let hash = hasher.finish();
-                            black_box(hash);
+                            hasher.finish()
                         })
                     });
 
@@ -321,8 +283,7 @@ mod xxhash3_64 {
                             for chunk in &chunks {
                                 hasher.write(chunk);
                             }
-                            let hash = hasher.finish();
-                            black_box(hash);
+                            hasher.finish()
                         })
                     });
                 }
@@ -334,8 +295,7 @@ mod xxhash3_64 {
                         for chunk in &chunks {
                             hasher.write(chunk);
                         }
-                        let hash = hasher.finish();
-                        black_box(hash);
+                        hasher.finish()
                     })
                 });
             }

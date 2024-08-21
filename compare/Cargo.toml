@@ -11,7 +11,7 @@ name = "benchmark"
 harness = false
 
 [dependencies]
-criterion = "0.5.1"
+criterion = { version = "0.5.1", features = ["real_blackbox"] }
 proptest = "1.5.0"
 rand = "0.8.5"
 twox-hash = "1.6.3"
