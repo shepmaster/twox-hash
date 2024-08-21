@@ -1,5 +1,9 @@
 #![allow(missing_docs)]
-#![deny(unsafe_op_in_unsafe_fn)]
+#![deny(
+    clippy::missing_safety_doc,
+    clippy::undocumented_unsafe_blocks,
+    unsafe_op_in_unsafe_fn
+)]
 
 use core::{hash, hint::assert_unchecked, mem, slice};
 
@@ -129,11 +133,20 @@ impl Secret {
         self.0[119..].first_chunk().unwrap()
     }
 
+    /// # Safety
+    ///
+    /// `i` must be less than the number of stripes in the secret
+    /// ([`Self::n_stripes`][]).
     #[inline]
-    fn stripe(&self, i: usize) -> &[u8; 64] {
+    unsafe fn stripe(&self, i: usize) -> &[u8; 64] {
         self.reassert_preconditions();
 
-        unsafe { &*self.0.get_unchecked(i * 8..).as_ptr().cast() }
+        // Safety: The caller has ensured that `i` is
+        // in-bounds. `&[u8]` and `&[u8; 64]` have the same alignment.
+        unsafe {
+            debug_assert!(i < self.n_stripes());
+            &*self.0.get_unchecked(i * 8..).as_ptr().cast()
+        }
     }
 
     #[inline]
@@ -160,6 +173,12 @@ impl Secret {
     #[inline]
     fn len(&self) -> usize {
         self.0.len()
+    }
+
+    #[inline]
+    fn n_stripes(&self) -> usize {
+        // stripes_per_block
+        (self.len() - 64) / 8
     }
 
     #[inline(always)]
@@ -272,10 +291,7 @@ where
 
     #[inline]
     fn n_stripes(&self) -> usize {
-        let secret = self.secret.as_ref();
-
-        // stripes_per_block
-        (secret.len() - 64) / 8
+        Self::secret(&self.secret).n_stripes()
     }
 
     /// Returns the secret and buffer values.
@@ -285,22 +301,19 @@ where
 
     #[inline]
     fn parts(&self) -> (u64, &Secret, &Buffer) {
-        let secret = self.secret.as_ref();
-        // Safety: We established the length at construction and the
-        // length is not allowed to change.
-        let secret = unsafe { Secret::new_unchecked(secret) };
-
-        (self.seed, secret, &self.buffer)
+        (self.seed, Self::secret(&self.secret), &self.buffer)
     }
 
     #[inline]
     fn parts_mut(&mut self) -> (u64, &Secret, &mut Buffer) {
-        let secret = self.secret.as_ref();
+        (self.seed, Self::secret(&self.secret), &mut self.buffer)
+    }
+
+    fn secret(secret: &S) -> &Secret {
+        let secret = secret.as_ref();
         // Safety: We established the length at construction and the
         // length is not allowed to change.
-        let secret = unsafe { Secret::new_unchecked(secret) };
-
-        (self.seed, secret, &mut self.buffer)
+        unsafe { Secret::new_unchecked(secret) }
     }
 }
 
@@ -459,9 +472,9 @@ impl StripeAccumulator {
     }
 
     #[inline]
-    fn process_stripe<V: Vector>(
+    fn process_stripe(
         &mut self,
-        vector: V,
+        vector: impl Vector,
         stripe: &[u8; 64],
         n_stripes: usize,
         secret: &Secret,
@@ -472,17 +485,20 @@ impl StripeAccumulator {
             ..
         } = self;
 
-        let secret_end = secret.last_stripe();
+        // For each stripe
 
-        // each stripe
-        let secret = secret.stripe(*current_stripe);
-        vector.accumulate(accumulator, stripe, secret);
+        // Safety: The number of stripes is determined by the
+        // block size, which is determined by the secret size.
+        let secret_stripe = unsafe { secret.stripe(*current_stripe) };
+        vector.accumulate(accumulator, stripe, secret_stripe);
 
         *current_stripe += 1;
 
+        // After a full block's worth
         if *current_stripe == n_stripes {
-            // after block's worth
+            let secret_end = secret.last_stripe();
             vector.round_scramble(accumulator, secret_end);
+
             *current_stripe = 0;
         }
     }
@@ -528,6 +544,7 @@ macro_rules! dispatch {
         }
 
         /// # Safety
+        ///
         /// You must ensure that the CPU has the NEON feature
         #[inline]
         #[target_feature(enable = "neon")]
@@ -542,6 +559,9 @@ macro_rules! dispatch {
             }
         }
 
+        /// # Safety
+        ///
+        /// You must ensure that the CPU has the AVX2 feature
         #[inline]
         #[target_feature(enable = "avx2")]
         #[cfg(target_arch = "x86_64")]
@@ -549,11 +569,15 @@ macro_rules! dispatch {
         where
             $($wheres)*
         {
+            // Safety: The caller has ensured we have the AVX2 feature
             unsafe {
                 $fn_name(avx2::Impl::new_unchecked(), $($arg_name),*)
             }
         }
 
+        /// # Safety
+        ///
+        /// You must ensure that the CPU has the SSE2 feature
         #[inline]
         #[target_feature(enable = "sse2")]
         #[cfg(target_arch = "x86_64")]
@@ -561,6 +585,7 @@ macro_rules! dispatch {
         where
             $($wheres)*
         {
+            // Safety: The caller has ensured we have the SSE2 feature
             unsafe {
                 $fn_name(sse2::Impl::new_unchecked(), $($arg_name),*)
             }
@@ -1008,7 +1033,10 @@ fn oneshot_impl(vector: impl Vector, secret: &Secret, input: &[u8]) -> u64 {
 
 struct Algorithm<V>(V);
 
-impl<V: Vector> Algorithm<V> {
+impl<V> Algorithm<V>
+where
+    V: Vector,
+{
     #[inline]
     fn oneshot(&self, secret: &Secret, input: &[u8]) -> u64 {
         assert_input_range!(241.., input.len());
@@ -1061,8 +1089,11 @@ impl<V: Vector> Algorithm<V> {
 
     #[inline]
     fn round_accumulate(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &Secret) {
-        // TODO: [unify]
-        let secrets = (0..stripes.len()).map(|i| secret.stripe(i));
+        let secrets = (0..stripes.len()).map(|i| {
+            // Safety: The number of stripes is determined by the
+            // block size, which is determined by the secret size.
+            unsafe { secret.stripe(i) }
+        });
 
         for (stripe, secret) in stripes.iter().zip(secrets) {
             self.0.accumulate(acc, stripe, secret);
@@ -1096,8 +1127,11 @@ impl<V: Vector> Algorithm<V> {
         // except for the last stripe (whether it is full or not)
         let (stripes, _) = stripes_with_tail(block);
 
-        // TODO: [unify]
-        let secrets = (0..stripes.len()).map(|i| secret.stripe(i));
+        let secrets = (0..stripes.len()).map(|i| {
+            // Safety: The number of stripes is determined by the
+            // block size, which is determined by the secret size.
+            unsafe { secret.stripe(i) }
+        });
 
         for (stripe, secret) in stripes.iter().zip(secrets) {
             self.0.accumulate(acc, stripe, secret);
@@ -1438,6 +1472,7 @@ mod avx2 {
 
     impl Impl {
         /// # Safety
+        ///
         /// You must ensure that the CPU has the AVX2 feature
         #[inline]
         pub unsafe fn new_unchecked() -> Impl {
@@ -1459,6 +1494,9 @@ mod avx2 {
         }
     }
 
+    /// # Safety
+    ///
+    /// You must ensure that the CPU has the AVX2 feature
     #[inline]
     #[target_feature(enable = "avx2")]
     unsafe fn round_scramble_avx2(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
@@ -1466,6 +1504,9 @@ mod avx2 {
         scalar::Impl.round_scramble(acc, secret_end)
     }
 
+    /// # Safety
+    ///
+    /// You must ensure that the CPU has the AVX2 feature
     #[inline]
     #[target_feature(enable = "avx2")]
     unsafe fn accumulate_avx2(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
@@ -1473,6 +1514,11 @@ mod avx2 {
         let stripe = stripe.as_ptr().cast::<__m256i>();
         let secret = secret.as_ptr().cast::<__m256i>();
 
+        // Safety: The caller has ensured we have the AVX2
+        // feature. We load from and store to references so we
+        // know that data is valid. We use unaligned loads /
+        // stores. Data manipulation is otherwise done on
+        // intermediate values.
         unsafe {
             for i in 0..2 {
                 // [align-acc]: The C code aligns the accumulator to avoid
@@ -1517,6 +1563,7 @@ mod sse2 {
 
     impl Impl {
         /// # Safety
+        ///
         /// You must ensure that the CPU has the SSE2 feature
         #[inline]
         pub unsafe fn new_unchecked() -> Impl {
@@ -1538,6 +1585,9 @@ mod sse2 {
         }
     }
 
+    /// # Safety
+    ///
+    /// You must ensure that the CPU has the SSE2 feature
     #[inline]
     #[target_feature(enable = "sse2")]
     unsafe fn round_scramble_sse2(acc: &mut [u64; 8], secret_end: &[u8; 64]) {
@@ -1545,6 +1595,9 @@ mod sse2 {
         scalar::Impl.round_scramble(acc, secret_end)
     }
 
+    /// # Safety
+    ///
+    /// You must ensure that the CPU has the SSE2 feature
     #[inline]
     #[target_feature(enable = "sse2")]
     unsafe fn accumulate_sse2(acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
@@ -1552,6 +1605,11 @@ mod sse2 {
         let stripe = stripe.as_ptr().cast::<__m128i>();
         let secret = secret.as_ptr().cast::<__m128i>();
 
+        // Safety: The caller has ensured we have the SSE2
+        // feature. We load from and store to references so we
+        // know that data is valid. We use unaligned loads /
+        // stores. Data manipulation is otherwise done on
+        // intermediate values.
         unsafe {
             for i in 0..4 {
                 // See [align-acc].
