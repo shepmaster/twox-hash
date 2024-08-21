@@ -4,6 +4,7 @@ pub mod sixty_four {
     use rand::{self, Rng};
 
     #[derive(Clone)]
+    #[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
     /// Constructs a randomized seed and reuses it for multiple hasher instances.
     pub struct RandomXxHashBuilder64(u64);
 
@@ -34,6 +35,7 @@ pub mod thirty_two {
     use rand::{self, Rng};
 
     #[derive(Clone)]
+    #[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
     /// Constructs a randomized seed and reuses it for multiple hasher instances. See the usage warning on `XxHash32`.
     pub struct RandomXxHashBuilder32(u32);
 
@@ -64,6 +66,7 @@ pub mod xxh3 {
     use rand::{self, Rng};
 
     #[derive(Clone)]
+    #[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
     /// Constructs a randomized seed and reuses it for multiple hasher instances.
     pub struct RandomHashBuilder64(u64);
 
@@ -88,6 +91,7 @@ pub mod xxh3 {
     }
 
     #[derive(Clone)]
+    #[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
     /// Constructs a randomized seed and reuses it for multiple hasher instances.
     pub struct RandomHashBuilder128(u64);
 

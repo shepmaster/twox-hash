@@ -116,6 +116,7 @@ pub fn hash128_with_secret(data: &[u8], secret: &[u8]) -> u128 {
 
 /// Calculates the 64-bit hash.
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Clone, Default)]
 pub struct Hash64(State);
 
@@ -143,6 +144,7 @@ impl Hasher for Hash64 {
 
 /// Calculates the 128-bit hash.
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Clone, Default)]
 pub struct Hash128(State);
 
@@ -203,6 +205,7 @@ const SECRET: Secret = Secret([
 
 #[repr(align(64))]
 #[derive(Clone)]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 struct Secret([u8; SECRET_DEFAULT_SIZE]);
 
 const_assert_eq!(mem::size_of::<Secret>() % 16, 0);
@@ -243,6 +246,7 @@ cfg_if! {
             }
         }
 
+        #[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
         struct SecretVisitor;
 
         impl<'de> serde::de::Visitor<'de> for SecretVisitor {
@@ -288,16 +292,19 @@ cfg_if! {
     if #[cfg(target_feature = "avx2")] {
         #[repr(align(32))]
         #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+        #[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
         #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     } else if #[cfg(target_feature = "sse2")] {
         #[repr(align(16))]
         #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+        #[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
         #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     } else {
         #[repr(align(8))]
         #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+        #[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
         #[derive(Clone)]
         struct Acc([u64; ACC_NB]);
     }
@@ -848,6 +855,7 @@ const_assert_eq!(INTERNAL_BUFFER_SIZE % STRIPE_LEN, 0);
 
 #[repr(align(64))]
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Clone)]
 struct State {
     acc: Acc,
@@ -859,6 +867,7 @@ struct State {
 }
 
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Clone)]
 enum With {
     Default(Secret),

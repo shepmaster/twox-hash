@@ -13,6 +13,7 @@ pub const PRIME_4: u32 = 668_265_263;
 pub const PRIME_5: u32 = 374_761_393;
 
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Copy, Clone, PartialEq)]
 struct XxCore {
     v1: u32,
@@ -28,6 +29,7 @@ struct XxCore {
 /// 32-bit number, leaving the upper bits as 0. This means it is
 /// unlikely to be correct to use this in places like a `HashMap`.
 #[cfg_attr(feature = "serialize", derive(Deserialize, Serialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct XxHash32 {
     total_len: u64,
@@ -115,9 +117,11 @@ impl core::fmt::Debug for XxCore {
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
 #[repr(align(4))]
 #[cfg_attr(feature = "serialize", serde(transparent))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 struct AlignToU32<T>(T);
 
 #[cfg_attr(feature = "serialize", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "mem_dbg", derive(mem_dbg::MemSize, mem_dbg::MemDbg))]
 #[derive(Debug, Copy, Clone, Default, PartialEq)]
 struct Buffer {
     #[cfg_attr(feature = "serialize", serde(rename = "buffer"))]
