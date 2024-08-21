@@ -30,10 +30,12 @@ extern "C" {
 pub struct XxHash32(*mut XXH32_state_t);
 
 impl XxHash32 {
+    #[inline]
     pub fn oneshot(seed: u32, data: &[u8]) -> u32 {
         unsafe { XXH32(data.as_ptr().cast(), data.len(), seed) }
     }
 
+    #[inline]
     pub fn with_seed(seed: u32) -> Self {
         let state = unsafe {
             let state = XXH32_createState();
@@ -44,11 +46,13 @@ impl XxHash32 {
         Self(state)
     }
 
+    #[inline]
     pub fn write(&mut self, data: &[u8]) {
         let retval = unsafe { XXH32_update(self.0, data.as_ptr().cast(), data.len()) };
         assert_eq!(retval, XXH_OK);
     }
 
+    #[inline]
     pub fn finish(&mut self) -> u32 {
         unsafe { XXH32_digest(self.0) }
     }
@@ -88,10 +92,12 @@ extern "C" {
 pub struct XxHash64(*mut XXH64_state_t);
 
 impl XxHash64 {
+    #[inline]
     pub fn oneshot(seed: u64, data: &[u8]) -> u64 {
         unsafe { XXH64(data.as_ptr().cast(), data.len(), seed) }
     }
 
+    #[inline]
     pub fn with_seed(seed: u64) -> Self {
         let state = unsafe {
             let state = XXH64_createState();
@@ -102,11 +108,13 @@ impl XxHash64 {
         Self(state)
     }
 
+    #[inline]
     pub fn write(&mut self, data: &[u8]) {
         let retval = unsafe { XXH64_update(self.0, data.as_ptr().cast(), data.len()) };
         assert_eq!(retval, XXH_OK);
     }
 
+    #[inline]
     pub fn finish(&mut self) -> u64 {
         unsafe { XXH64_digest(self.0) }
     }
@@ -169,14 +177,17 @@ macro_rules! xxh3_64b_template {
             pub struct XxHash3_64(*mut crate::XXH3_state_t);
 
             impl XxHash3_64 {
+                #[inline]
                 pub fn oneshot(data: &[u8]) -> u64 {
                     unsafe { [<$prefix _64bits>](data.as_ptr().cast(), data.len()) }
                 }
 
+                #[inline]
                 pub fn oneshot_with_seed(seed: u64, data: &[u8]) -> u64 {
                     unsafe { [<$prefix _64bits_withSeed>](data.as_ptr().cast(), data.len(), seed) }
                 }
 
+                #[inline]
                 pub fn oneshot_with_secret(secret: &[u8], data: &[u8]) -> u64 {
                     unsafe {
                         [<$prefix _64bits_withSecret>](
@@ -188,6 +199,7 @@ macro_rules! xxh3_64b_template {
                     }
                 }
 
+                #[inline]
                 pub fn new() -> Self {
                     let state = unsafe {
                         let state = [<$prefix _createState>]();
@@ -198,6 +210,7 @@ macro_rules! xxh3_64b_template {
                     Self(state)
                 }
 
+                #[inline]
                 pub fn with_seed(seed: u64) -> Self {
                     let state = unsafe {
                         let state = [<$prefix _createState>]();
@@ -208,12 +221,14 @@ macro_rules! xxh3_64b_template {
                     Self(state)
                 }
 
+                #[inline]
                 pub fn write(&mut self, data: &[u8]) {
                     let retval =
                     unsafe { [<$prefix _64bits_update>](self.0, data.as_ptr().cast(), data.len()) };
                     assert_eq!(retval, crate::XXH_OK);
                 }
 
+                #[inline]
                 pub fn finish(&mut self) -> u64 {
                     unsafe { [<$prefix _64bits_digest>](self.0) }
                 }
