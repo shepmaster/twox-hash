@@ -97,7 +97,7 @@ pub mod xxhash3_64;
 
 #[cfg(feature = "xxhash3_64")]
 #[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_64")))]
-pub use xxhash3_64::XxHash3_64;
+pub use xxhash3_64::Hasher as XxHash3_64;
 
 trait IntoU32 {
     fn into_u32(self) -> u32;

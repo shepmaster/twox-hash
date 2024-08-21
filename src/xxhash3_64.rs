@@ -66,13 +66,13 @@ const DEFAULT_SECRET_RAW: DefaultSecret = [
 const DEFAULT_SECRET: &Secret = unsafe { Secret::new_unchecked(&DEFAULT_SECRET_RAW) };
 
 /// Calculates the 64-bit hash.
-pub struct XxHash3_64 {
+pub struct Hasher {
     #[cfg(feature = "alloc")]
     inner: with_alloc::AllocRawHasher,
     _private: (),
 }
 
-impl XxHash3_64 {
+impl Hasher {
     /// Hash all data at once. If you can use this function, you may
     /// see noticable speed gains for certain types of input.
     #[must_use]
@@ -253,7 +253,7 @@ mod with_alloc {
 
     use super::*;
 
-    impl XxHash3_64 {
+    impl Hasher {
         /// Constructs the hasher using the default seed and secret values.
         pub fn new() -> Self {
             Self {
@@ -288,13 +288,13 @@ mod with_alloc {
         }
     }
 
-    impl Default for XxHash3_64 {
+    impl Default for Hasher {
         fn default() -> Self {
             Self::new()
         }
     }
 
-    impl hash::Hasher for XxHash3_64 {
+    impl hash::Hasher for Hasher {
         #[inline]
         fn write(&mut self, input: &[u8]) {
             self.inner.write(input)
@@ -491,7 +491,7 @@ impl StripeAccumulator {
 /// A lower-level interface for computing a hash from streaming data.
 ///
 /// The algorithm requires a secret which can be a reasonably large
-/// piece of data. [`XxHash3_64`][] makes one concrete implementation
+/// piece of data. [`Hasher`][] makes one concrete implementation
 /// decision that uses dynamic memory allocation, but specialized
 /// usages may desire more flexibility. This type, combined with
 /// [`SecretBuffer`][], offer that flexibility at the cost of a
@@ -1303,7 +1303,7 @@ impl<T> SliceBackport<T> for [T] {
 
 #[cfg(test)]
 mod test {
-    use std::{array, hash::Hasher};
+    use std::{array, hash::Hasher as _};
 
     use super::*;
 
@@ -1340,7 +1340,7 @@ mod test {
     }
 
     fn hash_byte_by_byte(input: &[u8]) -> u64 {
-        let mut hasher = XxHash3_64::new();
+        let mut hasher = Hasher::new();
         for byte in input.chunks(1) {
             hasher.write(byte)
         }
@@ -1348,7 +1348,7 @@ mod test {
     }
 
     fn hash_byte_by_byte_with_seed(seed: u64, input: &[u8]) -> u64 {
-        let mut hasher = XxHash3_64::with_seed(seed);
+        let mut hasher = Hasher::with_seed(seed);
         for byte in input.chunks(1) {
             hasher.write(byte)
         }
@@ -1357,7 +1357,7 @@ mod test {
 
     #[test]
     fn oneshot_empty() {
-        let hash = XxHash3_64::oneshot(&[]);
+        let hash = Hasher::oneshot(&[]);
         assert_eq!(hash, 0x2d06_8005_38d3_94c2);
     }
 
@@ -1369,7 +1369,7 @@ mod test {
 
     #[test]
     fn oneshot_1_to_3_bytes() {
-        test_1_to_3_bytes(XxHash3_64::oneshot)
+        test_1_to_3_bytes(Hasher::oneshot)
     }
 
     #[test]
@@ -1395,7 +1395,7 @@ mod test {
 
     #[test]
     fn oneshot_4_to_8_bytes() {
-        test_4_to_8_bytes(XxHash3_64::oneshot)
+        test_4_to_8_bytes(Hasher::oneshot)
     }
 
     #[test]
@@ -1423,7 +1423,7 @@ mod test {
 
     #[test]
     fn oneshot_9_to_16_bytes() {
-        test_9_to_16_bytes(XxHash3_64::oneshot)
+        test_9_to_16_bytes(Hasher::oneshot)
     }
 
     #[test]
@@ -1454,7 +1454,7 @@ mod test {
 
     #[test]
     fn oneshot_17_to_128_bytes() {
-        test_17_to_128_bytes(XxHash3_64::oneshot)
+        test_17_to_128_bytes(Hasher::oneshot)
     }
 
     #[test]
@@ -1496,7 +1496,7 @@ mod test {
 
     #[test]
     fn oneshot_129_to_240_bytes() {
-        test_129_to_240_bytes(XxHash3_64::oneshot)
+        test_129_to_240_bytes(Hasher::oneshot)
     }
 
     #[test]
@@ -1530,7 +1530,7 @@ mod test {
 
     #[test]
     fn oneshot_241_plus_bytes() {
-        test_241_plus_bytes(XxHash3_64::oneshot)
+        test_241_plus_bytes(Hasher::oneshot)
     }
 
     #[test]
@@ -1559,7 +1559,7 @@ mod test {
 
     #[test]
     fn oneshot_with_seed() {
-        test_with_seed(XxHash3_64::oneshot_with_seed)
+        test_with_seed(Hasher::oneshot_with_seed)
     }
 
     #[test]

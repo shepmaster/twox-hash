@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use rand::{Rng, RngCore, SeedableRng};
-use std::{hash::Hasher, iter};
+use std::{hash::Hasher as _, iter};
 
 use xx_hash_sys as c;
 use xx_renu as rust;
