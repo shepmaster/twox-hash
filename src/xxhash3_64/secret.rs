@@ -9,14 +9,14 @@ pub struct Secret([u8]);
 
 impl Secret {
     #[inline]
-    pub fn new(bytes: &[u8]) -> Result<&Self, ()> {
+    pub fn new(bytes: &[u8]) -> Result<&Self, Error> {
         // Safety: We check for validity before returning.
         unsafe {
             let this = Self::new_unchecked(bytes);
             if this.is_valid() {
                 Ok(this)
             } else {
-                Err(()) // TODO error
+                Err(Error(()))
             }
         }
     }
@@ -156,5 +156,19 @@ impl Secret {
     #[inline(always)]
     pub fn is_valid(&self) -> bool {
         self.0.len() >= SECRET_MINIMUM_LENGTH
+    }
+}
+
+#[derive(Debug)]
+pub struct Error(());
+
+impl core::error::Error for Error {}
+
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "The secret must have at least {SECRET_MINIMUM_LENGTH} bytes"
+        )
     }
 }

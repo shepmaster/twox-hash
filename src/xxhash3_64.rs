@@ -41,7 +41,10 @@ const PRIME_MX2: u64 = 0x9FB21C651E98DF25;
 
 const DEFAULT_SEED: u64 = 0;
 
-const DEFAULT_SECRET_RAW: [u8; 192] = [
+pub const DEFAULT_SECRET_LENGTH: usize = 192;
+type DefaultSecret = [u8; DEFAULT_SECRET_LENGTH];
+
+const DEFAULT_SECRET_RAW: DefaultSecret = [
     0xb8, 0xfe, 0x6c, 0x39, 0x23, 0xa4, 0x4b, 0xbe, 0x7c, 0x01, 0x81, 0x2c, 0xf7, 0x21, 0xad, 0x1c,
     0xde, 0xd4, 0x6d, 0xe9, 0x83, 0x90, 0x97, 0xdb, 0x72, 0x40, 0xa4, 0xa4, 0xb7, 0xb3, 0x67, 0x1f,
     0xcb, 0x79, 0xe6, 0x4e, 0xcc, 0xc0, 0xe5, 0x78, 0x82, 0x5a, 0xd0, 0x7d, 0xcc, 0xff, 0x72, 0x21,
@@ -87,9 +90,22 @@ impl XxHash3_64 {
     }
 
     #[inline]
-    pub fn oneshot_with_secret(secret: &[u8], input: &[u8]) -> u64 {
-        let secret = Secret::new(secret).unwrap(); // TODO: ERROR
-        impl_oneshot(secret, DEFAULT_SEED, input)
+    pub fn oneshot_with_secret(secret: &[u8], input: &[u8]) -> Result<u64, OneshotWithSecretError> {
+        let secret = Secret::new(secret).map_err(OneshotWithSecretError)?;
+        Ok(impl_oneshot(secret, DEFAULT_SEED, input))
+    }
+}
+
+/// The provided secret was not at least [`SECRET_MINIMUM_LENGTH`][]
+/// bytes.
+#[derive(Debug)]
+pub struct OneshotWithSecretError(secret::Error);
+
+impl core::error::Error for OneshotWithSecretError {}
+
+impl core::fmt::Display for OneshotWithSecretError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -101,19 +117,42 @@ type Buffer = [u8; BUFFERED_BYTES];
 // Ensure that a full buffer always implies we are in the 241+ byte case.
 const _: () = assert!(BUFFERED_BYTES > 240);
 
+/// A buffer containing the secret bytes.
+///
 /// # Safety
 ///
 /// Must always return a slice with the same number of elements.
 pub unsafe trait FixedBuffer: AsRef<[u8]> {}
 
+/// A mutable buffer to contain the secret bytes.
+///
+/// # Safety
+///
+/// Must always return a slice with the same number of elements. The
+/// slice must always be the same as that returned from
+/// [`AsRef::as_ref`][].
+pub unsafe trait FixedMutBuffer: FixedBuffer + AsMut<[u8]> {}
+
 // Safety: An array will never change size.
 unsafe impl<const N: usize> FixedBuffer for [u8; N] {}
 
 // Safety: An array will never change size.
+unsafe impl<const N: usize> FixedMutBuffer for [u8; N] {}
+
+// Safety: An array will never change size.
 unsafe impl<const N: usize> FixedBuffer for &[u8; N] {}
+
+// Safety: An array will never change size.
+unsafe impl<const N: usize> FixedBuffer for &mut [u8; N] {}
+
+// Safety: An array will never change size.
+unsafe impl<const N: usize> FixedMutBuffer for &mut [u8; N] {}
 
 // Safety: A plain slice will never change size.
 unsafe impl FixedBuffer for Box<[u8]> {}
+
+// Safety: A plain slice will never change size.
+unsafe impl FixedMutBuffer for Box<[u8]> {}
 
 /// Holds secret and temporary buffers that are ensured to be
 /// appropriately sized.
@@ -130,21 +169,19 @@ where
     /// Takes the seed, secret, and buffer and performs no
     /// modifications to them, only validating that the sizes are
     /// appropriate.
-    pub fn new(seed: u64, secret: S) -> Result<Self, S> {
-        let this = Self {
-            seed,
-            secret,
-            buffer: [0; BUFFERED_BYTES],
-        };
-
-        if this.is_valid() {
-            Ok(this)
-        } else {
-            Err(this.decompose())
+    pub fn new(seed: u64, secret: S) -> Result<Self, SecretTooShortError<S>> {
+        match Secret::new(secret.as_ref()) {
+            Ok(_) => Ok(Self {
+                seed,
+                secret,
+                buffer: [0; BUFFERED_BYTES],
+            }),
+            Err(e) => Err(SecretTooShortError(e, secret)),
         }
     }
 
     #[inline(always)]
+    #[cfg(test)]
     fn is_valid(&self) -> bool {
         let secret = self.secret.as_ref();
 
@@ -154,11 +191,6 @@ where
     #[inline]
     fn n_stripes(&self) -> usize {
         Self::secret(&self.secret).n_stripes()
-    }
-
-    /// Returns the secret and buffer values.
-    pub fn decompose(self) -> S {
-        self.secret
     }
 
     #[inline]
@@ -179,7 +211,14 @@ where
     }
 }
 
-impl SecretBuffer<&'static [u8; 192]> {
+impl<S> SecretBuffer<S> {
+    /// Returns the secret.
+    pub fn into_secret(self) -> S {
+        self.secret
+    }
+}
+
+impl SecretBuffer<&'static [u8; DEFAULT_SECRET_LENGTH]> {
     /// Use the default seed and secret values while allocating nothing.
     ///
     /// Note that this type may take up a surprising amount of stack space.
@@ -215,11 +254,19 @@ mod with_alloc {
             }
         }
 
-        pub fn with_seed_and_secret(seed: u64, secret: impl Into<Box<[u8]>>) -> Self {
-            Self {
-                inner: RawHasher::allocate_with_seed_and_secret(seed, secret),
+        pub fn with_seed_and_secret(
+            seed: u64,
+            secret: impl Into<Box<[u8]>>,
+        ) -> Result<Self, SecretTooShortError<Box<[u8]>>> {
+            Ok(Self {
+                inner: RawHasher::allocate_with_seed_and_secret(seed, secret)?,
                 _private: (),
-            }
+            })
+        }
+
+        /// Returns the secret.
+        pub fn into_secret(self) -> Box<[u8]> {
+            self.inner.into_secret()
         }
     }
 
@@ -269,15 +316,11 @@ mod with_alloc {
 
         /// Allocates the temporary buffer and uses the provided seed
         /// and secret buffer.
-        pub fn allocate_with_seed_and_secret(seed: u64, secret: impl Into<Box<[u8]>>) -> Self {
-            let secret = secret.into();
-            assert!(secret.len() > SECRET_MINIMUM_LENGTH); // todo result
-
-            Self {
-                seed,
-                secret,
-                buffer: [0; BUFFERED_BYTES],
-            }
+        pub fn allocate_with_seed_and_secret(
+            seed: u64,
+            secret: impl Into<Box<[u8]>>,
+        ) -> Result<Self, SecretTooShortError<Box<[u8]>>> {
+            Self::new(seed, secret.into())
         }
     }
 
@@ -292,28 +335,89 @@ mod with_alloc {
             Self::new(SecretBuffer::allocate_with_seed(seed))
         }
 
-        fn allocate_with_seed_and_secret(seed: u64, secret: impl Into<Box<[u8]>>) -> Self {
-            Self::new(SecretBuffer::allocate_with_seed_and_secret(seed, secret))
+        fn allocate_with_seed_and_secret(
+            seed: u64,
+            secret: impl Into<Box<[u8]>>,
+        ) -> Result<Self, SecretTooShortError<Box<[u8]>>> {
+            SecretBuffer::allocate_with_seed_and_secret(seed, secret).map(Self::new)
         }
     }
 }
 
 impl<S> SecretBuffer<S>
 where
-    S: FixedBuffer + AsMut<[u8]>,
+    S: FixedMutBuffer,
 {
     /// Fills the secret buffer with a secret derived from the seed
-    /// and the default secret.
-    pub fn with_seed(seed: u64, mut secret: S) -> Result<Self, S> {
-        let secret_slice: &mut [u8; 192] = match secret.as_mut().try_into() {
-            Ok(s) => s,
-            Err(_) => return Err(secret),
-        };
+    /// and the default secret. The secret must be exactly
+    /// [`DEFAULT_SECRET_LENGTH`][] bytes long.
+    pub fn with_seed(seed: u64, mut secret: S) -> Result<Self, SecretWithSeedError<S>> {
+        match <&mut DefaultSecret>::try_from(secret.as_mut()) {
+            Ok(secret_slice) => {
+                *secret_slice = DEFAULT_SECRET_RAW;
+                derive_secret(seed, secret_slice);
 
-        *secret_slice = DEFAULT_SECRET_RAW;
-        derive_secret(seed, secret_slice);
+                Ok(Self {
+                    seed,
+                    secret,
+                    buffer: [0; BUFFERED_BYTES],
+                })
+            }
+            Err(_) => Err(SecretWithSeedError(secret)),
+        }
+    }
+}
 
-        Self::new(seed, secret)
+/// The provided secret was not at least [`SECRET_MINIMUM_LENGTH`][]
+/// bytes.
+pub struct SecretTooShortError<S>(secret::Error, S);
+
+impl<S> SecretTooShortError<S> {
+    /// Returns the secret.
+    pub fn into_secret(self) -> S {
+        self.1
+    }
+}
+
+impl<S> core::error::Error for SecretTooShortError<S> {}
+
+impl<S> core::fmt::Debug for SecretTooShortError<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("SecretTooShortError").finish()
+    }
+}
+
+impl<S> core::fmt::Display for SecretTooShortError<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// The provided secret was not exactly [`DEFAULT_SECRET_LENGTH`][]
+/// bytes.
+pub struct SecretWithSeedError<S>(S);
+
+impl<S> SecretWithSeedError<S> {
+    /// Returns the secret.
+    pub fn into_secret(self) -> S {
+        self.0
+    }
+}
+
+impl<S> core::error::Error for SecretWithSeedError<S> {}
+
+impl<S> core::fmt::Debug for SecretWithSeedError<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_tuple("SecretWithSeedError").finish()
+    }
+}
+
+impl<S> core::fmt::Display for SecretWithSeedError<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "The secret must be exactly {DEFAULT_SECRET_LENGTH} bytes"
+        )
     }
 }
 
@@ -389,6 +493,11 @@ impl<S> RawHasher<S> {
             stripe_accumulator: StripeAccumulator::new(),
             total_bytes: 0,
         }
+    }
+
+    /// Returns the secret.
+    pub fn into_secret(self) -> S {
+        self.secret_buffer.into_secret()
     }
 }
 
@@ -675,7 +784,7 @@ where
 /// This function assumes that the incoming buffer has been populated
 /// with the default secret.
 #[inline]
-fn derive_secret(seed: u64, secret: &mut [u8; 192]) {
+fn derive_secret(seed: u64, secret: &mut DefaultSecret) {
     if seed == DEFAULT_SEED {
         return;
     }
@@ -1196,12 +1305,6 @@ mod test {
     #[test]
     fn secret_buffer_allocate_with_seed_is_valid() {
         assert!(SecretBuffer::allocate_with_seed(0xdead_beef).is_valid())
-    }
-
-    #[test]
-    fn secret_buffer_allocate_with_seed_and_secret_is_valid() {
-        let secret = [42; 1024];
-        assert!(SecretBuffer::allocate_with_seed_and_secret(0xdead_beef, secret).is_valid())
     }
 
     macro_rules! bytes {
