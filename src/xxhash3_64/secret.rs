@@ -2,6 +2,7 @@ use core::{hint::assert_unchecked, mem};
 
 use super::SliceBackport as _;
 
+/// The minimum length of a secret.
 pub const SECRET_MINIMUM_LENGTH: usize = 136;
 
 #[repr(transparent)]

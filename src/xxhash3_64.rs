@@ -1,4 +1,5 @@
-#![allow(missing_docs)]
+//! The implementation of XXH3_64.
+
 #![deny(
     clippy::missing_safety_doc,
     clippy::undocumented_unsafe_blocks,
@@ -41,7 +42,9 @@ const PRIME_MX2: u64 = 0x9FB21C651E98DF25;
 
 const DEFAULT_SEED: u64 = 0;
 
+/// The length of the default secret.
 pub const DEFAULT_SECRET_LENGTH: usize = 192;
+
 type DefaultSecret = [u8; DEFAULT_SECRET_LENGTH];
 
 const DEFAULT_SECRET_RAW: DefaultSecret = [
@@ -62,6 +65,7 @@ const DEFAULT_SECRET_RAW: DefaultSecret = [
 // Safety: The default secret is long enough
 const DEFAULT_SECRET: &Secret = unsafe { Secret::new_unchecked(&DEFAULT_SECRET_RAW) };
 
+/// Calculates the 64-bit hash.
 pub struct XxHash3_64 {
     #[cfg(feature = "alloc")]
     inner: with_alloc::AllocRawHasher,
@@ -69,11 +73,18 @@ pub struct XxHash3_64 {
 }
 
 impl XxHash3_64 {
+    /// Hash all data at once. If you can use this function, you may
+    /// see noticable speed gains for certain types of input.
+    #[must_use]
     #[inline]
     pub fn oneshot(input: &[u8]) -> u64 {
         impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
     }
 
+    /// Hash all data at once using the provided seed and a secret
+    /// derived from the seed. If you can use this function, you may
+    /// see noticable speed gains for certain types of input.
+    #[must_use]
     #[inline]
     pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u64 {
         let mut secret = DEFAULT_SECRET_RAW;
@@ -89,6 +100,9 @@ impl XxHash3_64 {
         impl_oneshot(secret, seed, input)
     }
 
+    /// Hash all data at once using the provided secret. If you can
+    /// use this function, you may see noticable speed gains for
+    /// certain types of input.
     #[inline]
     pub fn oneshot_with_secret(secret: &[u8], input: &[u8]) -> Result<u64, OneshotWithSecretError> {
         let secret = Secret::new(secret).map_err(OneshotWithSecretError)?;
@@ -240,6 +254,7 @@ mod with_alloc {
     use super::*;
 
     impl XxHash3_64 {
+        /// Constructs the hasher using the default seed and secret values.
         pub fn new() -> Self {
             Self {
                 inner: RawHasher::allocate_default(),
@@ -247,6 +262,8 @@ mod with_alloc {
             }
         }
 
+        /// Constructs the hasher using the provided seed and a secret
+        /// derived from the seed.
         pub fn with_seed(seed: u64) -> Self {
             Self {
                 inner: RawHasher::allocate_with_seed(seed),
@@ -254,6 +271,7 @@ mod with_alloc {
             }
         }
 
+        /// Constructs the hasher using the provided seed and secret.
         pub fn with_seed_and_secret(
             seed: u64,
             secret: impl Into<Box<[u8]>>,
@@ -486,6 +504,8 @@ pub struct RawHasher<S> {
 }
 
 impl<S> RawHasher<S> {
+    /// Construct the hasher with the provided seed, secret, and
+    /// temporary buffer.
     pub fn new(secret_buffer: SecretBuffer<S>) -> Self {
         Self {
             secret_buffer,
