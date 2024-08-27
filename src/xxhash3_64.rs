@@ -40,6 +40,8 @@ const PRIME64_5: u64 = 0x27D4EB2F165667C5;
 const PRIME_MX1: u64 = 0x165667919E3779F9;
 const PRIME_MX2: u64 = 0x9FB21C651E98DF25;
 
+const CUTOFF: usize = 240;
+
 const DEFAULT_SEED: u64 = 0;
 
 /// The length of the default secret.
@@ -91,7 +93,7 @@ impl Hasher {
 
         // We know that the secret will only be used if we have more
         // than 240 bytes, so don't waste time computing it otherwise.
-        if input.len() > 240 {
+        if input.len() > CUTOFF {
             derive_secret(seed, &mut secret);
         }
 
@@ -100,13 +102,31 @@ impl Hasher {
         impl_oneshot(secret, seed, input)
     }
 
-    /// Hash all data at once using the provided secret. If you can
-    /// use this function, you may see noticable speed gains for
-    /// certain types of input.
+    /// Hash all data at once using the provided secret and the
+    /// default seed. If you can use this function, you may see
+    /// noticable speed gains for certain types of input.
     #[inline]
     pub fn oneshot_with_secret(secret: &[u8], input: &[u8]) -> Result<u64, OneshotWithSecretError> {
         let secret = Secret::new(secret).map_err(OneshotWithSecretError)?;
         Ok(impl_oneshot(secret, DEFAULT_SEED, input))
+    }
+
+    /// Hash all data at once using the provided seed and secret. If
+    /// you can use this function, you may see noticable speed gains
+    /// for certain types of input.
+    #[inline]
+    pub fn oneshot_with_seed_and_secret(
+        seed: u64,
+        secret: &[u8],
+        input: &[u8],
+    ) -> Result<u64, OneshotWithSecretError> {
+        let secret = if input.len() > CUTOFF {
+            Secret::new(secret).map_err(OneshotWithSecretError)?
+        } else {
+            DEFAULT_SECRET
+        };
+
+        Ok(impl_oneshot(secret, seed, input))
     }
 }
 
@@ -129,7 +149,7 @@ const BUFFERED_BYTES: usize = STRIPE_BYTES * BUFFERED_STRIPES;
 type Buffer = [u8; BUFFERED_BYTES];
 
 // Ensure that a full buffer always implies we are in the 241+ byte case.
-const _: () = assert!(BUFFERED_BYTES > 240);
+const _: () = assert!(BUFFERED_BYTES > CUTOFF);
 
 /// A buffer containing the secret bytes.
 ///
@@ -762,7 +782,7 @@ where
         assert_unchecked(buffer_usage <= buffer.len())
     };
 
-    if total_bytes >= 241 {
+    if total_bytes > CUTOFF {
         let input = &buffer[..buffer_usage];
 
         // Ingest final stripes

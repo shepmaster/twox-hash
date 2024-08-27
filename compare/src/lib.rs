@@ -237,8 +237,13 @@ mod xxhash3_64 {
         }
 
         #[test]
-        fn oneshot_with_a_secret(secret in prop::collection::vec(num::u8::ANY, SECRET_MINIMUM_LENGTH..1024), data: Vec<u8>) {
+        fn oneshot_with_a_secret(secret in secret(), data: Vec<u8>) {
             oneshot_with_secret_impl(&secret, &data)?;
+        }
+
+        #[test]
+        fn oneshot_with_a_seed_and_secret(seed: u64, secret in secret(), data: Vec<u8>) {
+            oneshot_with_seed_and_secret_impl(seed, &secret, &data)?;
         }
 
         #[test]
@@ -249,6 +254,11 @@ mod xxhash3_64 {
         #[test]
         fn streaming_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
             streaming_one_chunk_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn streaming_with_a_seed_and_secret(seed: u64, secret in secret(), data: Vec<u8>) {
+            streaming_with_seed_and_secret_impl(seed, &secret, &data)?;
         }
     }
 
@@ -298,6 +308,14 @@ mod xxhash3_64 {
         Ok(())
     }
 
+    fn oneshot_with_seed_and_secret_impl(seed: u64, secret: &[u8], data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash3_64::oneshot_with_seed_and_secret(seed, secret, data);
+        let rust = rust::XxHash3_64::oneshot_with_seed_and_secret(seed, secret, data).unwrap();
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
     fn streaming_one_chunk_impl(seed: u64, data: &[u8]) -> TestCaseResult {
         let native = {
             let mut hasher = c::XxHash3_64::with_seed(seed);
@@ -313,6 +331,31 @@ mod xxhash3_64 {
 
         prop_assert_eq!(native, rust);
         Ok(())
+    }
+
+    fn streaming_with_seed_and_secret_impl(seed: u64, secret: &[u8], data: &[u8]) -> TestCaseResult {
+        let native = {
+            let mut hasher = c::XxHash3_64::with_seed_and_secret(seed, secret);
+            for chunk in data.chunks(256) {
+                hasher.write(chunk);
+            }
+            hasher.finish()
+        };
+
+        let rust = {
+            let mut hasher = rust::XxHash3_64::with_seed_and_secret(seed, secret).unwrap();
+            for chunk in data.chunks(256) {
+                hasher.write(chunk);
+            }
+            hasher.finish()
+        };
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn secret() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(num::u8::ANY, SECRET_MINIMUM_LENGTH..1024)
     }
 }
 

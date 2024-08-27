@@ -158,11 +158,24 @@ macro_rules! xxh3_64b_template {
                     secret: *const libc::c_void,
                     secret_length: libc::size_t,
                 ) -> crate::XXH64_hash_t;
+                fn [<$prefix _64bits_withSecretandSeed>](
+                    input: *const libc::c_void,
+                    length: libc::size_t,
+                    secret: *const libc::c_void,
+                    secret_length: libc::size_t,
+                    seed: crate::XXH64_hash_t,
+                ) -> crate::XXH64_hash_t;
 
                 fn [<$prefix _createState>]() -> *mut crate::XXH3_state_t;
                 fn [<$prefix _64bits_reset>](state: *mut crate::XXH3_state_t) -> crate::XXH_errorcode;
                 fn [<$prefix _64bits_reset_withSeed>](
                     state: *mut crate::XXH3_state_t,
+                    seed: crate::XXH64_hash_t,
+                ) -> crate::XXH_errorcode;
+                fn [<$prefix _64bits_reset_withSecretandSeed>](
+                    state: *mut crate::XXH3_state_t,
+                    secret: *const libc::c_void,
+                    secret_length: libc::size_t,
                     seed: crate::XXH64_hash_t,
                 ) -> crate::XXH_errorcode;
                 fn [<$prefix _64bits_update>](
@@ -200,6 +213,19 @@ macro_rules! xxh3_64b_template {
                 }
 
                 #[inline]
+                pub fn oneshot_with_seed_and_secret(seed: u64, secret: &[u8], data: &[u8]) -> u64 {
+                    unsafe {
+                        [<$prefix _64bits_withSecretandSeed>](
+                            data.as_ptr().cast(),
+                            data.len(),
+                            secret.as_ptr().cast(),
+                            secret.len(),
+                            seed,
+                        )
+                    }
+                }
+
+                #[inline]
                 pub fn new() -> Self {
                     let state = unsafe {
                         let state = [<$prefix _createState>]();
@@ -215,6 +241,17 @@ macro_rules! xxh3_64b_template {
                     let state = unsafe {
                         let state = [<$prefix _createState>]();
                         [<$prefix _64bits_reset_withSeed>](state, seed);
+                        state
+                    };
+
+                    Self(state)
+                }
+
+                #[inline]
+                pub fn with_seed_and_secret(seed: u64, secret: &[u8]) -> Self {
+                    let state = unsafe {
+                        let state = [<$prefix _createState>]();
+                        [<$prefix _64bits_reset_withSecretandSeed>](state, secret.as_ptr().cast(), secret.len(), seed);
                         state
                     };
 
