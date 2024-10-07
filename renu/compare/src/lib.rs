@@ -333,7 +333,11 @@ mod xxhash3_64 {
         Ok(())
     }
 
-    fn streaming_with_seed_and_secret_impl(seed: u64, secret: &[u8], data: &[u8]) -> TestCaseResult {
+    fn streaming_with_seed_and_secret_impl(
+        seed: u64,
+        secret: &[u8],
+        data: &[u8],
+    ) -> TestCaseResult {
         let native = {
             let mut hasher = c::XxHash3_64::with_seed_and_secret(seed, secret);
             for chunk in data.chunks(256) {
