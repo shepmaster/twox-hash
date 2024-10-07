@@ -24,7 +24,7 @@ members = [
 ]
 
 [features]
-default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "alloc", "std"]
+default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "std"]
 
 random = ["dep:rand"]
 
@@ -34,8 +34,8 @@ xxhash32 = []
 xxhash64 = []
 xxhash3_64 = []
 
-alloc = []
 std = ["alloc"]
+alloc = []
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
