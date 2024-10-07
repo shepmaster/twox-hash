@@ -1,0 +1,8 @@
+[package]
+name = "asmasm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xx-renu = { path = ".." }
+xx_hash-sys = { path = "../xx_hash-sys" }

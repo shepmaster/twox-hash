@@ -1,0 +1,7 @@
+[package]
+name = "renu-sum"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+xx-renu = { path = ".." }
