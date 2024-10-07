@@ -1,7 +1,18 @@
 [package]
-name = "xx-renu"
-version = "0.1.0"
+name = "twox-hash"
+version = "1.6.3"
+authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 edition = "2021"
+
+description = "A Rust implementation of the XXHash and XXH3 algorithms"
+readme = "README.md"
+keywords = ["hash", "hasher", "xxhash", "xxh3"]
+categories = ["algorithms"]
+
+repository = "https://github.com/shepmaster/twox-hash"
+documentation = "https://docs.rs/twox-hash/"
+
+license = "MIT"
 
 [workspace]
 members = [

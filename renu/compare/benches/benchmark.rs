@@ -4,8 +4,8 @@ use criterion::{
 use rand::{Rng, RngCore, SeedableRng};
 use std::{env::consts::ARCH, hash::Hasher as _, iter};
 
+use twox_hash as rust;
 use xx_hash_sys as c;
-use xx_renu as rust;
 
 const BIG_DATA_SIZE: usize = 4 * 1024 * 1024;
 const MIN_BIG_DATA_SIZE: usize = 256 * 1024;

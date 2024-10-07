@@ -7,7 +7,7 @@
 //! ### When all the data is available at once
 //!
 //! ```rust
-//! use xx_renu::XxHash64;
+//! use twox_hash::XxHash64;
 //!
 //! let seed = 1234;
 //! let hash = XxHash64::oneshot(seed, b"some bytes");
@@ -18,7 +18,7 @@
 //!
 //! ```rust
 //! use std::hash::Hasher as _;
-//! use xx_renu::XxHash64;
+//! use twox_hash::XxHash64;
 //!
 //! let seed = 1234;
 //! let mut hasher = XxHash64::with_seed(seed);
@@ -35,7 +35,7 @@
 //!
 //! ```rust
 //! use std::{collections::HashMap, hash::BuildHasherDefault};
-//! use xx_renu::XxHash64;
+//! use twox_hash::XxHash64;
 //!
 //! let mut hash = HashMap::<_, _, BuildHasherDefault<XxHash64>>::default();
 //! hash.insert(42, "the answer");
@@ -46,7 +46,7 @@
 //!
 //! ```rust
 //! use std::collections::HashMap;
-//! use xx_renu::xxhash64;
+//! use twox_hash::xxhash64;
 //!
 //! let mut hash = HashMap::<_, _, xxhash64::RandomState>::default();
 //! hash.insert(42, "the answer");
@@ -57,7 +57,7 @@
 //!
 //! ```rust
 //! use std::collections::HashMap;
-//! use xx_renu::xxhash64;
+//! use twox_hash::xxhash64;
 //!
 //! let mut hash = HashMap::with_hasher(xxhash64::State::with_seed(0xdead_cafe));
 //! hash.insert(42, "the answer");

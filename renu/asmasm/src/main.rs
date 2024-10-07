@@ -1,6 +1,6 @@
 use std::{hash::Hasher as _, time::Instant};
+use twox_hash::XxHash3_64;
 use xx_hash_sys::XxHash3_64 as C;
-use xx_renu::XxHash3_64;
 
 fn main() {
     let filename = std::env::args().nth(1).expect("filename");

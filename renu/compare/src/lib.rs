@@ -2,8 +2,8 @@
 
 use proptest::{num, prelude::*};
 
+use twox_hash as rust;
 use xx_hash_sys as c;
-use xx_renu as rust;
 
 mod xxhash32 {
     use proptest::{prelude::*, test_runner::TestCaseResult};
@@ -206,7 +206,7 @@ mod xxhash64 {
 mod xxhash3_64 {
     use proptest::{prelude::*, test_runner::TestCaseResult};
     use std::hash::Hasher as _;
-    use xx_renu::xxhash3_64::SECRET_MINIMUM_LENGTH;
+    use twox_hash::xxhash3_64::SECRET_MINIMUM_LENGTH;
 
     use super::*;
 

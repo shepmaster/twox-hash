@@ -7,7 +7,7 @@ use std::{
     sync::mpsc::{self, SendError},
     thread,
 };
-use xx_renu::XxHash3_64;
+use twox_hash::XxHash3_64;
 
 type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 type Result<T, E = Error> = std::result::Result<T, E>;
