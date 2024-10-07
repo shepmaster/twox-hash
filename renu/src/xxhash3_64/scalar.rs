@@ -7,7 +7,7 @@ impl Vector for Impl {
     #[inline]
     fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
         let (last, _) = secret_end.bp_as_chunks();
-        let last = last.iter().copied().map(u64::from_ne_bytes);
+        let last = last.iter().copied().map(u64::from_le_bytes);
 
         for (acc, secret) in acc.iter_mut().zip(last) {
             *acc ^= *acc >> 47;
@@ -22,8 +22,8 @@ impl Vector for Impl {
         let (secret, _) = secret.bp_as_chunks();
 
         for i in 0..8 {
-            let stripe = u64::from_ne_bytes(stripe[i]);
-            let secret = u64::from_ne_bytes(secret[i]);
+            let stripe = u64::from_le_bytes(stripe[i]);
+            let secret = u64::from_le_bytes(secret[i]);
 
             let value = stripe ^ secret;
             acc[i ^ 1] = acc[i ^ 1].wrapping_add(stripe);

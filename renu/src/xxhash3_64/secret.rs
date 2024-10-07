@@ -38,7 +38,7 @@ impl Secret {
         self.reassert_preconditions();
 
         let (q, _) = self.0[56..].bp_as_chunks();
-        [q[0], q[1]].map(u64::from_ne_bytes)
+        [q[0], q[1]].map(u64::from_le_bytes)
     }
 
     #[inline]
@@ -46,7 +46,7 @@ impl Secret {
         self.reassert_preconditions();
 
         let (q, _) = self.0.bp_as_chunks();
-        [q[0], q[1]].map(u32::from_ne_bytes)
+        [q[0], q[1]].map(u32::from_le_bytes)
     }
 
     #[inline]
@@ -54,7 +54,7 @@ impl Secret {
         self.reassert_preconditions();
 
         let (q, _) = self.0[8..].bp_as_chunks();
-        [q[0], q[1]].map(u64::from_ne_bytes)
+        [q[0], q[1]].map(u64::from_le_bytes)
     }
 
     #[inline]
@@ -62,7 +62,7 @@ impl Secret {
         self.reassert_preconditions();
 
         let (q, _) = self.0[24..].bp_as_chunks();
-        [q[0], q[1], q[2], q[3]].map(u64::from_ne_bytes)
+        [q[0], q[1], q[2], q[3]].map(u64::from_le_bytes)
     }
 
     #[inline]

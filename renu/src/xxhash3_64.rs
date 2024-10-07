@@ -833,14 +833,14 @@ fn derive_secret(seed: u64, secret: &mut DefaultSecret) {
     let (pairs, _) = words.bp_as_chunks_mut();
 
     for [a_p, b_p] in pairs {
-        let a = u64::from_ne_bytes(*a_p);
-        let b = u64::from_ne_bytes(*b_p);
+        let a = u64::from_le_bytes(*a_p);
+        let b = u64::from_le_bytes(*b_p);
 
         let a = a.wrapping_add(seed);
         let b = b.wrapping_sub(seed);
 
-        *a_p = a.to_ne_bytes();
-        *b_p = b.to_ne_bytes();
+        *a_p = a.to_le_bytes();
+        *b_p = b.to_le_bytes();
     }
 }
 
@@ -1006,7 +1006,7 @@ fn mix_step(data: &[u8; 16], secret: &[u8; 16], seed: u64) -> u64 {
     #[inline]
     fn to_u64s(bytes: &[u8; 16]) -> [u64; 2] {
         let (pair, _) = bytes.bp_as_chunks::<8>();
-        [pair[0], pair[1]].map(u64::from_ne_bytes)
+        [pair[0], pair[1]].map(u64::from_le_bytes)
     }
 
     let data_words = to_u64s(data);
@@ -1160,8 +1160,8 @@ where
         for i in 0..4 {
             // 64-bit by 64-bit multiplication to 128-bit full result
             let mul_result = {
-                let sa = u64::from_ne_bytes(secrets[i * 2]);
-                let sb = u64::from_ne_bytes(secrets[i * 2 + 1]);
+                let sa = u64::from_le_bytes(secrets[i * 2]);
+                let sb = u64::from_le_bytes(secrets[i * 2 + 1]);
 
                 let a = (acc[i * 2] ^ sa).into_u128();
                 let b = (acc[i * 2 + 1] ^ sb).into_u128();
@@ -1253,22 +1253,22 @@ trait U8SliceExt {
 impl U8SliceExt for [u8] {
     #[inline]
     fn first_u32(&self) -> Option<u32> {
-        self.first_chunk().copied().map(u32::from_ne_bytes)
+        self.first_chunk().copied().map(u32::from_le_bytes)
     }
 
     #[inline]
     fn last_u32(&self) -> Option<u32> {
-        self.last_chunk().copied().map(u32::from_ne_bytes)
+        self.last_chunk().copied().map(u32::from_le_bytes)
     }
 
     #[inline]
     fn first_u64(&self) -> Option<u64> {
-        self.first_chunk().copied().map(u64::from_ne_bytes)
+        self.first_chunk().copied().map(u64::from_le_bytes)
     }
 
     #[inline]
     fn last_u64(&self) -> Option<u64> {
-        self.last_chunk().copied().map(u64::from_ne_bytes)
+        self.last_chunk().copied().map(u64::from_le_bytes)
     }
 }
 
