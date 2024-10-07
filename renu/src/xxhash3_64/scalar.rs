@@ -33,7 +33,7 @@ impl Vector for Impl {
 }
 
 #[inline]
-#[cfg(not(target_arch = "aarch64"))]
+#[cfg(any(miri, not(target_arch = "aarch64")))]
 fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
     use super::IntoU64;
 
@@ -47,7 +47,7 @@ fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
 #[inline]
 // https://github.com/Cyan4973/xxHash/blob/d5fe4f54c47bc8b8e76c6da9146c32d5c720cd79/xxhash.h#L5595-L5610
 // https://github.com/llvm/llvm-project/issues/98481
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(not(miri), target_arch = "aarch64"))]
 fn multiply_64_as_32_and_add(lhs: u64, rhs: u64, acc: u64) -> u64 {
     let res;
 
