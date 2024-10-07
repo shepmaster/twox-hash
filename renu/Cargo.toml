@@ -3,6 +3,7 @@ name = "twox-hash"
 version = "1.6.3"
 authors = ["Jake Goulding <jake.goulding@gmail.com>"]
 edition = "2021"
+rust-version = "1.81"
 
 description = "A Rust implementation of the XXHash and XXH3 algorithms"
 readme = "README.md"
