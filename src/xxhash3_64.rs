@@ -616,26 +616,30 @@ macro_rules! dispatch {
         #[cfg(_internal_xxhash3_force_scalar)]
         return do_scalar($($arg_name),*);
 
-        #[cfg(all(target_arch = "aarch64", feature = "std"))]
+        // This code can be unreachable if one of the `*_force_*` cfgs
+        // are set above, but that's the point.
+        #[allow(unreachable_code)]
         {
-            if std::arch::is_aarch64_feature_detected!("neon") {
-                // Safety: We just ensured we have the NEON feature
-                return unsafe { do_neon($($arg_name),*) };
+            #[cfg(all(target_arch = "aarch64", feature = "std"))]
+            {
+                if std::arch::is_aarch64_feature_detected!("neon") {
+                    // Safety: We just ensured we have the NEON feature
+                    return unsafe { do_neon($($arg_name),*) };
+                }
             }
-        }
 
-        #[cfg(all(target_arch = "x86_64", feature = "std"))]
-        {
-            if is_x86_feature_detected!("avx2") {
-                // Safety: We just ensured we have the AVX2 feature
-                return unsafe { do_avx2($($arg_name),*) };
-            } else if is_x86_feature_detected!("sse2") {
-                // Safety: We just ensured we have the SSE2 feature
-                return unsafe { do_sse2($($arg_name),*) };
+            #[cfg(all(target_arch = "x86_64", feature = "std"))]
+            {
+                if is_x86_feature_detected!("avx2") {
+                    // Safety: We just ensured we have the AVX2 feature
+                    return unsafe { do_avx2($($arg_name),*) };
+                } else if is_x86_feature_detected!("sse2") {
+                    // Safety: We just ensured we have the SSE2 feature
+                    return unsafe { do_sse2($($arg_name),*) };
+                }
             }
+            do_scalar($($arg_name),*)
         }
-
-        do_scalar($($arg_name),*)
     };
 }
 
