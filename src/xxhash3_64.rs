@@ -1327,6 +1327,8 @@ mod test {
 
     use super::*;
 
+    const EMPTY_BYTES: [u8; 0] = [];
+
     #[test]
     fn default_secret_is_valid() {
         assert!(DEFAULT_SECRET.is_valid())
@@ -1377,13 +1379,13 @@ mod test {
 
     #[test]
     fn oneshot_empty() {
-        let hash = Hasher::oneshot(&[]);
+        let hash = Hasher::oneshot(&EMPTY_BYTES);
         assert_eq!(hash, 0x2d06_8005_38d3_94c2);
     }
 
     #[test]
     fn streaming_empty() {
-        let hash = hash_byte_by_byte(&[]);
+        let hash = hash_byte_by_byte(&EMPTY_BYTES);
         assert_eq!(hash, 0x2d06_8005_38d3_94c2);
     }
 
@@ -1614,7 +1616,7 @@ mod test {
 
         let (a, b) = x.bp_as_chunks::<1>();
         assert_eq!(a, &[[1], [2], [3], [4], [5]]);
-        assert_eq!(b, &[]);
+        assert_eq!(b, &[] as &[i32]);
 
         let (a, b) = x.bp_as_chunks::<2>();
         assert_eq!(a, &[[1, 2], [3, 4]]);
@@ -1630,7 +1632,7 @@ mod test {
 
         let (a, b) = x.bp_as_chunks::<5>();
         assert_eq!(a, &[[1, 2, 3, 4, 5]]);
-        assert_eq!(b, &[]);
+        assert_eq!(b, &[] as &[i32]);
 
         let (a, b) = x.bp_as_chunks::<6>();
         assert_eq!(a, &[] as &[[i32; 6]]);
@@ -1642,7 +1644,7 @@ mod test {
         let x = [1, 2, 3, 4, 5];
 
         let (a, b) = x.bp_as_rchunks::<1>();
-        assert_eq!(a, &[]);
+        assert_eq!(a, &[] as &[i32]);
         assert_eq!(b, &[[1], [2], [3], [4], [5]]);
 
         let (a, b) = x.bp_as_rchunks::<2>();
@@ -1658,7 +1660,7 @@ mod test {
         assert_eq!(b, &[[2, 3, 4, 5]]);
 
         let (a, b) = x.bp_as_rchunks::<5>();
-        assert_eq!(a, &[]);
+        assert_eq!(a, &[] as &[i32]);
         assert_eq!(b, &[[1, 2, 3, 4, 5]]);
 
         let (a, b) = x.bp_as_rchunks::<6>();

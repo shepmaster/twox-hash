@@ -400,6 +400,8 @@ mod test {
 
     use super::*;
 
+    const EMPTY_BYTES: [u8; 0] = [];
+
     #[test]
     fn ingesting_byte_by_byte_is_equivalent_to_large_chunks() {
         let bytes = [0x9c; 32];
@@ -420,7 +422,7 @@ mod test {
     #[test]
     fn hash_of_nothing_matches_c_implementation() {
         let mut hasher = Hasher::with_seed(0);
-        hasher.write(&[]);
+        hasher.write(&EMPTY_BYTES);
         assert_eq!(hasher.finish(), 0xef46_db37_51d8_e999);
     }
 
@@ -449,7 +451,7 @@ mod test {
     #[test]
     fn hash_with_different_seed_matches_c_implementation() {
         let mut hasher = Hasher::with_seed(0xae05_4331_1b70_2d91);
-        hasher.write(&[]);
+        hasher.write(&EMPTY_BYTES);
         assert_eq!(hasher.finish(), 0x4b6a_04fc_df7a_4672);
     }
 
@@ -617,6 +619,8 @@ mod serialize_impl {
 
     #[cfg(test)]
     mod test {
+        use std::hash::Hasher as _;
+
         use super::*;
 
         type Result<T = (), E = serde_json::Error> = core::result::Result<T, E>;
@@ -625,7 +629,7 @@ mod serialize_impl {
         fn test_serialization_cycle() -> Result {
             let mut hasher = Hasher::with_seed(0);
             hasher.write(b"Hello, world!\0");
-            hasher.finish();
+            let _ = hasher.finish();
 
             let serialized = serde_json::to_string(&hasher)?;
             let unserialized: Hasher = serde_json::from_str(&serialized)?;
@@ -637,7 +641,7 @@ mod serialize_impl {
         fn test_serialization_stability() -> Result {
             let mut hasher = Hasher::with_seed(0);
             hasher.write(b"Hello, world!\0");
-            hasher.finish();
+            let _ = hasher.finish();
 
             let expected_serialized = r#"{
                 "total_len": 14,
