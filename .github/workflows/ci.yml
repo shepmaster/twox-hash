@@ -2,106 +2,98 @@ on: push
 
 name: Continuous integration
 
+env:
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
 jobs:
   library:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
+        platform:
+          - ubuntu-latest
+
         rust:
           - stable
           - beta
           - nightly
-          - 1.37.0  # MSRV
+          - 1.81.0  # MSRV
+
+        include:
+          - platform: macos-latest # This serves as our aarch64 / arm64 runner
+            rust: stable
+
+          - platform: windows-latest
+            rust: stable
+
+    runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
+      - run: git submodule update --init --recursive
+
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ matrix.rust }}
-          override: true
+
+      - name: Unit Tests
+        run: cargo test --all-features
+
+      - name: Property Tests
+        run: cargo test -p comparison --all-features
+
+  miri:
+    runs-on: ubuntu-latest
+    env:
+      MIRIFLAGS: --cfg _internal_xxhash3_force_scalar
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: miri
+
+      - name: Unsafe Code
+        run: cargo miri test --all-features
+
+      - name: Big Endian Platform
+        run: cargo miri test --all-features --target s390x-unknown-linux-gnu
+
+  lints:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: git submodule update --init --recursive
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
           components: rustfmt, clippy
 
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
+      - run: cargo fmt --all
 
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
+      - run: cargo clippy --all --all-targets --all-features
 
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
-        if: ${{ matrix.rust == 'stable' }}
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features -- -D warnings
-        if: ${{ matrix.rust == 'stable' }}
+      - run: cargo doc --all-features
 
   no-std:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: stable
-          target: thumbv6m-none-eabi
-          override: true
+          targets: thumbv6m-none-eabi
 
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --no-default-features --target thumbv6m-none-eabi --lib
-
-  compatibility-tests:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        test:
-          - digest_0_8
-          - digest_0_9
-
-    steps:
-      - uses: actions/checkout@v2
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --manifest-path "compatibility-tests/${{ matrix.test }}/Cargo.toml"
-
-  big_endian:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-        with:
-          platforms: s390x
-
-      - name: Cross test
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: test
-          args: --target s390x-unknown-linux-gnu
+      - run: >
+          cargo build
+          --no-default-features
+          --features=xxhash32,xxhash64,xxhash3_64
+          --target thumbv6m-none-eabi
