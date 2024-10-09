@@ -182,12 +182,6 @@ unsafe impl<const N: usize> FixedBuffer for &mut [u8; N] {}
 // Safety: An array will never change size.
 unsafe impl<const N: usize> FixedMutBuffer for &mut [u8; N] {}
 
-// Safety: A plain slice will never change size.
-unsafe impl FixedBuffer for Box<[u8]> {}
-
-// Safety: A plain slice will never change size.
-unsafe impl FixedMutBuffer for Box<[u8]> {}
-
 /// Holds secret and temporary buffers that are ensured to be
 /// appropriately sized.
 pub struct SecretBuffer<S> {
@@ -272,6 +266,12 @@ mod with_alloc {
     use ::alloc::boxed::Box;
 
     use super::*;
+
+    // Safety: A plain slice will never change size.
+    unsafe impl FixedBuffer for Box<[u8]> {}
+
+    // Safety: A plain slice will never change size.
+    unsafe impl FixedMutBuffer for Box<[u8]> {}
 
     impl Hasher {
         /// Constructs the hasher using the default seed and secret values.
