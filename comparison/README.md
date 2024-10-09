@@ -1,7 +1,202 @@
-This is just a crate for sanity checks and performance tests. Pay no
-attention to the man behind the curtain.
+# Overview
 
-```
-cargo test
-cargo bench
-```
+Tests compare calling [the reference implementation in
+C](https://xxhash.com) against equivalent functions in this crate. No
+link-time optimization (LTO) is used, so the C performance numbers
+have additional overhead for each function call.
+
+Click any graph to see it full-size.
+
+# XXHash64
+
+## Oneshot hashing
+
+Compares the **speed** of hashing an entire buffer of data in one
+function call. Data sizes from 256 KiB to 4 MiB are tested. These
+graphs are boring flat lines, so a table is used instead.
+
+### aarch64
+
+| Implementation | Throughput (GiB/s) |
+|----------------|--------------------|
+| Rust           | 13.4               |
+| C              | 13.4               |
+
+## x86_64
+
+| Implementation | Throughput (GiB/s) |
+|----------------|--------------------|
+| Rust           | 15.7               |
+| C              | 15.8               |
+
+
+## Streaming data
+
+Compares the **speed** of hashing a 1 MiB buffer of data split into
+various chunk sizes.
+
+### aarch64
+
+<a href="./results/xxhash64-streaming-aarch64.svg">
+  <img
+    src="./results/xxhash64-streaming-aarch64.svg"
+    alt="XXHash64, streaming data, on an aarch64 processor"
+    />
+</a>
+
+### x86_64
+
+<a href="./results/xxhash64-streaming-x86_64.svg">
+  <img
+    src="./results/xxhash64-streaming-x86_64.svg"
+    alt="XXHash64, streaming data, on an x86_64 processor"
+    />
+</a>
+
+## Small amounts of data
+
+Compares the **time taken** to hash 0 to 32 bytes of data.
+
+### aarch64
+
+<a href="./results/xxhash64-tiny_data-aarch64.svg">
+  <img
+    src="./results/xxhash64-tiny_data-aarch64.svg"
+    alt="XXHash64, small data, on an aarch64 processor"
+    />
+</a>
+
+### x86_64
+
+<a href="./results/xxhash64-tiny_data-x86_64.svg">
+  <img
+    src="./results/xxhash64-tiny_data-x86_64.svg"
+    alt="XXHash64, small data, on an x86_64 processor"
+    />
+</a>
+
+
+# XXHash3 (64-bit)
+
+## Oneshot hashing
+
+Compares the **speed** of hashing an entire buffer of data in one
+function call. Data sizes from 256 KiB to 4 MiB are tested. These
+graphs are boring flat lines, so a table is used instead.
+
+### aarch64
+
+| Implementation | Throughput (GiB/s) |
+|----------------|--------------------|
+| Rust           | 34.8               |
+| C              | 34.8               |
+| C (scalar)     | 21.0               |
+| C (NEON)       | 34.7               |
+
+### x86_64
+
+| Implementation | Throughput (GiB/s) |
+|----------------|--------------------|
+| Rust           | 58.3               |
+| C              | 25.0               |
+| C (scalar)     | 7.5                |
+| C (SSE2)       | 25.1               |
+| C (AVX2)       | 58.1               |
+
+## Streaming data
+
+Compares the **speed** of hashing a 1 MiB buffer of data split into
+various chunk sizes.
+
+### aarch64
+
+<a href="./results/xxhash3_64-streaming-aarch64.svg">
+  <img
+    src="./results/xxhash3_64-streaming-aarch64.svg"
+    alt="XXHash3, 64-bit, streaming data, on an aarch64 processor"
+    />
+</a>
+
+### x86_64
+
+<a href="./results/xxhash3_64-streaming-x86_64.svg">
+  <img
+    src="./results/xxhash3_64-streaming-x86_64.svg"
+    alt="XXHash3, 64-bit, streaming data, on an x86_64 processor"
+    />
+</a>
+
+## Small amounts of data
+
+Compares the **time taken** to hash 0 to 230 bytes of
+data. Representative samples are taken from similar times to avoid
+cluttering the graph and wasting benchmarking time.
+
+### aarch64
+
+<a href="./results/xxhash3_64-tiny_data-aarch64.svg">
+  <img
+    src="./results/xxhash3_64-tiny_data-aarch64.svg"
+    alt="XXHash3, 64-bit, small data, on an aarch64 processor"
+    />
+</a>
+
+### x86_64
+
+<a href="./results/xxhash3_64-tiny_data-x86_64.svg">
+  <img
+    src="./results/xxhash3_64-tiny_data-x86_64.svg"
+    alt="XXHash3, 64-bit, small data, on an x86_64 processor"
+    />
+</a>
+
+# Benchmark machines
+
+## Overview
+
+| CPU               | Memory | C compiler         |
+|-------------------|--------|--------------------|
+| Apple M1 Max      | 64 GiB | clang 15.0.0       |
+| AMD Ryzen 9 3950X | 32 GiB | cl.exe 19.41.34120 |
+
+Tests were run with `rustc 1.81.0 (eeb90cda1 2024-09-04)`.
+
+## Details
+
+### aarch64
+
+<table>
+  <tr>
+    <th>CPU</th>
+    <td>Apple M1 Max</td>
+  </tr>
+
+  <tr>
+    <th>Memory</th>
+    <td>64 GiB</td>
+  </tr>
+
+  <tr>
+    <th>C compiler</th>
+    <td>Apple clang version 15.0.0 (clang-1500.3.9.4)</td>
+  </tr>
+</table>
+
+### x86_64
+
+<table>
+  <tr>
+    <th>CPU</th>
+    <td>AMD Ryzen 9 3950X 16-Core Processor, 3501 Mhz, 16 Core(s), 32 Logical Processor(s)</td>
+  </tr>
+
+  <tr>
+    <th>Memory</th>
+    <td>32 GiB (3600 MT/s)</td>
+  </tr>
+
+  <tr>
+    <th>C compiler</th>
+    <td>Microsoft (R) C/C++ Optimizing Compiler Version 19.41.34120 for x86</td>
+  </tr>
+</table>

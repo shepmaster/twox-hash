@@ -1,5 +1,5 @@
 [package]
-name = "renu-sum"
+name = "twox-hash-sum"
 version = "0.1.0"
 edition = "2021"
 

@@ -1,15 +1,43 @@
-//! A Rust implementation of the [XXHash] algorithm.
+//! A Rust implementation of the [XXHash][] algorithm.
 //!
 //! [XXHash]: https://github.com/Cyan4973/xxHash
 //!
-//! ### With a fixed seed
+//! ## Hashing arbitrary data
+//!
+//! ### When all the data is available at once
 //!
 //! ```rust
-//! use std::hash::BuildHasherDefault;
-//! use std::collections::HashMap;
 //! use twox_hash::XxHash64;
 //!
-//! let mut hash: HashMap<_, _, BuildHasherDefault<XxHash64>> = Default::default();
+//! let seed = 1234;
+//! let hash = XxHash64::oneshot(seed, b"some bytes");
+//! assert_eq!(0xeab5_5659_a496_d78b, hash);
+//! ```
+//!
+//! ### When the data is streaming
+//!
+//! ```rust
+//! use std::hash::Hasher as _;
+//! use twox_hash::XxHash64;
+//!
+//! let seed = 1234;
+//! let mut hasher = XxHash64::with_seed(seed);
+//! hasher.write(b"some");
+//! hasher.write(b" ");
+//! hasher.write(b"bytes");
+//! let hash = hasher.finish();
+//! assert_eq!(0xeab5_5659_a496_d78b, hash);
+//! ```
+//!
+//! ## In a [`HashMap`](std::collections::HashMap)
+//!
+//! ### With a default seed
+//!
+//! ```rust
+//! use std::{collections::HashMap, hash::BuildHasherDefault};
+//! use twox_hash::XxHash64;
+//!
+//! let mut hash = HashMap::<_, _, BuildHasherDefault<XxHash64>>::default();
 //! hash.insert(42, "the answer");
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
@@ -18,104 +46,98 @@
 //!
 //! ```rust
 //! use std::collections::HashMap;
-//! use twox_hash::RandomXxHashBuilder64;
+//! use twox_hash::xxhash64;
 //!
-//! let mut hash: HashMap<_, _, RandomXxHashBuilder64> = Default::default();
+//! let mut hash = HashMap::<_, _, xxhash64::RandomState>::default();
+//! hash.insert(42, "the answer");
+//! assert_eq!(hash.get(&42), Some(&"the answer"));
+//! ```
+//!
+//! ### With a fixed seed
+//!
+//! ```rust
+//! use std::collections::HashMap;
+//! use twox_hash::xxhash64;
+//!
+//! let mut hash = HashMap::with_hasher(xxhash64::State::with_seed(0xdead_cafe));
 //! hash.insert(42, "the answer");
 //! assert_eq!(hash.get(&42), Some(&"the answer"));
 //! ```
 
-#![no_std]
+#![deny(rust_2018_idioms)]
+#![deny(missing_docs)]
+#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(test)]
+#[cfg(any(feature = "std", doc, test))]
 extern crate std;
 
-use core::{marker::PhantomData, mem};
+#[cfg(feature = "xxhash32")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash32")))]
+pub mod xxhash32;
 
-mod sixty_four;
-mod thirty_two;
-pub mod xxh3;
+#[cfg(feature = "xxhash32")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash32")))]
+pub use xxhash32::Hasher as XxHash32;
 
-#[cfg(feature = "std")]
-mod std_support;
-#[cfg(feature = "std")]
-pub use std_support::sixty_four::RandomXxHashBuilder64;
-#[cfg(feature = "std")]
-pub use std_support::thirty_two::RandomXxHashBuilder32;
-#[cfg(feature = "std")]
-pub use std_support::xxh3::{
-    RandomHashBuilder128 as RandomXxh3HashBuilder128,
-    RandomHashBuilder64 as RandomXxh3HashBuilder64,
-};
+#[cfg(feature = "xxhash64")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash64")))]
+pub mod xxhash64;
 
-#[cfg(feature = "digest")]
-mod digest_support;
+#[cfg(feature = "xxhash64")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash64")))]
+pub use xxhash64::Hasher as XxHash64;
 
-#[cfg(feature = "digest_0_9")]
-mod digest_0_9_support;
+#[cfg(feature = "xxhash3_64")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_64")))]
+pub mod xxhash3_64;
 
-#[cfg(feature = "digest_0_10")]
-mod digest_0_10_support;
+#[cfg(feature = "xxhash3_64")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_64")))]
+pub use xxhash3_64::Hasher as XxHash3_64;
 
-pub use crate::sixty_four::XxHash64;
-pub use crate::thirty_two::XxHash32;
-pub use crate::xxh3::{Hash128 as Xxh3Hash128, Hash64 as Xxh3Hash64};
-
-/// A backwards compatibility type alias. Consider directly using
-/// `XxHash64` instead.
-pub type XxHash = XxHash64;
-
-#[cfg(feature = "std")]
-/// A backwards compatibility type alias. Consider directly using
-/// `RandomXxHashBuilder64` instead.
-pub type RandomXxHashBuilder = RandomXxHashBuilder64;
-
-/// An unaligned buffer with iteration support for `UnalignedItem`.
-struct UnalignedBuffer<'a, T> {
-    buf: &'a [u8],
-    phantom: PhantomData<T>,
+trait IntoU32 {
+    fn into_u32(self) -> u32;
 }
 
-/// Types implementing this trait must be transmutable from a `*const
-/// u8` to `*const Self` at any possible alignment.
-///
-/// The intent is to use this with only primitive integer types (and
-/// tightly-packed arrays of those integers).
-#[allow(clippy::missing_safety_doc)]
-unsafe trait UnalignedItem {}
-
-unsafe impl UnalignedItem for [u64; 4] {}
-unsafe impl UnalignedItem for [u32; 4] {}
-unsafe impl UnalignedItem for u64 {}
-unsafe impl UnalignedItem for u32 {}
-
-impl<'a, T: UnalignedItem> UnalignedBuffer<'a, T> {
-    #[inline]
-    fn new(buf: &'a [u8]) -> Self {
-        Self {
-            buf,
-            phantom: PhantomData,
-        }
-    }
-
-    #[inline]
-    fn remaining(&self) -> &[u8] {
-        self.buf
+impl IntoU32 for u8 {
+    fn into_u32(self) -> u32 {
+        self.into()
     }
 }
 
-impl<'a, T: UnalignedItem> Iterator for UnalignedBuffer<'a, T> {
-    type Item = T;
+trait IntoU64 {
+    fn into_u64(self) -> u64;
+}
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let size = mem::size_of::<T>();
-        self.buf.get(size..).map(|remaining| {
-            // `self.buf` has at least `size` bytes that can be read as `T`.
-            let result = unsafe { (self.buf.as_ptr() as *const T).read_unaligned() };
-            self.buf = remaining;
-            result
-        })
+impl IntoU64 for u8 {
+    fn into_u64(self) -> u64 {
+        self.into()
+    }
+}
+
+impl IntoU64 for u32 {
+    fn into_u64(self) -> u64 {
+        self.into()
+    }
+}
+
+#[cfg(any(target_pointer_width = "32", target_pointer_width = "64"))]
+impl IntoU64 for usize {
+    fn into_u64(self) -> u64 {
+        self as u64
+    }
+}
+
+trait IntoU128 {
+    fn into_u128(self) -> u128;
+}
+
+impl IntoU128 for u64 {
+    fn into_u128(self) -> u128 {
+        u128::from(self)
     }
 }
