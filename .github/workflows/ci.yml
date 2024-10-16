@@ -97,3 +97,48 @@ jobs:
           --no-default-features
           --features=xxhash32,xxhash64,xxhash3_64
           --target thumbv6m-none-eabi
+
+  features:
+    runs-on: ubuntu-latest
+
+    env:
+      IMPLEMENTATIONS: xxhash32 xxhash64 xxhash3_64
+      FEATURE_SET: random serialize std alloc
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: git submodule update --init --recursive
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+
+      - name: Compute Powerset
+        shell: "ruby {0}"
+        run: |
+          features = ENV['FEATURE_SET']
+            .split(' ')
+            .reduce([[]]) { |ps, i| ps + ps.map { |e| e + [i] } }
+            .map { |s| s.join(',') }
+            .join(" ")
+
+          File.open(ENV['GITHUB_ENV'], 'a') { |f| f.write("FEATURES=#{features}") }
+
+      - name: Check implementations with features
+        run: |
+          for impl in ${IMPLEMENTATIONS}; do
+              echo "::group::Implementation ${impl}"
+
+              # Check the implementation by itself
+              cargo check --no-default-features --features="${impl}"
+
+              # And with extra features
+              for feature in ${FEATURES}; do
+                  echo "::group::Features ${feature}"
+                  cargo check --no-default-features --features="${impl},${feature}"
+                  echo "::endgroup::"
+              done
+
+              echo ::endgroup::
+          done
