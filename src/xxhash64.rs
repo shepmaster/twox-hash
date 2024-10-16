@@ -21,7 +21,7 @@ type Bytes = [u8; 32];
 
 const BYTES_IN_LANE: usize = mem::size_of::<Bytes>();
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct BufferData(Lanes);
 
 impl BufferData {
@@ -48,7 +48,7 @@ impl fmt::Debug for BufferData {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Buffer {
     offset: usize,
     data: BufferData,
@@ -126,7 +126,7 @@ impl Buffer {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct Accumulators(Lanes);
 
 impl Accumulators {
@@ -210,7 +210,7 @@ impl fmt::Debug for Accumulators {
 }
 
 /// Calculates the 64-bit hash.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Hasher {
     seed: u64,
     accumulators: Accumulators,
@@ -373,6 +373,7 @@ const fn round(mut acc: u64, lane: u64) -> u64 {
 }
 
 /// Constructs [`Hasher`][] for multiple hasher instances.
+#[derive(Clone)]
 pub struct State(u64);
 
 impl State {
@@ -399,6 +400,12 @@ mod test {
     use std::collections::HashMap;
 
     use super::*;
+
+    const _TRAITS: () = {
+        const fn is_clone<T: Clone>() {}
+        is_clone::<Hasher>();
+        is_clone::<State>();
+    };
 
     const EMPTY_BYTES: [u8; 0] = [];
 
@@ -494,6 +501,7 @@ mod random_impl {
 
     /// Constructs a randomized seed and reuses it for multiple hasher
     /// instances.
+    #[derive(Clone)]
     pub struct RandomState(State);
 
     impl Default for RandomState {
@@ -521,6 +529,11 @@ mod random_impl {
         use std::collections::HashMap;
 
         use super::*;
+
+        const _TRAITS: () = {
+            const fn is_clone<T: Clone>() {}
+            is_clone::<RandomState>();
+        };
 
         #[test]
         fn can_be_used_in_a_hashmap_with_a_random_seed() {

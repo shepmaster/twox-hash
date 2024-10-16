@@ -21,7 +21,7 @@ type Bytes = [u8; 16];
 
 const BYTES_IN_LANE: usize = mem::size_of::<Bytes>();
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct BufferData(Lanes);
 
 impl BufferData {
@@ -48,7 +48,7 @@ impl fmt::Debug for BufferData {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Buffer {
     offset: usize,
     data: BufferData,
@@ -126,7 +126,7 @@ impl Buffer {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, PartialEq)]
 struct Accumulators(Lanes);
 
 impl Accumulators {
@@ -199,7 +199,7 @@ impl fmt::Debug for Accumulators {
 /// Although this struct implements [`hash::Hasher`][], it only calculates a
 /// 32-bit number, leaving the upper bits as 0. This means it is
 /// unlikely to be correct to use this in places like a [`HashMap`][std::collections::HashMap].
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Hasher {
     seed: u32,
     accumulators: Accumulators,
@@ -362,6 +362,7 @@ const fn round(mut acc: u32, lane: u32) -> u32 {
 
 /// Constructs [`Hasher`][] for multiple hasher instances. See
 /// the [usage warning][Hasher#caution].
+#[derive(Clone)]
 pub struct State(u32);
 
 impl State {
@@ -388,6 +389,12 @@ mod test {
     use std::collections::HashMap;
 
     use super::*;
+
+    const _TRAITS: () = {
+        const fn is_clone<T: Clone>() {}
+        is_clone::<Hasher>();
+        is_clone::<State>();
+    };
 
     const EMPTY_BYTES: [u8; 0] = [];
 
@@ -505,6 +512,7 @@ mod random_impl {
 
     /// Constructs a randomized seed and reuses it for multiple hasher
     /// instances. See the [usage warning][Hasher#caution].
+    #[derive(Clone)]
     pub struct RandomState(State);
 
     impl Default for RandomState {
@@ -532,6 +540,12 @@ mod random_impl {
         use std::collections::HashMap;
 
         use super::*;
+
+        const _: () = {
+            const fn is_clone<T: Clone>() {}
+            is_clone::<Hasher>();
+            is_clone::<RandomState>();
+        };
 
         #[test]
         fn can_be_used_in_a_hashmap_with_a_random_seed() {

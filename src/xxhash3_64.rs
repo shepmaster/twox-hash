@@ -68,6 +68,7 @@ const DEFAULT_SECRET_RAW: DefaultSecret = [
 const DEFAULT_SECRET: &Secret = unsafe { Secret::new_unchecked(&DEFAULT_SECRET_RAW) };
 
 /// Calculates the 64-bit hash.
+#[derive(Clone)]
 pub struct Hasher {
     #[cfg(feature = "alloc")]
     inner: with_alloc::AllocRawHasher,
@@ -184,6 +185,7 @@ unsafe impl<const N: usize> FixedMutBuffer for &mut [u8; N] {}
 
 /// Holds secret and temporary buffers that are ensured to be
 /// appropriately sized.
+#[derive(Clone)]
 pub struct SecretBuffer<S> {
     seed: u64,
     secret: S,
@@ -516,6 +518,7 @@ impl StripeAccumulator {
 /// usages may desire more flexibility. This type, combined with
 /// [`SecretBuffer`][], offer that flexibility at the cost of a
 /// generic type.
+#[derive(Clone)]
 pub struct RawHasher<S> {
     secret_buffer: SecretBuffer<S>,
     buffer_usage: usize,
@@ -1330,6 +1333,11 @@ mod test {
     use std::{array, hash::Hasher as _};
 
     use super::*;
+
+    const _: () = {
+        const fn is_clone<T: Clone>() {}
+        is_clone::<Hasher>();
+    };
 
     const EMPTY_BYTES: [u8; 0] = [];
 
