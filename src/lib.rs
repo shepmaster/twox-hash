@@ -99,6 +99,7 @@ pub mod xxhash3_64;
 #[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_64")))]
 pub use xxhash3_64::Hasher as XxHash3_64;
 
+#[allow(dead_code, reason = "Too lazy to cfg-gate these")]
 trait IntoU32 {
     fn into_u32(self) -> u32;
 }
@@ -109,6 +110,7 @@ impl IntoU32 for u8 {
     }
 }
 
+#[allow(dead_code, reason = "Too lazy to cfg-gate these")]
 trait IntoU64 {
     fn into_u64(self) -> u64;
 }
@@ -132,6 +134,7 @@ impl IntoU64 for usize {
     }
 }
 
+#[allow(dead_code, reason = "Too lazy to cfg-gate these")]
 trait IntoU128 {
     fn into_u128(self) -> u128;
 }
