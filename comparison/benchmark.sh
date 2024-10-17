@@ -11,7 +11,9 @@ function capture() {
 
     raw_data="${temp_dir}/raw-data.streaming-json"
 
-    cargo criterion -p compare --message-format=json -- "${subset}" > "${raw_data}"
+    echo "Benchmarking with $(rustc --version)"
+
+    cargo criterion -p comparison --message-format=json -- "${subset}" > "${raw_data}"
 
     echo "Raw benchmark data captured to ${raw_data}"
     echo "Next, run \`${SCRIPT_INVOKED_AS} analyze ${raw_data}\`"
@@ -50,7 +52,8 @@ case "${mode}" in
         ;;
 
     *)
-        echo "Unknown command '${mode}'"
+        echo "Unknown command '${mode}'" >&2
+        echo "Known commands: capture, analyze" >&2
         exit 1
         ;;
 esac
