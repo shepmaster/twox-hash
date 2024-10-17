@@ -142,3 +142,33 @@ jobs:
 
               echo ::endgroup::
           done
+
+  minimal-versions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: git submodule update --init --recursive
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.81.0  # MSRV
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+
+      - name: Remove non-essential dependencies
+        run: |
+          # Remove workspace dependencies
+          sed -i '/\[workspace]/,/#END-\[workspace]/d' Cargo.toml
+
+          # Remove dev-dependencies
+          sed -i '/\[dev-dependencies]/,/#END-\[dev-dependencies]/d' Cargo.toml
+
+      - name: Downgrade to minimal dependencies
+        run: |
+          cargo +nightly -Z minimal-versions update
+
+      - run: cargo +1.81.0 build --all-features

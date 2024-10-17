@@ -22,6 +22,7 @@ members = [
     "twox-hash-sum",
     "xx_hash-sys",
 ]
+#END-[workspace]
 
 [features]
 default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "std"]
@@ -52,6 +53,7 @@ serde = { version = "1.0.0", optional = true, default-features = false, features
 
 [dev-dependencies]
 serde_json = "1.0.117"
+#END-[dev-dependencies]
 
 [package.metadata.docs.rs]
 all-features = true
