@@ -15,8 +15,8 @@ A Rust implementation of the [xxHash] algorithm.
 
 # Examples
 
-These examples use [`XxHash64`](XxHash64) but the same ideas can be
-used for [`XxHash32`](XxHash32) or [`XxHash3_64`](XxHash3_64).
+These examples use [`XxHash64`][] but the same ideas can be
+used for [`XxHash32`][] or [`XxHash3_64`][].
 
 ## Hashing arbitrary data
 
@@ -45,7 +45,7 @@ let hash = hasher.finish();
 assert_eq!(0xeab5_5659_a496_d78b, hash);
 ```
 
-## In a [`HashMap`](std::collections::HashMap)
+## In a [`HashMap`][]
 
 ### With a default seed
 
@@ -80,6 +80,18 @@ hash.insert(42, "the answer");
 assert_eq!(hash.get(&42), Some(&"the answer"));
 ```
 
+# Feature Flags
+
+| name       | description                                                                                             |
+|------------|---------------------------------------------------------------------------------------------------------|
+| xxhash32   | Include the [`XxHash32`][] algorithm                                                                    |
+| xxhash64   | Include the [`XxHash64`][] algorithm                                                                    |
+| xxhash3_64 | Include the [`XxHash3_64`][] algorithm                                                                  |
+| random     | Create random instances of the hashers                                                                  |
+| serialize  | Serialize and deserialize hasher state with Serde                                                       |
+| std        | Use the Rust standard library. Enable this if you want SIMD support in [`XxHash3_64`][]                 |
+| alloc      | Use the Rust allocator library. Enable this if you want to create [`XxHash3_64`][] with dynamic secrets |
+
 # Benchmarks
 
 See benchmarks in the [comparison][] README.
@@ -96,3 +108,9 @@ See benchmarks in the [comparison][] README.
 6. Ensure tests pass.
 7. Push to the branch (`git push origin my-new-feature`)
 8. Create a new Pull Request
+
+
+[`Hashmap`]: std::collections::HashMap
+[`XxHash32`]: crate::XxHash32
+[`XxHash64`]: crate::XxHash64
+[`XxHash3_64`]: crate::XxHash3_64
