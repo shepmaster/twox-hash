@@ -559,7 +559,7 @@ macro_rules! dispatch {
         /// You must ensure that the CPU has the NEON feature
         #[inline]
         #[target_feature(enable = "neon")]
-        #[cfg(target_arch = "aarch64")]
+        #[cfg(all(target_arch = "aarch64", feature = "std"))]
         unsafe fn do_neon<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
         where
             $($wheres)*
@@ -575,7 +575,7 @@ macro_rules! dispatch {
         /// You must ensure that the CPU has the AVX2 feature
         #[inline]
         #[target_feature(enable = "avx2")]
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", feature = "std"))]
         unsafe fn do_avx2<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
         where
             $($wheres)*
@@ -591,7 +591,7 @@ macro_rules! dispatch {
         /// You must ensure that the CPU has the SSE2 feature
         #[inline]
         #[target_feature(enable = "sse2")]
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(all(target_arch = "x86_64", feature = "std"))]
         unsafe fn do_sse2<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
         where
             $($wheres)*

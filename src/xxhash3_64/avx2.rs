@@ -10,6 +10,7 @@ impl Impl {
     ///
     /// You must ensure that the CPU has the AVX2 feature
     #[inline]
+    #[cfg(feature = "std")]
     pub unsafe fn new_unchecked() -> Impl {
         Impl(())
     }
