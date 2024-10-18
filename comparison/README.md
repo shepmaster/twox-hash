@@ -19,15 +19,15 @@ graphs are boring flat lines, so a table is used instead.
 
 | Implementation | Throughput (GiB/s) |
 |----------------|--------------------|
-| Rust           | 13.4               |
-| C              | 13.4               |
+| Rust           | 13.5               |
+| C              | 13.5               |
 
 ## x86_64
 
 | Implementation | Throughput (GiB/s) |
 |----------------|--------------------|
-| Rust           | 15.7               |
-| C              | 15.8               |
+| Rust           | 16.5               |
+| C              | 16.5               |
 
 
 ## Streaming data
@@ -88,20 +88,20 @@ graphs are boring flat lines, so a table is used instead.
 
 | Implementation | Throughput (GiB/s) |
 |----------------|--------------------|
-| Rust           | 34.8               |
-| C              | 34.8               |
-| C (scalar)     | 21.0               |
-| C (NEON)       | 34.7               |
+| Rust           | 35.2               |
+| C              | 35.0               |
+| C (scalar)     | 21.2               |
+| C (NEON)       | 35.1               |
 
 ### x86_64
 
 | Implementation | Throughput (GiB/s) |
 |----------------|--------------------|
-| Rust           | 58.3               |
+| Rust           | 58.6               |
 | C              | 25.0               |
 | C (scalar)     | 7.5                |
 | C (SSE2)       | 25.1               |
-| C (AVX2)       | 58.1               |
+| C (AVX2)       | 57.8               |
 
 ## Streaming data
 
@@ -156,7 +156,7 @@ cluttering the graph and wasting benchmarking time.
 
 | CPU               | Memory | C compiler         |
 |-------------------|--------|--------------------|
-| Apple M1 Max      | 64 GiB | clang 15.0.0       |
+| Apple M1 Max      | 64 GiB | clang 16.0.0       |
 | AMD Ryzen 9 3950X | 32 GiB | cl.exe 19.41.34120 |
 
 Tests were run with `rustc 1.81.0 (eeb90cda1 2024-09-04)`.
@@ -178,7 +178,7 @@ Tests were run with `rustc 1.81.0 (eeb90cda1 2024-09-04)`.
 
   <tr>
     <th>C compiler</th>
-    <td>Apple clang version 15.0.0 (clang-1500.3.9.4)</td>
+    <td>Apple clang version 16.0.0 (clang-1600.0.26.3)</td>
   </tr>
 </table>
 
