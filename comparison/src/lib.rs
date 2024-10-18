@@ -1,104 +1,378 @@
-#![deny(rust_2018_idioms)]
+#![cfg(test)]
 
-use proptest::{collection::vec as propvec, prelude::*};
-use std::hash::Hasher;
-#[cfg(test)]
-use twox_hash::{XxHash32, XxHash64};
+use proptest::{num, prelude::*};
 
-pub mod c_xxhash;
+use twox_hash as rust;
+use xx_hash_sys as c;
 
-pub fn hash_once(mut hasher: impl Hasher, data: &[u8]) -> u64 {
-    hasher.write(&data);
-    hasher.finish()
+mod xxhash32 {
+    use proptest::{prelude::*, test_runner::TestCaseResult};
+    use std::hash::Hasher as _;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn oneshot_same_as_one_chunk(seed: u32, data: Vec<u8>) {
+            oneshot_same_as_one_chunk_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn oneshot_same_as_one_chunk_with_an_offset(seed: u32, (data, offset) in vec_and_index()) {
+            oneshot_same_as_one_chunk_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn oneshot_same_as_many_chunks(seed: u32, (data, chunks) in data_and_chunks()) {
+            oneshot_same_as_many_chunks_impl(seed, &data, &chunks)?;
+        }
+
+        #[test]
+        fn oneshot(seed: u32, data: Vec<u8>) {
+            oneshot_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn oneshot_with_an_offset(seed: u32, (data, offset) in vec_and_index()) {
+            oneshot_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn streaming_one_chunk(seed: u32, data: Vec<u8>) {
+            streaming_one_chunk_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn streaming_one_chunk_with_an_offset(seed: u32, (data, offset) in vec_and_index()) {
+            streaming_one_chunk_impl(seed, &data[offset..])?;
+        }
+    }
+
+    fn oneshot_same_as_one_chunk_impl(seed: u32, data: &[u8]) -> TestCaseResult {
+        let oneshot = rust::XxHash32::oneshot(seed, data);
+        let one_chunk = {
+            let mut hasher = rust::XxHash32::with_seed(seed);
+            hasher.write(data);
+            hasher.finish_32()
+        };
+
+        prop_assert_eq!(oneshot, one_chunk);
+        Ok(())
+    }
+
+    fn oneshot_same_as_many_chunks_impl(
+        seed: u32,
+        data: &[u8],
+        chunks: &[Vec<u8>],
+    ) -> TestCaseResult {
+        let oneshot = rust::XxHash32::oneshot(seed, data);
+        let many_chunks = {
+            let mut hasher = rust::XxHash32::with_seed(seed);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
+            hasher.finish_32()
+        };
+
+        prop_assert_eq!(oneshot, many_chunks);
+        Ok(())
+    }
+
+    fn oneshot_impl(seed: u32, data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash32::oneshot(seed, data);
+        let rust = rust::XxHash32::oneshot(seed, data);
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn streaming_one_chunk_impl(seed: u32, data: &[u8]) -> TestCaseResult {
+        let native = {
+            let mut hasher = c::XxHash32::with_seed(seed);
+            hasher.write(data);
+            hasher.finish()
+        };
+
+        let rust = {
+            let mut hasher = rust::XxHash32::with_seed(seed);
+            hasher.write(data);
+            hasher.finish_32()
+        };
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
 }
 
-#[cfg(test)]
-fn hash_by_chunks(mut hasher: impl Hasher, mut data: &[u8], chunk_sizes: &[usize]) -> u64 {
-    for &chunk_size in chunk_sizes {
-        let (this_chunk, remaining) = data.split_at(chunk_size);
-        hasher.write(this_chunk);
-        data = remaining;
+mod xxhash64 {
+    use proptest::{prelude::*, test_runner::TestCaseResult};
+    use std::hash::Hasher as _;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn oneshot_same_as_one_chunk(seed: u64, data: Vec<u8>) {
+            oneshot_same_as_one_chunk_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn oneshot_same_as_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+            oneshot_same_as_one_chunk_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn oneshot_same_as_many_chunks(seed: u64, (data, chunks) in data_and_chunks()) {
+            oneshot_same_as_many_chunks_impl(seed, &data, &chunks)?;
+        }
+
+        #[test]
+        fn oneshot(seed: u64, data: Vec<u8>) {
+            oneshot_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn oneshot_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+            oneshot_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn streaming_one_chunk(seed: u64, data: Vec<u8>) {
+            streaming_one_chunk_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn streaming_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+            streaming_one_chunk_impl(seed, &data[offset..])?;
+        }
     }
 
-    hasher.finish()
+    fn oneshot_same_as_one_chunk_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+        let oneshot = rust::XxHash64::oneshot(seed, data);
+        let one_chunk = {
+            let mut hasher = rust::XxHash64::with_seed(seed);
+            hasher.write(data);
+            hasher.finish()
+        };
+
+        prop_assert_eq!(oneshot, one_chunk);
+        Ok(())
+    }
+
+    fn oneshot_same_as_many_chunks_impl(
+        seed: u64,
+        data: &[u8],
+        chunks: &[Vec<u8>],
+    ) -> TestCaseResult {
+        let oneshot = rust::XxHash64::oneshot(seed, data);
+        let many_chunks = {
+            let mut hasher = rust::XxHash64::with_seed(seed);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
+            hasher.finish()
+        };
+
+        prop_assert_eq!(oneshot, many_chunks);
+        Ok(())
+    }
+
+    fn oneshot_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash64::oneshot(seed, data);
+        let rust = rust::XxHash64::oneshot(seed, data);
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn streaming_one_chunk_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+        let native = {
+            let mut hasher = c::XxHash64::with_seed(seed);
+            hasher.write(data);
+            hasher.finish()
+        };
+
+        let rust = {
+            let mut hasher = rust::XxHash64::with_seed(seed);
+            hasher.write(data);
+            hasher.finish()
+        };
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
 }
 
-prop_compose! {
-    fn data_and_offset
-        ()
-        (data in any::<Vec<u8>>())
-        (index in 0..=data.len(), data in Just(data))
-         -> (Vec<u8>, usize)
-    {
-        (data, index)
+mod xxhash3_64 {
+    use proptest::{prelude::*, test_runner::TestCaseResult};
+    use std::hash::Hasher as _;
+    use twox_hash::xxhash3_64::SECRET_MINIMUM_LENGTH;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn oneshot_same_as_one_chunk(seed: u64, data: Vec<u8>) {
+            oneshot_same_as_one_chunk_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn oneshot_same_as_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+            oneshot_same_as_one_chunk_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn oneshot_same_as_many_chunks(seed: u64, (data, chunks) in data_and_chunks()) {
+            oneshot_same_as_many_chunks_impl(seed, &data, &chunks)?;
+        }
+
+        #[test]
+        fn oneshot(seed: u64, data: Vec<u8>) {
+            oneshot_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn oneshot_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+            oneshot_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn oneshot_with_a_secret(secret in secret(), data: Vec<u8>) {
+            oneshot_with_secret_impl(&secret, &data)?;
+        }
+
+        #[test]
+        fn oneshot_with_a_seed_and_secret(seed: u64, secret in secret(), data: Vec<u8>) {
+            oneshot_with_seed_and_secret_impl(seed, &secret, &data)?;
+        }
+
+        #[test]
+        fn streaming_one_chunk(seed: u64, data: Vec<u8>) {
+            streaming_one_chunk_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn streaming_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+            streaming_one_chunk_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn streaming_with_a_seed_and_secret(seed: u64, secret in secret(), data: Vec<u8>) {
+            streaming_with_seed_and_secret_impl(seed, &secret, &data)?;
+        }
+    }
+
+    fn oneshot_same_as_one_chunk_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+        let oneshot = rust::XxHash3_64::oneshot_with_seed(seed, data);
+        let one_chunk = {
+            let mut hasher = rust::XxHash3_64::with_seed(seed);
+            hasher.write(data);
+            hasher.finish()
+        };
+
+        prop_assert_eq!(oneshot, one_chunk);
+        Ok(())
+    }
+
+    fn oneshot_same_as_many_chunks_impl(
+        seed: u64,
+        data: &[u8],
+        chunks: &[Vec<u8>],
+    ) -> TestCaseResult {
+        let oneshot = rust::XxHash3_64::oneshot_with_seed(seed, data);
+        let many_chunks = {
+            let mut hasher = rust::XxHash3_64::with_seed(seed);
+            for chunk in chunks {
+                hasher.write(chunk);
+            }
+            hasher.finish()
+        };
+
+        prop_assert_eq!(oneshot, many_chunks);
+        Ok(())
+    }
+
+    fn oneshot_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash3_64::oneshot_with_seed(seed, data);
+        let rust = rust::XxHash3_64::oneshot_with_seed(seed, data);
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn oneshot_with_secret_impl(secret: &[u8], data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash3_64::oneshot_with_secret(secret, data);
+        let rust = rust::XxHash3_64::oneshot_with_secret(secret, data).unwrap();
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn oneshot_with_seed_and_secret_impl(seed: u64, secret: &[u8], data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash3_64::oneshot_with_seed_and_secret(seed, secret, data);
+        let rust = rust::XxHash3_64::oneshot_with_seed_and_secret(seed, secret, data).unwrap();
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn streaming_one_chunk_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+        let native = {
+            let mut hasher = c::XxHash3_64::with_seed(seed);
+            hasher.write(data);
+            hasher.finish()
+        };
+
+        let rust = {
+            let mut hasher = rust::XxHash3_64::with_seed(seed);
+            hasher.write(data);
+            hasher.finish()
+        };
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn streaming_with_seed_and_secret_impl(
+        seed: u64,
+        secret: &[u8],
+        data: &[u8],
+    ) -> TestCaseResult {
+        let native = {
+            let mut hasher = c::XxHash3_64::with_seed_and_secret(seed, secret);
+            for chunk in data.chunks(256) {
+                hasher.write(chunk);
+            }
+            hasher.finish()
+        };
+
+        let rust = {
+            let mut hasher = rust::XxHash3_64::with_seed_and_secret(seed, secret).unwrap();
+            for chunk in data.chunks(256) {
+                hasher.write(chunk);
+            }
+            hasher.finish()
+        };
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn secret() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(num::u8::ANY, SECRET_MINIMUM_LENGTH..1024)
     }
 }
 
-prop_compose! {
-    fn data_and_chunk_sizes
-        ()
-        (sizes in propvec(1..=256usize, 0..=100))
-        (data in propvec(any::<u8>(), sizes.iter().sum::<usize>()), sizes in Just(sizes))
-         -> (Vec<u8>, Vec<usize>)
-    {
-        (data, sizes)
-    }
+fn vec_and_index() -> impl Strategy<Value = (Vec<u8>, usize)> {
+    prop::collection::vec(num::u8::ANY, 0..=32 * 1024).prop_flat_map(|vec| {
+        let len = vec.len();
+        (Just(vec), 0..=len)
+    })
 }
 
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(100_000))]
-
-    #[test]
-    fn same_results_as_c_for_64_bit(seed: u64, data: Vec<u8>) {
-        let our_result = hash_once(XxHash64::with_seed(seed), &data);
-        let their_result = c_xxhash::hash64(&data, seed);
-
-        prop_assert_eq!(our_result, their_result);
-    }
-
-   #[test]
-    fn same_results_as_c_with_offset_for_64_bit(seed: u64, (data, offset) in data_and_offset()) {
-        let data = &data[offset..];
-        let our_result = hash_once(XxHash64::with_seed(seed), data);
-        let their_result = c_xxhash::hash64(data, seed);
-
-        prop_assert_eq!(our_result, their_result);
-    }
-
-    #[test]
-    fn same_results_as_c_for_32_bit(seed: u32, data: Vec<u8>) {
-        let our_result = hash_once(XxHash32::with_seed(seed), &data);
-        let their_result = c_xxhash::hash32(&data, seed);
-
-        prop_assert_eq!(our_result, their_result as u64);
-    }
-
-   #[test]
-    fn same_results_as_c_with_offset_for_32_bit(seed: u32, (data, offset) in data_and_offset()) {
-        let data = &data[offset..];
-        let our_result = hash_once(XxHash32::with_seed(seed), data);
-        let their_result = c_xxhash::hash32(data, seed);
-
-        prop_assert_eq!(our_result, their_result as u64);
-    }
-}
-
-proptest! {
-    #![proptest_config(ProptestConfig::with_cases(1_000))]
-
-    #[test]
-    fn same_results_with_many_chunks_as_one_for_64_bit(seed: u64, (data, chunk_sizes) in data_and_chunk_sizes()) {
-        let chunked_result = hash_by_chunks(XxHash64::with_seed(seed), &data, &chunk_sizes);
-        let monolithic_result = hash_once(XxHash64::with_seed(seed), &data);
-
-        prop_assert_eq!(chunked_result, monolithic_result);
-    }
-
-    #[test]
-    fn same_results_with_many_chunks_as_one_for_32_bit(seed: u32, (data, chunk_sizes) in data_and_chunk_sizes()) {
-        let chunked_result = hash_by_chunks(XxHash32::with_seed(seed), &data, &chunk_sizes);
-        let monolithic_result = hash_once(XxHash32::with_seed(seed), &data);
-
-        prop_assert_eq!(chunked_result, monolithic_result);
-    }
+fn data_and_chunks() -> impl Strategy<Value = (Vec<u8>, Vec<Vec<u8>>)> {
+    prop::collection::vec(prop::collection::vec(num::u8::ANY, 0..100), 0..100).prop_map(|vs| {
+        let data = vs.iter().flatten().copied().collect();
+        (data, vs)
+    })
 }

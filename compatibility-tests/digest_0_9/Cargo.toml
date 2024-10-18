@@ -1,9 +1,0 @@
-[package]
-name = "digest_0_9"
-version = "0.1.0"
-authors = ["Jake Goulding <jake.goulding@gmail.com>"]
-edition = "2018"
-
-[dependencies]
-digest = "0.9"
-twox-hash = { path = "../..", features = ["digest_0_9"] }
