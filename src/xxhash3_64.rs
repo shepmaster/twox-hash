@@ -250,8 +250,6 @@ impl<S> SecretBuffer<S> {
 
 impl SecretBuffer<&'static [u8; DEFAULT_SECRET_LENGTH]> {
     /// Use the default seed and secret values while allocating nothing.
-    ///
-    /// Note that this type may take up a surprising amount of stack space.
     #[inline]
     pub const fn default() -> Self {
         SecretBuffer {
