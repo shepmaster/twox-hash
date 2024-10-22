@@ -543,6 +543,29 @@ impl<S> RawHasher<S> {
     }
 }
 
+fn dispatch_f<R>(f: impl FnOnce(&dyn Vector) -> R) -> R {
+    #[cfg(all(target_arch = "aarch64", feature = "std"))]
+    {
+        if std::arch::is_aarch64_feature_detected!("neon") {
+            // Safety: We just ensured we have the NEON feature
+            return unsafe { f(&neon::Impl) };
+        }
+    }
+
+    // #[cfg(all(target_arch = "x86_64", feature = "std"))]
+    // {
+    //     if is_x86_feature_detected!("avx2") {
+    //         // Safety: We just ensured we have the AVX2 feature
+    //         return unsafe { do_avx2($($arg_name),*) };
+    //     } else if is_x86_feature_detected!("sse2") {
+    //         // Safety: We just ensured we have the SSE2 feature
+    //         return unsafe { do_sse2($($arg_name),*) };
+    //     }
+    // }
+
+    f(&scalar::Impl)
+}
+
 macro_rules! dispatch {
     (
         fn $fn_name:ident<$($gen:ident),*>($($arg_name:ident : $arg_ty:ty),*) $(-> $ret_ty:ty)?
@@ -634,178 +657,158 @@ where
     S: FixedBuffer,
 {
     #[inline]
-    fn write(&mut self, input: &[u8]) {
-        let this = self;
-        dispatch! {
-            fn write_impl<S>(this: &mut RawHasher<S>, input: &[u8])
-            [S: FixedBuffer]
-        }
+    fn write(&mut self, mut input: &[u8]) {
+        dispatch_f(|vector| {
+            if input.is_empty() {
+                return;
+            }
+
+            let RawHasher {
+                secret_buffer,
+                buffer_usage,
+                stripe_accumulator,
+                total_bytes,
+                ..
+            } = self;
+
+            let n_stripes = secret_buffer.n_stripes();
+            let (_, secret, buffer) = secret_buffer.parts_mut();
+
+            *total_bytes += input.len();
+
+            // Safety: This is an invariant of the buffer.
+            unsafe {
+                debug_assert!(*buffer_usage <= buffer.len());
+                assert_unchecked(*buffer_usage <= buffer.len())
+            };
+
+            // We have some previous data saved; try to fill it up and process it first
+            if !buffer.is_empty() {
+                let remaining = &mut buffer[*buffer_usage..];
+                let n_to_copy = usize::min(remaining.len(), input.len());
+
+                let (remaining_head, remaining_tail) = remaining.split_at_mut(n_to_copy);
+                let (input_head, input_tail) = input.split_at(n_to_copy);
+
+                remaining_head.copy_from_slice(input_head);
+                *buffer_usage += n_to_copy;
+
+                input = input_tail;
+
+                // We did not fill up the buffer
+                if !remaining_tail.is_empty() {
+                    return;
+                }
+
+                // We don't know this isn't the last of the data
+                if input.is_empty() {
+                    return;
+                }
+
+                let (stripes, _) = buffer.bp_as_chunks();
+                for stripe in stripes {
+                    stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
+                }
+                *buffer_usage = 0;
+            }
+
+            debug_assert!(*buffer_usage == 0);
+
+            // Process as much of the input data in-place as possible,
+            // while leaving at least one full stripe for the
+            // finalization.
+            if let Some(len) = input.len().checked_sub(STRIPE_BYTES) {
+                let full_block_point = (len / STRIPE_BYTES) * STRIPE_BYTES;
+                // Safety: We know that `full_block_point` must be less than
+                // `input.len()` as we subtracted and then integer-divided
+                // (which rounds down) and then multiplied back. That's not
+                // evident to the compiler and `split_at` results in a
+                // potential panic.
+                //
+                // https://github.com/llvm/llvm-project/issues/104827
+                let (stripes, remainder) = unsafe { input.split_at_unchecked(full_block_point) };
+                let (stripes, _) = stripes.bp_as_chunks();
+
+                for stripe in stripes {
+                    stripe_accumulator.process_stripe(&vector, stripe, n_stripes, secret)
+                }
+                input = remainder;
+            }
+
+            // Any remaining data has to be less than the buffer, and the
+            // buffer is empty so just fill up the buffer.
+            debug_assert!(*buffer_usage == 0);
+            debug_assert!(!input.is_empty());
+
+            // Safety: We have parsed all the full blocks of input except one
+            // and potentially a full block minus one byte. That amount of
+            // data must be less than the buffer.
+            let buffer_head = unsafe {
+                debug_assert!(input.len() < 2 * STRIPE_BYTES);
+                debug_assert!(2 * STRIPE_BYTES < buffer.len());
+                buffer.get_unchecked_mut(..input.len())
+            };
+
+            buffer_head.copy_from_slice(input);
+            *buffer_usage = input.len();
+        });
     }
 
     #[inline]
     fn finish(&self) -> u64 {
-        let this = self;
-        dispatch! {
-            fn finish_impl<S>(this: &RawHasher<S>) -> u64
-            [S: FixedBuffer]
-        }
-    }
-}
+        dispatch_f(|vector| {
+            let RawHasher {
+                ref secret_buffer,
+                buffer_usage,
+                mut stripe_accumulator,
+                total_bytes,
+            } = *self;
 
-#[inline(always)]
-fn write_impl<S>(vector: impl Vector, this: &mut RawHasher<S>, mut input: &[u8])
-where
-    S: FixedBuffer,
-{
-    if input.is_empty() {
-        return;
-    }
+            let n_stripes = secret_buffer.n_stripes();
+            let (seed, secret, buffer) = secret_buffer.parts();
 
-    let RawHasher {
-        secret_buffer,
-        buffer_usage,
-        stripe_accumulator,
-        total_bytes,
-        ..
-    } = this;
+            // Safety: This is an invariant of the buffer.
+            unsafe {
+                debug_assert!(buffer_usage <= buffer.len());
+                assert_unchecked(buffer_usage <= buffer.len())
+            };
 
-    let n_stripes = secret_buffer.n_stripes();
-    let (_, secret, buffer) = secret_buffer.parts_mut();
+            if total_bytes > CUTOFF {
+                let input = &buffer[..buffer_usage];
 
-    *total_bytes += input.len();
+                // Ingest final stripes
+                let (stripes, remainder) = stripes_with_tail(input);
+                for stripe in stripes {
+                    stripe_accumulator.process_stripe(&vector, stripe, n_stripes, secret);
+                }
 
-    // Safety: This is an invariant of the buffer.
-    unsafe {
-        debug_assert!(*buffer_usage <= buffer.len());
-        assert_unchecked(*buffer_usage <= buffer.len())
-    };
+                let mut temp = [0; 64];
 
-    // We have some previous data saved; try to fill it up and process it first
-    if !buffer.is_empty() {
-        let remaining = &mut buffer[*buffer_usage..];
-        let n_to_copy = usize::min(remaining.len(), input.len());
+                let last_stripe = match input.last_chunk() {
+                    Some(chunk) => chunk,
+                    None => {
+                        let n_to_reuse = 64 - input.len();
+                        let to_reuse = buffer.len() - n_to_reuse;
 
-        let (remaining_head, remaining_tail) = remaining.split_at_mut(n_to_copy);
-        let (input_head, input_tail) = input.split_at(n_to_copy);
+                        let (temp_head, temp_tail) = temp.split_at_mut(n_to_reuse);
+                        temp_head.copy_from_slice(&buffer[to_reuse..]);
+                        temp_tail.copy_from_slice(input);
 
-        remaining_head.copy_from_slice(input_head);
-        *buffer_usage += n_to_copy;
+                        &temp
+                    }
+                };
 
-        input = input_tail;
-
-        // We did not fill up the buffer
-        if !remaining_tail.is_empty() {
-            return;
-        }
-
-        // We don't know this isn't the last of the data
-        if input.is_empty() {
-            return;
-        }
-
-        let (stripes, _) = buffer.bp_as_chunks();
-        for stripe in stripes {
-            stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
-        }
-        *buffer_usage = 0;
-    }
-
-    debug_assert!(*buffer_usage == 0);
-
-    // Process as much of the input data in-place as possible,
-    // while leaving at least one full stripe for the
-    // finalization.
-    if let Some(len) = input.len().checked_sub(STRIPE_BYTES) {
-        let full_block_point = (len / STRIPE_BYTES) * STRIPE_BYTES;
-        // Safety: We know that `full_block_point` must be less than
-        // `input.len()` as we subtracted and then integer-divided
-        // (which rounds down) and then multiplied back. That's not
-        // evident to the compiler and `split_at` results in a
-        // potential panic.
-        //
-        // https://github.com/llvm/llvm-project/issues/104827
-        let (stripes, remainder) = unsafe { input.split_at_unchecked(full_block_point) };
-        let (stripes, _) = stripes.bp_as_chunks();
-
-        for stripe in stripes {
-            stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret)
-        }
-        input = remainder;
-    }
-
-    // Any remaining data has to be less than the buffer, and the
-    // buffer is empty so just fill up the buffer.
-    debug_assert!(*buffer_usage == 0);
-    debug_assert!(!input.is_empty());
-
-    // Safety: We have parsed all the full blocks of input except one
-    // and potentially a full block minus one byte. That amount of
-    // data must be less than the buffer.
-    let buffer_head = unsafe {
-        debug_assert!(input.len() < 2 * STRIPE_BYTES);
-        debug_assert!(2 * STRIPE_BYTES < buffer.len());
-        buffer.get_unchecked_mut(..input.len())
-    };
-
-    buffer_head.copy_from_slice(input);
-    *buffer_usage = input.len();
-}
-
-#[inline(always)]
-fn finish_impl<S>(vector: impl Vector, this: &RawHasher<S>) -> u64
-where
-    S: FixedBuffer,
-{
-    let RawHasher {
-        ref secret_buffer,
-        buffer_usage,
-        mut stripe_accumulator,
-        total_bytes,
-    } = *this;
-
-    let n_stripes = secret_buffer.n_stripes();
-    let (seed, secret, buffer) = secret_buffer.parts();
-
-    // Safety: This is an invariant of the buffer.
-    unsafe {
-        debug_assert!(buffer_usage <= buffer.len());
-        assert_unchecked(buffer_usage <= buffer.len())
-    };
-
-    if total_bytes > CUTOFF {
-        let input = &buffer[..buffer_usage];
-
-        // Ingest final stripes
-        let (stripes, remainder) = stripes_with_tail(input);
-        for stripe in stripes {
-            stripe_accumulator.process_stripe(vector, stripe, n_stripes, secret);
-        }
-
-        let mut temp = [0; 64];
-
-        let last_stripe = match input.last_chunk() {
-            Some(chunk) => chunk,
-            None => {
-                let n_to_reuse = 64 - input.len();
-                let to_reuse = buffer.len() - n_to_reuse;
-
-                let (temp_head, temp_tail) = temp.split_at_mut(n_to_reuse);
-                temp_head.copy_from_slice(&buffer[to_reuse..]);
-                temp_tail.copy_from_slice(input);
-
-                &temp
+                Algorithm(vector).finalize(
+                    stripe_accumulator.accumulator,
+                    remainder,
+                    last_stripe,
+                    secret,
+                    total_bytes,
+                )
+            } else {
+                impl_oneshot(DEFAULT_SECRET, seed, &buffer[..total_bytes])
             }
-        };
-
-        Algorithm(vector).finalize(
-            stripe_accumulator.accumulator,
-            remainder,
-            last_stripe,
-            secret,
-            total_bytes,
-        )
-    } else {
-        impl_oneshot(DEFAULT_SECRET, seed, &buffer[..total_bytes])
+        })
     }
 }
 
@@ -1171,10 +1174,20 @@ fn stripes_with_tail(block: &[u8]) -> (&[[u8; 64]], &[u8]) {
     }
 }
 
-trait Vector: Copy {
+trait Vector {
     fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]);
 
     fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]);
+}
+
+impl<V: Vector + ?Sized> Vector for &V {
+    fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]) {
+        V::round_scramble(self, acc, secret_end);
+    }
+
+    fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]) {
+        V::accumulate(self, acc, stripe, secret);
+    }
 }
 
 #[inline]
