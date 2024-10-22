@@ -476,6 +476,7 @@ impl StripeAccumulator {
     }
 
     #[inline]
+    #[target_feature(from_args)]
     fn process_stripe(
         &mut self,
         vector: impl Vector,
@@ -557,22 +558,6 @@ macro_rules! dispatch {
 
         /// # Safety
         ///
-        /// You must ensure that the CPU has the NEON feature
-        #[inline]
-        #[target_feature(enable = "neon")]
-        #[cfg(all(target_arch = "aarch64", feature = "std"))]
-        unsafe fn do_neon<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
-        where
-            $($wheres)*
-        {
-            // Safety: The caller has ensured we have the NEON feature
-            unsafe {
-                $fn_name(neon::Impl::new_unchecked(), $($arg_name),*)
-            }
-        }
-
-        /// # Safety
-        ///
         /// You must ensure that the CPU has the AVX2 feature
         #[inline]
         #[target_feature(enable = "avx2")]
@@ -606,7 +591,7 @@ macro_rules! dispatch {
         // Now we invoke the right function
 
         #[cfg(_internal_xxhash3_force_neon)]
-        return unsafe { do_neon($($arg_name),*) };
+        return unsafe { $fn_name(neon::Impl, $($arg_name),*) };
 
         #[cfg(_internal_xxhash3_force_avx2)]
         return unsafe { do_avx2($($arg_name),*) };
@@ -625,7 +610,7 @@ macro_rules! dispatch {
             {
                 if std::arch::is_aarch64_feature_detected!("neon") {
                     // Safety: We just ensured we have the NEON feature
-                    return unsafe { do_neon($($arg_name),*) };
+                    return unsafe { $fn_name(neon::Impl, $($arg_name),*) };
                 }
             }
 

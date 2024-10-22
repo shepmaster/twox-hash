@@ -1,5 +1,6 @@
 #![doc = include_str!("../README.md")]
-
+#![allow(incomplete_features)]
+#![feature(target_feature_11, struct_target_features)]
 #![deny(rust_2018_idioms)]
 #![deny(missing_docs)]
 #![cfg_attr(not(feature = "std"), no_std)]
