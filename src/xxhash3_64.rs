@@ -6,66 +6,16 @@
     unsafe_op_in_unsafe_fn
 )]
 
-use core::{hash, hint::assert_unchecked, slice};
+use core::{hash, hint::assert_unchecked};
 
-use crate::{IntoU128, IntoU32, IntoU64};
+use crate::{
+    xxhash3::{primes::*, *},
+    IntoU128 as _, IntoU32 as _, IntoU64 as _,
+};
 
-mod secret;
-
-use secret::Secret;
-
-pub use secret::SECRET_MINIMUM_LENGTH;
-
-// This module is not `cfg`-gated because it is used by some of the
-// SIMD implementations.
-mod scalar;
-
-#[cfg(target_arch = "aarch64")]
-mod neon;
-
-#[cfg(target_arch = "x86_64")]
-mod avx2;
-
-#[cfg(target_arch = "x86_64")]
-mod sse2;
-
-const PRIME32_1: u64 = 0x9E3779B1;
-const PRIME32_2: u64 = 0x85EBCA77;
-const PRIME32_3: u64 = 0xC2B2AE3D;
-const PRIME64_1: u64 = 0x9E3779B185EBCA87;
-const PRIME64_2: u64 = 0xC2B2AE3D27D4EB4F;
-const PRIME64_3: u64 = 0x165667B19E3779F9;
-const PRIME64_4: u64 = 0x85EBCA77C2B2AE63;
-const PRIME64_5: u64 = 0x27D4EB2F165667C5;
-const PRIME_MX1: u64 = 0x165667919E3779F9;
-const PRIME_MX2: u64 = 0x9FB21C651E98DF25;
-
-const CUTOFF: usize = 240;
-
-const DEFAULT_SEED: u64 = 0;
-
-/// The length of the default secret.
-pub const DEFAULT_SECRET_LENGTH: usize = 192;
-
-type DefaultSecret = [u8; DEFAULT_SECRET_LENGTH];
-
-const DEFAULT_SECRET_RAW: DefaultSecret = [
-    0xb8, 0xfe, 0x6c, 0x39, 0x23, 0xa4, 0x4b, 0xbe, 0x7c, 0x01, 0x81, 0x2c, 0xf7, 0x21, 0xad, 0x1c,
-    0xde, 0xd4, 0x6d, 0xe9, 0x83, 0x90, 0x97, 0xdb, 0x72, 0x40, 0xa4, 0xa4, 0xb7, 0xb3, 0x67, 0x1f,
-    0xcb, 0x79, 0xe6, 0x4e, 0xcc, 0xc0, 0xe5, 0x78, 0x82, 0x5a, 0xd0, 0x7d, 0xcc, 0xff, 0x72, 0x21,
-    0xb8, 0x08, 0x46, 0x74, 0xf7, 0x43, 0x24, 0x8e, 0xe0, 0x35, 0x90, 0xe6, 0x81, 0x3a, 0x26, 0x4c,
-    0x3c, 0x28, 0x52, 0xbb, 0x91, 0xc3, 0x00, 0xcb, 0x88, 0xd0, 0x65, 0x8b, 0x1b, 0x53, 0x2e, 0xa3,
-    0x71, 0x64, 0x48, 0x97, 0xa2, 0x0d, 0xf9, 0x4e, 0x38, 0x19, 0xef, 0x46, 0xa9, 0xde, 0xac, 0xd8,
-    0xa8, 0xfa, 0x76, 0x3f, 0xe3, 0x9c, 0x34, 0x3f, 0xf9, 0xdc, 0xbb, 0xc7, 0xc7, 0x0b, 0x4f, 0x1d,
-    0x8a, 0x51, 0xe0, 0x4b, 0xcd, 0xb4, 0x59, 0x31, 0xc8, 0x9f, 0x7e, 0xc9, 0xd9, 0x78, 0x73, 0x64,
-    0xea, 0xc5, 0xac, 0x83, 0x34, 0xd3, 0xeb, 0xc3, 0xc5, 0x81, 0xa0, 0xff, 0xfa, 0x13, 0x63, 0xeb,
-    0x17, 0x0d, 0xdd, 0x51, 0xb7, 0xf0, 0xda, 0x49, 0xd3, 0x16, 0x55, 0x26, 0x29, 0xd4, 0x68, 0x9e,
-    0x2b, 0x16, 0xbe, 0x58, 0x7d, 0x47, 0xa1, 0xfc, 0x8f, 0xf8, 0xb8, 0xd1, 0x7a, 0xd0, 0x31, 0xce,
-    0x45, 0xcb, 0x3a, 0x8f, 0x95, 0x16, 0x04, 0x28, 0xaf, 0xd7, 0xfb, 0xca, 0xbb, 0x4b, 0x40, 0x7e,
-];
-
-// Safety: The default secret is long enough
-const DEFAULT_SECRET: &Secret = unsafe { Secret::new_unchecked(&DEFAULT_SECRET_RAW) };
+pub use crate::xxhash3::{
+    secret::SECRET_MINIMUM_LENGTH, OneshotWithSecretError, DEFAULT_SECRET_LENGTH,
+};
 
 /// Calculates the 64-bit hash.
 #[derive(Clone)]
@@ -128,19 +78,6 @@ impl Hasher {
         };
 
         Ok(impl_oneshot(secret, seed, input))
-    }
-}
-
-/// The provided secret was not at least [`SECRET_MINIMUM_LENGTH`][]
-/// bytes.
-#[derive(Debug)]
-pub struct OneshotWithSecretError(secret::Error);
-
-impl core::error::Error for OneshotWithSecretError {}
-
-impl core::fmt::Display for OneshotWithSecretError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.fmt(f)
     }
 }
 
@@ -459,55 +396,6 @@ impl<S> core::fmt::Display for SecretWithSeedError<S> {
     }
 }
 
-/// Tracks which stripe we are currently on to know which part of the
-/// secret we should be using.
-#[derive(Copy, Clone)]
-struct StripeAccumulator {
-    accumulator: [u64; 8],
-    current_stripe: usize,
-}
-
-impl StripeAccumulator {
-    fn new() -> Self {
-        Self {
-            accumulator: INITIAL_ACCUMULATORS,
-            current_stripe: 0,
-        }
-    }
-
-    #[inline]
-    fn process_stripe(
-        &mut self,
-        vector: impl Vector,
-        stripe: &[u8; 64],
-        n_stripes: usize,
-        secret: &Secret,
-    ) {
-        let Self {
-            accumulator,
-            current_stripe,
-            ..
-        } = self;
-
-        // For each stripe
-
-        // Safety: The number of stripes is determined by the
-        // block size, which is determined by the secret size.
-        let secret_stripe = unsafe { secret.stripe(*current_stripe) };
-        vector.accumulate(accumulator, stripe, secret_stripe);
-
-        *current_stripe += 1;
-
-        // After a full block's worth
-        if *current_stripe == n_stripes {
-            let secret_end = secret.last_stripe();
-            vector.round_scramble(accumulator, secret_end);
-
-            *current_stripe = 0;
-        }
-    }
-}
-
 /// A lower-level interface for computing a hash from streaming data.
 ///
 /// The algorithm requires a secret which can be a reasonably large
@@ -540,108 +428,6 @@ impl<S> RawHasher<S> {
     pub fn into_secret(self) -> S {
         self.secret_buffer.into_secret()
     }
-}
-
-macro_rules! dispatch {
-    (
-        fn $fn_name:ident<$($gen:ident),*>($($arg_name:ident : $arg_ty:ty),*) $(-> $ret_ty:ty)?
-        [$($wheres:tt)*]
-    ) => {
-        #[inline]
-        fn do_scalar<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
-        where
-            $($wheres)*
-        {
-            $fn_name(scalar::Impl, $($arg_name),*)
-        }
-
-        /// # Safety
-        ///
-        /// You must ensure that the CPU has the NEON feature
-        #[inline]
-        #[target_feature(enable = "neon")]
-        #[cfg(all(target_arch = "aarch64", feature = "std"))]
-        unsafe fn do_neon<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
-        where
-            $($wheres)*
-        {
-            // Safety: The caller has ensured we have the NEON feature
-            unsafe {
-                $fn_name(neon::Impl::new_unchecked(), $($arg_name),*)
-            }
-        }
-
-        /// # Safety
-        ///
-        /// You must ensure that the CPU has the AVX2 feature
-        #[inline]
-        #[target_feature(enable = "avx2")]
-        #[cfg(all(target_arch = "x86_64", feature = "std"))]
-        unsafe fn do_avx2<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
-        where
-            $($wheres)*
-        {
-            // Safety: The caller has ensured we have the AVX2 feature
-            unsafe {
-                $fn_name(avx2::Impl::new_unchecked(), $($arg_name),*)
-            }
-        }
-
-        /// # Safety
-        ///
-        /// You must ensure that the CPU has the SSE2 feature
-        #[inline]
-        #[target_feature(enable = "sse2")]
-        #[cfg(all(target_arch = "x86_64", feature = "std"))]
-        unsafe fn do_sse2<$($gen),*>($($arg_name : $arg_ty),*) $(-> $ret_ty)?
-        where
-            $($wheres)*
-        {
-            // Safety: The caller has ensured we have the SSE2 feature
-            unsafe {
-                $fn_name(sse2::Impl::new_unchecked(), $($arg_name),*)
-            }
-        }
-
-        // Now we invoke the right function
-
-        #[cfg(_internal_xxhash3_force_neon)]
-        return unsafe { do_neon($($arg_name),*) };
-
-        #[cfg(_internal_xxhash3_force_avx2)]
-        return unsafe { do_avx2($($arg_name),*) };
-
-        #[cfg(_internal_xxhash3_force_sse2)]
-        return unsafe { do_sse2($($arg_name),*) };
-
-        #[cfg(_internal_xxhash3_force_scalar)]
-        return do_scalar($($arg_name),*);
-
-        // This code can be unreachable if one of the `*_force_*` cfgs
-        // are set above, but that's the point.
-        #[allow(unreachable_code)]
-        {
-            #[cfg(all(target_arch = "aarch64", feature = "std"))]
-            {
-                if std::arch::is_aarch64_feature_detected!("neon") {
-                    // Safety: We just ensured we have the NEON feature
-                    return unsafe { do_neon($($arg_name),*) };
-                }
-            }
-
-            #[cfg(all(target_arch = "x86_64", feature = "std"))]
-            {
-                if is_x86_feature_detected!("avx2") {
-                    // Safety: We just ensured we have the AVX2 feature
-                    return unsafe { do_avx2($($arg_name),*) };
-                } else if is_x86_feature_detected!("sse2") {
-                    // Safety: We just ensured we have the SSE2 feature
-                    return unsafe { do_sse2($($arg_name),*) };
-                }
-            }
-            do_scalar($($arg_name),*)
-        }
-    };
 }
 
 impl<S> hash::Hasher for RawHasher<S>
@@ -824,31 +610,6 @@ where
     }
 }
 
-/// # Correctness
-///
-/// This function assumes that the incoming buffer has been populated
-/// with the default secret.
-#[inline]
-fn derive_secret(seed: u64, secret: &mut DefaultSecret) {
-    if seed == DEFAULT_SEED {
-        return;
-    }
-
-    let (words, _) = secret.bp_as_chunks_mut();
-    let (pairs, _) = words.bp_as_chunks_mut();
-
-    for [a_p, b_p] in pairs {
-        let a = u64::from_le_bytes(*a_p);
-        let b = u64::from_le_bytes(*b_p);
-
-        let a = a.wrapping_add(seed);
-        let b = b.wrapping_sub(seed);
-
-        *a_p = a.to_le_bytes();
-        *b_p = b.to_le_bytes();
-    }
-}
-
 #[inline(always)]
 fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     match input.len() {
@@ -866,16 +627,6 @@ fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 
         0 => impl_0_bytes(secret, seed),
     }
-}
-
-macro_rules! assert_input_range {
-    ($min:literal.., $len:expr) => {
-        assert!($min <= $len);
-    };
-    ($min:literal..=$max:literal, $len:expr) => {
-        assert!($min <= $len);
-        assert!($len <= $max);
-    };
 }
 
 #[inline(always)]
@@ -1010,33 +761,6 @@ fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 }
 
 #[inline]
-fn mix_step(data: &[u8; 16], secret: &[u8; 16], seed: u64) -> u64 {
-    #[inline]
-    fn to_u64s(bytes: &[u8; 16]) -> [u64; 2] {
-        let (pair, _) = bytes.bp_as_chunks::<8>();
-        [pair[0], pair[1]].map(u64::from_le_bytes)
-    }
-
-    let data_words = to_u64s(data);
-    let secret_words = to_u64s(secret);
-
-    let mul_result = {
-        let a = (data_words[0] ^ secret_words[0].wrapping_add(seed)).into_u128();
-        let b = (data_words[1] ^ secret_words[1].wrapping_sub(seed)).into_u128();
-
-        a.wrapping_mul(b)
-    };
-
-    mul_result.lower_half() ^ mul_result.upper_half()
-}
-
-#[rustfmt::skip]
-const INITIAL_ACCUMULATORS: [u64; 8] = [
-    PRIME32_3, PRIME64_1, PRIME64_2, PRIME64_3,
-    PRIME64_4, PRIME32_2, PRIME64_5, PRIME32_1,
-];
-
-#[inline]
 fn impl_241_plus_bytes(secret: &Secret, input: &[u8]) -> u64 {
     assert_input_range!(241.., input.len());
     dispatch! {
@@ -1050,288 +774,11 @@ fn oneshot_impl(vector: impl Vector, secret: &Secret, input: &[u8]) -> u64 {
     Algorithm(vector).oneshot(secret, input)
 }
 
-struct Algorithm<V>(V);
-
-impl<V> Algorithm<V>
-where
-    V: Vector,
-{
-    #[inline]
-    fn oneshot(&self, secret: &Secret, input: &[u8]) -> u64 {
-        assert_input_range!(241.., input.len());
-        let mut acc = INITIAL_ACCUMULATORS;
-
-        let stripes_per_block = (secret.len() - 64) / 8;
-        let block_size = 64 * stripes_per_block;
-
-        let mut blocks = input.chunks_exact(block_size);
-
-        let last_block = if blocks.remainder().is_empty() {
-            // Safety: We know that `input` is non-empty, which means
-            // that either there will be a remainder or one or more
-            // full blocks. That info isn't flowing to the optimizer,
-            // so we use `unwrap_unchecked`.
-            unsafe { blocks.next_back().unwrap_unchecked() }
-        } else {
-            blocks.remainder()
-        };
-
-        self.rounds(&mut acc, blocks, secret);
-
-        let len = input.len();
-
-        let last_stripe = input.last_chunk().unwrap();
-        self.finalize(acc, last_block, last_stripe, secret, len)
-    }
-
-    #[inline]
-    fn rounds<'a>(
-        &self,
-        acc: &mut [u64; 8],
-        blocks: impl IntoIterator<Item = &'a [u8]>,
-        secret: &Secret,
-    ) {
-        for block in blocks {
-            let (stripes, _) = block.bp_as_chunks();
-
-            self.round(acc, stripes, secret);
-        }
-    }
-
-    #[inline]
-    fn round(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &Secret) {
-        let secret_end = secret.last_stripe();
-
-        self.round_accumulate(acc, stripes, secret);
-        self.0.round_scramble(acc, secret_end);
-    }
-
-    #[inline]
-    fn round_accumulate(&self, acc: &mut [u64; 8], stripes: &[[u8; 64]], secret: &Secret) {
-        let secrets = (0..stripes.len()).map(|i| {
-            // Safety: The number of stripes is determined by the
-            // block size, which is determined by the secret size.
-            unsafe { secret.stripe(i) }
-        });
-
-        for (stripe, secret) in stripes.iter().zip(secrets) {
-            self.0.accumulate(acc, stripe, secret);
-        }
-    }
-
-    #[inline]
-    fn finalize(
-        &self,
-        mut acc: [u64; 8],
-        last_block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &Secret,
-        len: usize,
-    ) -> u64 {
-        debug_assert!(!last_block.is_empty());
-        self.last_round(&mut acc, last_block, last_stripe, secret);
-
-        self.final_merge(&mut acc, len.into_u64().wrapping_mul(PRIME64_1), secret)
-    }
-
-    #[inline]
-    fn last_round(
-        &self,
-        acc: &mut [u64; 8],
-        block: &[u8],
-        last_stripe: &[u8; 64],
-        secret: &Secret,
-    ) {
-        // Accumulation steps are run for the stripes in the last block,
-        // except for the last stripe (whether it is full or not)
-        let (stripes, _) = stripes_with_tail(block);
-
-        let secrets = (0..stripes.len()).map(|i| {
-            // Safety: The number of stripes is determined by the
-            // block size, which is determined by the secret size.
-            unsafe { secret.stripe(i) }
-        });
-
-        for (stripe, secret) in stripes.iter().zip(secrets) {
-            self.0.accumulate(acc, stripe, secret);
-        }
-
-        let last_stripe_secret = secret.last_stripe_secret_better_name();
-        self.0.accumulate(acc, last_stripe, last_stripe_secret);
-    }
-
-    #[inline]
-    fn final_merge(&self, acc: &mut [u64; 8], init_value: u64, secret: &Secret) -> u64 {
-        let secret = secret.final_secret();
-        let (secrets, _) = secret.bp_as_chunks();
-        let mut result = init_value;
-        for i in 0..4 {
-            // 64-bit by 64-bit multiplication to 128-bit full result
-            let mul_result = {
-                let sa = u64::from_le_bytes(secrets[i * 2]);
-                let sb = u64::from_le_bytes(secrets[i * 2 + 1]);
-
-                let a = (acc[i * 2] ^ sa).into_u128();
-                let b = (acc[i * 2 + 1] ^ sb).into_u128();
-                a.wrapping_mul(b)
-            };
-            result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
-        }
-        avalanche(result)
-    }
-}
-
-#[inline]
-fn stripes_with_tail(block: &[u8]) -> (&[[u8; 64]], &[u8]) {
-    match block.bp_as_chunks() {
-        ([stripes @ .., last], []) => (stripes, last),
-        (stripes, last) => (stripes, last),
-    }
-}
-
-trait Vector: Copy {
-    fn round_scramble(&self, acc: &mut [u64; 8], secret_end: &[u8; 64]);
-
-    fn accumulate(&self, acc: &mut [u64; 8], stripe: &[u8; 64], secret: &[u8; 64]);
-}
-
-#[inline]
-fn avalanche(mut x: u64) -> u64 {
-    x ^= x >> 37;
-    x = x.wrapping_mul(PRIME_MX1);
-    x ^= x >> 32;
-    x
-}
-
-#[inline]
-fn avalanche_xxh64(mut x: u64) -> u64 {
-    x ^= x >> 33;
-    x = x.wrapping_mul(PRIME64_2);
-    x ^= x >> 29;
-    x = x.wrapping_mul(PRIME64_3);
-    x ^= x >> 32;
-    x
-}
-
-trait Halves {
-    type Output;
-
-    fn upper_half(self) -> Self::Output;
-    fn lower_half(self) -> Self::Output;
-}
-
-impl Halves for u64 {
-    type Output = u32;
-
-    #[inline]
-    fn upper_half(self) -> Self::Output {
-        (self >> 32) as _
-    }
-
-    #[inline]
-    fn lower_half(self) -> Self::Output {
-        self as _
-    }
-}
-
-impl Halves for u128 {
-    type Output = u64;
-
-    #[inline]
-    fn upper_half(self) -> Self::Output {
-        (self >> 64) as _
-    }
-
-    #[inline]
-    fn lower_half(self) -> Self::Output {
-        self as _
-    }
-}
-
-trait U8SliceExt {
-    fn first_u32(&self) -> Option<u32>;
-
-    fn last_u32(&self) -> Option<u32>;
-
-    fn first_u64(&self) -> Option<u64>;
-
-    fn last_u64(&self) -> Option<u64>;
-}
-
-impl U8SliceExt for [u8] {
-    #[inline]
-    fn first_u32(&self) -> Option<u32> {
-        self.first_chunk().copied().map(u32::from_le_bytes)
-    }
-
-    #[inline]
-    fn last_u32(&self) -> Option<u32> {
-        self.last_chunk().copied().map(u32::from_le_bytes)
-    }
-
-    #[inline]
-    fn first_u64(&self) -> Option<u64> {
-        self.first_chunk().copied().map(u64::from_le_bytes)
-    }
-
-    #[inline]
-    fn last_u64(&self) -> Option<u64> {
-        self.last_chunk().copied().map(u64::from_le_bytes)
-    }
-}
-
-trait SliceBackport<T> {
-    fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]);
-
-    fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]);
-
-    fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]);
-}
-
-impl<T> SliceBackport<T> for [T] {
-    fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]) {
-        assert_ne!(N, 0);
-        let len = self.len() / N;
-        // Safety: `(len / N) * N` has to be less-than-or-equal to `len`
-        let (head, tail) = unsafe { self.split_at_unchecked(len * N) };
-        // Safety: (1) `head` points to valid data, (2) the alignment
-        // of an array and the individual type are the same, (3) the
-        // valid elements are less-than-or-equal to the original
-        // slice.
-        let head = unsafe { slice::from_raw_parts(head.as_ptr().cast(), len) };
-        (head, tail)
-    }
-
-    fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]) {
-        assert_ne!(N, 0);
-        let len = self.len() / N;
-        // Safety: `(len / N) * N` has to be less than or equal to `len`
-        let (head, tail) = unsafe { self.split_at_mut_unchecked(len * N) };
-        // Safety: (1) `head` points to valid data, (2) the alignment
-        // of an array and the individual type are the same, (3) the
-        // valid elements are less-than-or-equal to the original
-        // slice.
-        let head = unsafe { slice::from_raw_parts_mut(head.as_mut_ptr().cast(), len) };
-        (head, tail)
-    }
-
-    fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]) {
-        assert_ne!(N, 0);
-        let len = self.len() / N;
-        // Safety: `(len / N) * N` has to be less than or equal to `len`
-        let (head, tail) = unsafe { self.split_at_unchecked(self.len() - len * N) };
-        // Safety: (1) `tail` points to valid data, (2) the alignment
-        // of an array and the individual type are the same, (3) the
-        // valid elements are less-than-or-equal to the original
-        // slice.
-        let tail = unsafe { slice::from_raw_parts(tail.as_ptr().cast(), len) };
-        (head, tail)
-    }
-}
-
 #[cfg(test)]
 mod test {
-    use std::{array, hash::Hasher as _};
+    use std::hash::Hasher as _;
+
+    use crate::xxhash3::test::bytes;
 
     use super::*;
 
@@ -1341,11 +788,6 @@ mod test {
     };
 
     const EMPTY_BYTES: [u8; 0] = [];
-
-    #[test]
-    fn default_secret_is_valid() {
-        assert!(DEFAULT_SECRET.is_valid())
-    }
 
     #[test]
     fn secret_buffer_default_is_valid() {
@@ -1360,18 +802,6 @@ mod test {
     #[test]
     fn secret_buffer_allocate_with_seed_is_valid() {
         assert!(SecretBuffer::allocate_with_seed(0xdead_beef).is_valid())
-    }
-
-    macro_rules! bytes {
-        ($($n: literal),* $(,)?) => {
-            &[$(&gen_bytes::<$n>() as &[u8],)*] as &[&[u8]]
-        };
-    }
-
-    fn gen_bytes<const N: usize>() -> [u8; N] {
-        // Picking 251 as it's a prime number, which will hopefully
-        // help avoid incidental power-of-two alignment.
-        array::from_fn(|i| (i % 251) as u8)
     }
 
     fn hash_byte_by_byte(input: &[u8]) -> u64 {
@@ -1621,63 +1051,5 @@ mod test {
             let hash = f(0xdead_cafe, input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
-    }
-
-    #[test]
-    fn backported_as_chunks() {
-        let x = [1, 2, 3, 4, 5];
-
-        let (a, b) = x.bp_as_chunks::<1>();
-        assert_eq!(a, &[[1], [2], [3], [4], [5]]);
-        assert_eq!(b, &[] as &[i32]);
-
-        let (a, b) = x.bp_as_chunks::<2>();
-        assert_eq!(a, &[[1, 2], [3, 4]]);
-        assert_eq!(b, &[5]);
-
-        let (a, b) = x.bp_as_chunks::<3>();
-        assert_eq!(a, &[[1, 2, 3]]);
-        assert_eq!(b, &[4, 5]);
-
-        let (a, b) = x.bp_as_chunks::<4>();
-        assert_eq!(a, &[[1, 2, 3, 4]]);
-        assert_eq!(b, &[5]);
-
-        let (a, b) = x.bp_as_chunks::<5>();
-        assert_eq!(a, &[[1, 2, 3, 4, 5]]);
-        assert_eq!(b, &[] as &[i32]);
-
-        let (a, b) = x.bp_as_chunks::<6>();
-        assert_eq!(a, &[] as &[[i32; 6]]);
-        assert_eq!(b, &[1, 2, 3, 4, 5]);
-    }
-
-    #[test]
-    fn backported_as_rchunks() {
-        let x = [1, 2, 3, 4, 5];
-
-        let (a, b) = x.bp_as_rchunks::<1>();
-        assert_eq!(a, &[] as &[i32]);
-        assert_eq!(b, &[[1], [2], [3], [4], [5]]);
-
-        let (a, b) = x.bp_as_rchunks::<2>();
-        assert_eq!(a, &[1]);
-        assert_eq!(b, &[[2, 3], [4, 5]]);
-
-        let (a, b) = x.bp_as_rchunks::<3>();
-        assert_eq!(a, &[1, 2]);
-        assert_eq!(b, &[[3, 4, 5]]);
-
-        let (a, b) = x.bp_as_rchunks::<4>();
-        assert_eq!(a, &[1]);
-        assert_eq!(b, &[[2, 3, 4, 5]]);
-
-        let (a, b) = x.bp_as_rchunks::<5>();
-        assert_eq!(a, &[] as &[i32]);
-        assert_eq!(b, &[[1, 2, 3, 4, 5]]);
-
-        let (a, b) = x.bp_as_rchunks::<6>();
-        assert_eq!(a, &[1, 2, 3, 4, 5]);
-        assert_eq!(b, &[] as &[[i32; 6]]);
     }
 }

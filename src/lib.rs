@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![deny(rust_2018_idioms)]
 #![deny(missing_docs)]
+#![deny(unnameable_types)]
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
@@ -25,6 +26,9 @@ pub mod xxhash64;
 #[cfg(feature = "xxhash64")]
 #[cfg_attr(docsrs, doc(cfg(feature = "xxhash64")))]
 pub use xxhash64::Hasher as XxHash64;
+
+#[cfg(feature = "xxhash3_64")]
+mod xxhash3;
 
 #[cfg(feature = "xxhash3_64")]
 #[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_64")))]

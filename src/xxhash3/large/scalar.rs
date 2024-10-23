@@ -1,4 +1,5 @@
-use super::{SliceBackport as _, Vector, PRIME32_1};
+use super::Vector;
+use crate::xxhash3::{primes::PRIME32_1, SliceBackport as _};
 
 #[derive(Copy, Clone)]
 pub struct Impl;
