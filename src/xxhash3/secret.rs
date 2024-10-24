@@ -197,6 +197,14 @@ impl<'a> Secret128BitView<'a> {
         [q[0], q[1], q[2], q[3]].map(u64::from_le_bytes)
     }
 
+    #[inline]
+    pub fn words_for_1_to_3(self) -> [u32; 4] {
+        self.0.reassert_preconditions();
+
+        let (q, _) = self.b().bp_as_chunks();
+        [q[0], q[1], q[2], q[3]].map(u32::from_le_bytes)
+    }
+
     fn b(self) -> &'a [u8] {
         &(self.0).0
     }
