@@ -30,6 +30,8 @@ impl Hasher {
 #[inline(always)]
 fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     match input.len() {
+        9..=16 => impl_9_to_16_bytes(secret, seed, input),
+
         4..=8 => impl_4_to_8_bytes(secret, seed, input),
 
         1..=3 => impl_1_to_3_bytes(secret, seed, input),
@@ -49,6 +51,12 @@ struct X128 {
 impl From<X128> for u128 {
     fn from(value: X128) -> Self {
         value.high.into_u128() << 64 | value.low.into_u128()
+    }
+}
+
+impl crate::IntoU128 for X128 {
+    fn into_u128(self) -> u128 {
+        self.into()
     }
 }
 
@@ -117,6 +125,39 @@ fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     X128 { low, high }.into()
 }
 
+#[inline(always)]
+fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
+    assert_input_range!(9..=16, input.len());
+    let input_first = input.first_u64().unwrap();
+    let input_last = input.last_u64().unwrap();
+
+    let secret_words = secret.for_128().words_for_9_to_16();
+    let val1 = ((secret_words[0] ^ secret_words[1]).wrapping_sub(seed)) ^ input_first ^ input_last;
+    let val2 = ((secret_words[2] ^ secret_words[3]).wrapping_add(seed)) ^ input_last;
+    let mul_result = val1.into_u128().wrapping_mul(PRIME64_1.into_u128());
+    let low = mul_result
+        .lower_half()
+        .wrapping_add((input.len() - 1).into_u64() << 54);
+
+    // Algorithm describes this in two ways
+    let high = mul_result
+        .upper_half()
+        .wrapping_add(val2.upper_half().into_u64() << 32)
+        .wrapping_add(val2.lower_half().into_u64().wrapping_mul(PRIME32_2));
+
+    let low = low ^ high.swap_bytes();
+
+    // Algorithm describes this multiplication in two ways.
+    let q = X128 { low, high }
+        .into_u128()
+        .wrapping_mul(PRIME64_2.into_u128());
+
+    let low = avalanche(q.lower_half());
+    let high = avalanche(q.upper_half());
+
+    X128 { low, high }.into()
+}
+
 #[cfg(test)]
 mod test {
     use crate::xxhash3::test::bytes;
@@ -172,6 +213,32 @@ mod test {
             0x545f_093d_32b1_68fe_a6b5_2f4d_ea38_96a3,
             0x61ce_291b_c3a4_357d_dbb2_0782_1e6d_5efe,
             0xe1e4_432a_6221_7fe4_cfd5_0c61_c8bb_98c1,
+        ];
+
+        for (input, expected) in inputs.iter().zip(expected) {
+            let hash = f(input);
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
+        }
+    }
+
+    #[test]
+    fn oneshot_9_to_16_bytes() {
+        test_9_to_16_bytes(Hasher::oneshot)
+    }
+
+    #[track_caller]
+    fn test_9_to_16_bytes(mut f: impl FnMut(&[u8]) -> u128) {
+        let inputs = bytes![9, 10, 11, 12, 13, 14, 15, 16];
+
+        let expected = [
+            0x16c7_69d8_3e4a_ebce_9079_3197_9dca_3746,
+            0xbd93_0669_a87b_4b37_e67b_f1ad_8dcf_73a8,
+            0xacad_8071_8f47_d494_7d67_cfc1_730f_22a3,
+            0x38f9_2247_a7f7_3cc5_7780_eb31_198f_13ca,
+            0xae92_e123_e947_2408_bd79_5526_1902_66c0,
+            0x5f91_e6bf_7418_cfaa_55d6_5715_e2a5_7c31,
+            0x301a_9f75_4e8f_569a_0017_ea4b_e19b_c787,
+            0x7295_0631_8276_07e2_8428_12cc_870d_cae2,
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
