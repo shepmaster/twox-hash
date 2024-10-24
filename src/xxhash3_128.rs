@@ -6,6 +6,8 @@
     unsafe_op_in_unsafe_fn
 )]
 
+use crate::{xxhash3::*, IntoU128 as _};
+
 pub use crate::xxhash3::{DEFAULT_SECRET_LENGTH, SECRET_MINIMUM_LENGTH};
 
 /// Calculates the 128-bit hash.
@@ -17,9 +19,28 @@ impl Hasher {
     /// see noticable speed gains for certain types of input.
     #[must_use]
     #[inline]
-    pub fn oneshot(_input: &[u8]) -> u128 {
-        0x99aa06d3014798d86001c324468d497f
+    pub fn oneshot(input: &[u8]) -> u128 {
+        impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
     }
+}
+
+#[inline(always)]
+fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
+    match input.len() {
+        0 => impl_0_bytes(secret, seed),
+
+        _ => unimplemented!(),
+    }
+}
+
+#[inline(always)]
+fn impl_0_bytes(secret: &Secret, seed: u64) -> u128 {
+    let secret_words = secret.for_128().words_for_0();
+
+    let low = avalanche_xxh64(seed ^ secret_words[0] ^ secret_words[1]);
+    let high = avalanche_xxh64(seed ^ secret_words[2] ^ secret_words[3]);
+
+    high.into_u128() << 64 | low.into_u128()
 }
 
 #[cfg(test)]

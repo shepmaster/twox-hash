@@ -40,6 +40,12 @@ impl Secret {
     }
 
     #[inline]
+    #[cfg(feature = "xxhash3_128")]
+    pub fn for_128(&self) -> Secret128BitView<'_> {
+        Secret128BitView(self)
+    }
+
+    #[inline]
     pub fn words_for_17_to_128(&self) -> &[[u8; 16]] {
         self.reassert_preconditions();
 
@@ -170,6 +176,25 @@ impl<'a> Secret64BitView<'a> {
         self.0.reassert_preconditions();
 
         self.b()[119..].first_chunk().unwrap()
+    }
+
+    fn b(self) -> &'a [u8] {
+        &(self.0).0
+    }
+}
+
+#[derive(Copy, Clone)]
+#[cfg(feature = "xxhash3_128")]
+pub struct Secret128BitView<'a>(&'a Secret);
+
+#[cfg(feature = "xxhash3_128")]
+impl<'a> Secret128BitView<'a> {
+    #[inline]
+    pub fn words_for_0(self) -> [u64; 4] {
+        self.0.reassert_preconditions();
+
+        let (q, _) = self.b()[64..].bp_as_chunks();
+        [q[0], q[1], q[2], q[3]].map(u64::from_le_bytes)
     }
 
     fn b(self) -> &'a [u8] {
