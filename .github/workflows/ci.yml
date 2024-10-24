@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      IMPLEMENTATIONS: xxhash32 xxhash64 xxhash3_64
+      IMPLEMENTATIONS: xxhash32 xxhash64 xxhash3_64 xxhash3_128
       FEATURE_SET: random serialize std alloc
 
     steps:

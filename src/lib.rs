@@ -5,7 +5,10 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-#[cfg(all(feature = "alloc", feature = "xxhash3_64"))]
+#[cfg(all(
+    feature = "alloc",
+    any(feature = "xxhash3_64", feature = "xxhash3_128")
+))]
 extern crate alloc;
 
 #[cfg(any(feature = "std", doc, test))]
@@ -27,7 +30,7 @@ pub mod xxhash64;
 #[cfg_attr(docsrs, doc(cfg(feature = "xxhash64")))]
 pub use xxhash64::Hasher as XxHash64;
 
-#[cfg(feature = "xxhash3_64")]
+#[cfg(any(feature = "xxhash3_64", feature = "xxhash3_128"))]
 mod xxhash3;
 
 #[cfg(feature = "xxhash3_64")]
@@ -37,6 +40,14 @@ pub mod xxhash3_64;
 #[cfg(feature = "xxhash3_64")]
 #[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_64")))]
 pub use xxhash3_64::Hasher as XxHash3_64;
+
+#[cfg(feature = "xxhash3_128")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_128")))]
+pub mod xxhash3_128;
+
+#[cfg(feature = "xxhash3_128")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xxhash3_128")))]
+pub use xxhash3_128::Hasher as XxHash3_128;
 
 #[allow(dead_code, reason = "Too lazy to cfg-gate these")]
 trait IntoU32 {
