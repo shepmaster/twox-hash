@@ -30,6 +30,8 @@ impl Hasher {
 #[inline(always)]
 fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     match input.len() {
+        17..=128 => impl_17_to_128_bytes(secret, seed, input),
+
         9..=16 => impl_9_to_16_bytes(secret, seed, input),
 
         4..=8 => impl_4_to_8_bytes(secret, seed, input),
@@ -158,6 +160,44 @@ fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     X128 { low, high }.into()
 }
 
+#[inline]
+fn impl_17_to_128_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
+    assert_input_range!(17..=128, input.len());
+    let mut acc = [input.len().into_u64().wrapping_mul(PRIME64_1), 0];
+
+    impl_17_to_128_bytes_iter(secret, input, |fwd, bwd, secret| {
+        mix_two_chunks(&mut acc, fwd, bwd, secret, seed);
+    });
+
+    let low = acc[0].wrapping_add(acc[1]);
+    let high = acc[0]
+        .wrapping_mul(PRIME64_1)
+        .wrapping_add(acc[1].wrapping_mul(PRIME64_4))
+        .wrapping_add((input.len().into_u64().wrapping_sub(seed)).wrapping_mul(PRIME64_2));
+
+    let low = avalanche(low);
+    let high = avalanche(high).wrapping_neg();
+
+    X128 { low, high }.into()
+}
+
+#[inline]
+fn mix_two_chunks(
+    acc: &mut [u64; 2],
+    data1: &[u8; 16],
+    data2: &[u8; 16],
+    secret: &[[u8; 16]; 2],
+    seed: u64,
+) {
+    let data_words1 = to_u64s(data1);
+    let data_words2 = to_u64s(data2);
+
+    acc[0] = acc[0].wrapping_add(mix_step(data1, &secret[0], seed));
+    acc[1] = acc[1].wrapping_add(mix_step(data2, &secret[1], seed));
+    acc[0] ^= data_words2[0].wrapping_add(data_words2[1]);
+    acc[1] ^= data_words1[0].wrapping_add(data_words1[1]);
+}
+
 #[cfg(test)]
 mod test {
     use crate::xxhash3::test::bytes;
@@ -242,6 +282,43 @@ mod test {
         ];
 
         for (input, expected) in inputs.iter().zip(expected) {
+            let hash = f(input);
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
+        }
+    }
+
+    #[test]
+    fn oneshot_17_to_128_bytes() {
+        test_17_to_128_bytes(Hasher::oneshot)
+    }
+
+    #[track_caller]
+    fn test_17_to_128_bytes(mut f: impl FnMut(&[u8]) -> u128) {
+        let lower_boundary = bytes![17, 18, 19];
+        let chunk_boundary = bytes![31, 32, 33];
+        let upper_boundary = bytes![126, 127, 128];
+
+        let inputs = lower_boundary
+            .iter()
+            .chain(chunk_boundary)
+            .chain(upper_boundary);
+
+        let expected = [
+            // lower_boundary
+            0x685b_c458_b37d_057f_c06e_233d_f772_9217,
+            0x87ce_996b_b557_6d8d_e3a3_c96b_b0af_2c23,
+            0x7619_bcef_2e31_1cd8_c47d_dc58_8737_93df,
+            // chunk_boundary
+            0x4ed3_946d_393b_687b_b54d_e399_3874_ed20,
+            0x25e7_c9b3_424c_eed2_457d_9566_b6fc_d697,
+            0x0217_5c3a_abb0_0637_e08d_8495_1339_de86,
+            // upper_boundary
+            0x0abc_2062_87ce_2afe_5181_0be2_9323_2106,
+            0xd5ad_d870_c9c9_e00f_060c_2e3d_df0f_2fb9,
+            0x1479_2fc3_af88_dc6c_0532_1a0b_64d6_7b41,
+        ];
+
+        for (input, expected) in inputs.zip(expected) {
             let hash = f(input);
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
