@@ -171,6 +171,14 @@ pub fn to_u64s(bytes: &[u8; 16]) -> [u64; 2] {
 }
 
 #[inline]
+#[cfg(feature = "xxhash3_128")]
+pub fn pairs_of_u64_bytes(bytes: &[u8]) -> &[[[u8; 16]; 2]] {
+    let (u64_bytes, _) = bytes.bp_as_chunks::<16>();
+    let (pairs, _) = u64_bytes.bp_as_chunks::<2>();
+    pairs
+}
+
+#[inline]
 pub fn avalanche(mut x: u64) -> u64 {
     x ^= x >> 37;
     x = x.wrapping_mul(primes::PRIME_MX1);

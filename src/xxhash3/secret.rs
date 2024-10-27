@@ -2,6 +2,9 @@ use core::{hint::assert_unchecked, mem};
 
 use super::SliceBackport as _;
 
+#[cfg(feature = "xxhash3_128")]
+use super::pairs_of_u64_bytes;
+
 /// The minimum length of a secret.
 pub const SECRET_MINIMUM_LENGTH: usize = 136;
 
@@ -219,6 +222,27 @@ impl<'a> Secret128BitView<'a> {
 
         let (q, _) = self.b()[32..].bp_as_chunks();
         [q[0], q[1], q[2], q[3]].map(u64::from_le_bytes)
+    }
+
+    #[inline]
+    pub fn words_for_127_to_240_part1(self) -> &'a [[[u8; 16]; 2]] {
+        self.0.reassert_preconditions();
+
+        pairs_of_u64_bytes(self.b())
+    }
+
+    #[inline]
+    pub fn words_for_127_to_240_part2(self) -> &'a [[[u8; 16]; 2]] {
+        self.0.reassert_preconditions();
+
+        pairs_of_u64_bytes(&self.b()[3..])
+    }
+
+    #[inline]
+    pub fn words_for_127_to_240_part3(self) -> &'a [[u8; 16]; 2] {
+        self.0.reassert_preconditions();
+
+        pairs_of_u64_bytes(&self.b()[103..]).first().unwrap()
     }
 
     fn b(self) -> &'a [u8] {

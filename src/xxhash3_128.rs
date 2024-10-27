@@ -30,6 +30,8 @@ impl Hasher {
 #[inline(always)]
 fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     match input.len() {
+        129..=240 => impl_129_to_240_bytes(secret, seed, input),
+
         17..=128 => impl_17_to_128_bytes(secret, seed, input),
 
         9..=16 => impl_9_to_16_bytes(secret, seed, input),
@@ -163,22 +165,46 @@ fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
 #[inline]
 fn impl_17_to_128_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     assert_input_range!(17..=128, input.len());
-    let mut acc = [input.len().into_u64().wrapping_mul(PRIME64_1), 0];
+    let input_len = input.len().into_u64();
+    let mut acc = [input_len.wrapping_mul(PRIME64_1), 0];
 
     impl_17_to_128_bytes_iter(secret, input, |fwd, bwd, secret| {
         mix_two_chunks(&mut acc, fwd, bwd, secret, seed);
     });
 
-    let low = acc[0].wrapping_add(acc[1]);
-    let high = acc[0]
-        .wrapping_mul(PRIME64_1)
-        .wrapping_add(acc[1].wrapping_mul(PRIME64_4))
-        .wrapping_add((input.len().into_u64().wrapping_sub(seed)).wrapping_mul(PRIME64_2));
+    finalize_medium(acc, input_len, seed)
+}
 
-    let low = avalanche(low);
-    let high = avalanche(high).wrapping_neg();
+#[inline]
+fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
+    assert_input_range!(129..=240, input.len());
+    let input_len = input.len().into_u64();
+    let mut acc = [input_len.wrapping_mul(PRIME64_1), 0];
 
-    X128 { low, high }.into()
+    let head = pairs_of_u64_bytes(input);
+    let mut head = head.iter();
+
+    let ss = secret.for_128().words_for_127_to_240_part1();
+    for (input, secret) in head.by_ref().zip(ss).take(4) {
+        mix_two_chunks(&mut acc, &input[0], &input[1], secret, seed);
+    }
+
+    let mut acc = acc.map(avalanche);
+
+    let ss = secret.for_128().words_for_127_to_240_part2();
+    for (input, secret) in head.zip(ss) {
+        mix_two_chunks(&mut acc, &input[0], &input[1], secret, seed);
+    }
+
+    let (_, tail) = input.bp_as_rchunks::<16>();
+    let (_, tail) = tail.bp_as_rchunks::<2>();
+    let tail = tail.last().unwrap();
+    let ss = secret.for_128().words_for_127_to_240_part3();
+
+    // note that the half-chunk order and the seed is different here
+    mix_two_chunks(&mut acc, &tail[1], &tail[0], ss, seed.wrapping_neg());
+
+    finalize_medium(acc, input_len, seed)
 }
 
 #[inline]
@@ -196,6 +222,20 @@ fn mix_two_chunks(
     acc[1] = acc[1].wrapping_add(mix_step(data2, &secret[1], seed));
     acc[0] ^= data_words2[0].wrapping_add(data_words2[1]);
     acc[1] ^= data_words1[0].wrapping_add(data_words1[1]);
+}
+
+#[inline]
+fn finalize_medium(acc: [u64; 2], input_len: u64, seed: u64) -> u128 {
+    let low = acc[0].wrapping_add(acc[1]);
+    let high = acc[0]
+        .wrapping_mul(PRIME64_1)
+        .wrapping_add(acc[1].wrapping_mul(PRIME64_4))
+        .wrapping_add((input_len.wrapping_sub(seed)).wrapping_mul(PRIME64_2));
+
+    let low = avalanche(low);
+    let high = avalanche(high).wrapping_neg();
+
+    X128 { low, high }.into()
 }
 
 #[cfg(test)]
@@ -316,6 +356,35 @@ mod test {
             0x0abc_2062_87ce_2afe_5181_0be2_9323_2106,
             0xd5ad_d870_c9c9_e00f_060c_2e3d_df0f_2fb9,
             0x1479_2fc3_af88_dc6c_0532_1a0b_64d6_7b41,
+        ];
+
+        for (input, expected) in inputs.zip(expected) {
+            let hash = f(input);
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
+        }
+    }
+
+    #[test]
+    fn oneshot_129_to_240_bytes() {
+        test_129_to_240_bytes(Hasher::oneshot)
+    }
+
+    #[track_caller]
+    fn test_129_to_240_bytes(mut f: impl FnMut(&[u8]) -> u128) {
+        let lower_boundary = bytes![129, 130, 131];
+        let upper_boundary = bytes![238, 239, 240];
+
+        let inputs = lower_boundary.iter().chain(upper_boundary);
+
+        let expected = [
+            // lower_boundary
+            0xdd5e_74ac_6b45_f54e_bc30_b633_82b0_9a3b,
+            0x6cd2_e56a_10f1_e707_3ec5_f135_d0a7_d28f,
+            0x6da7_92f1_702d_4494_5609_cfc7_9dba_18fd,
+            // upper_boundary
+            0x73a9_e8f7_bd32_83c8_2a9b_ddd0_e5c4_014c,
+            0x9843_ab31_a06b_e0df_fe21_3746_28fc_c539,
+            0x65b5_be86_da55_40e7_c92b_68e1_6f83_bbb6,
         ];
 
         for (input, expected) in inputs.zip(expected) {
