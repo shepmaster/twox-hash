@@ -5,11 +5,21 @@ use crate::IntoU128 as _;
 pub mod large;
 
 pub(crate) use large::dispatch;
-pub use large::{Algorithm, StripeAccumulator, Vector};
+pub use large::{Algorithm, Vector};
 
 pub mod secret;
 
-pub use secret::Secret;
+pub use secret::{Secret, SECRET_MINIMUM_LENGTH};
+
+mod streaming;
+
+pub use streaming::{
+    Finalize, FixedBuffer, FixedMutBuffer, RawHasherCore, SecretBuffer, SecretTooShortError,
+    SecretWithSeedError,
+};
+
+#[cfg(feature = "alloc")]
+pub use streaming::AllocRawHasher;
 
 pub mod primes {
     pub const PRIME32_1: u64 = 0x9E3779B1;

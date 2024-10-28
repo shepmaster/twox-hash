@@ -127,7 +127,7 @@ pub trait Vector: Copy {
 }
 
 #[rustfmt::skip]
-const INITIAL_ACCUMULATORS: [u64; 8] = [
+pub const INITIAL_ACCUMULATORS: [u64; 8] = [
     PRIME32_3, PRIME64_1, PRIME64_2, PRIME64_3,
     PRIME64_4, PRIME32_2, PRIME64_5, PRIME32_1,
 ];
@@ -139,7 +139,10 @@ where
     V: Vector,
 {
     #[inline]
-    pub fn oneshot(&self, secret: &Secret, input: &[u8]) -> u64 {
+    pub fn oneshot<F>(&self, secret: &Secret, input: &[u8], finalize: F) -> F::Output
+    where
+        F: super::Finalize,
+    {
         assert_input_range!(241.., input.len());
         let mut acc = INITIAL_ACCUMULATORS;
 
@@ -163,7 +166,7 @@ where
         let len = input.len();
 
         let last_stripe = input.last_chunk().unwrap();
-        self.finalize(acc, last_block, last_stripe, secret, len)
+        finalize.large(self.0, acc, last_block, last_stripe, secret, len)
     }
 
     #[inline]
@@ -201,8 +204,9 @@ where
         }
     }
 
-    #[inline]
-    pub fn finalize(
+    #[inline(always)]
+    #[cfg(feature = "xxhash3_64")]
+    pub fn finalize_64(
         &self,
         mut acc: [u64; 8],
         last_block: &[u8],
@@ -260,54 +264,5 @@ where
             result = result.wrapping_add(mul_result.lower_half() ^ mul_result.upper_half());
         }
         avalanche(result)
-    }
-}
-
-/// Tracks which stripe we are currently on to know which part of the
-/// secret we should be using.
-#[derive(Copy, Clone)]
-pub struct StripeAccumulator {
-    pub accumulator: [u64; 8],
-    current_stripe: usize,
-}
-
-impl StripeAccumulator {
-    pub fn new() -> Self {
-        Self {
-            accumulator: INITIAL_ACCUMULATORS,
-            current_stripe: 0,
-        }
-    }
-
-    #[inline]
-    pub fn process_stripe(
-        &mut self,
-        vector: impl Vector,
-        stripe: &[u8; 64],
-        n_stripes: usize,
-        secret: &Secret,
-    ) {
-        let Self {
-            accumulator,
-            current_stripe,
-            ..
-        } = self;
-
-        // For each stripe
-
-        // Safety: The number of stripes is determined by the
-        // block size, which is determined by the secret size.
-        let secret_stripe = unsafe { secret.stripe(*current_stripe) };
-        vector.accumulate(accumulator, stripe, secret_stripe);
-
-        *current_stripe += 1;
-
-        // After a full block's worth
-        if *current_stripe == n_stripes {
-            let secret_end = secret.last_stripe();
-            vector.round_scramble(accumulator, secret_end);
-
-            *current_stripe = 0;
-        }
     }
 }
