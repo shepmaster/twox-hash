@@ -296,30 +296,10 @@ fn impl_17_to_128_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     assert_input_range!(17..=128, input.len());
     let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
-    let secret = secret.words_for_17_to_128();
-    let (secret, _) = secret.bp_as_chunks::<2>();
-    let (fwd, _) = input.bp_as_chunks();
-    let (_, bwd) = input.bp_as_rchunks();
-
-    let q = bwd.len();
-
-    if input.len() > 32 {
-        if input.len() > 64 {
-            if input.len() > 96 {
-                acc = acc.wrapping_add(mix_step(&fwd[3], &secret[3][0], seed));
-                acc = acc.wrapping_add(mix_step(&bwd[q - 4], &secret[3][1], seed));
-            }
-
-            acc = acc.wrapping_add(mix_step(&fwd[2], &secret[2][0], seed));
-            acc = acc.wrapping_add(mix_step(&bwd[q - 3], &secret[2][1], seed));
-        }
-
-        acc = acc.wrapping_add(mix_step(&fwd[1], &secret[1][0], seed));
-        acc = acc.wrapping_add(mix_step(&bwd[q - 2], &secret[1][1], seed));
-    }
-
-    acc = acc.wrapping_add(mix_step(&fwd[0], &secret[0][0], seed));
-    acc = acc.wrapping_add(mix_step(&bwd[q - 1], &secret[0][1], seed));
+    impl_17_to_128_bytes_iter(secret, input, |fwd, bwd, secret| {
+        acc = acc.wrapping_add(mix_step(fwd, &secret[0], seed));
+        acc = acc.wrapping_add(mix_step(bwd, &secret[1], seed));
+    });
 
     avalanche(acc)
 }
