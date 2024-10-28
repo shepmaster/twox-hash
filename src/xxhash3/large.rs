@@ -2,6 +2,9 @@ use super::{
     assert_input_range, avalanche, primes::*, stripes_with_tail, Halves, Secret, SliceBackport as _,
 };
 
+#[cfg(feature = "xxhash3_128")]
+use super::X128;
+
 use crate::{IntoU128, IntoU64};
 
 // This module is not `cfg`-gated because it is used by some of the
@@ -219,6 +222,30 @@ where
 
         let low = len.into_u64().wrapping_mul(PRIME64_1);
         self.final_merge(&acc, low, secret.final_secret())
+    }
+
+    #[inline]
+    #[cfg(feature = "xxhash3_128")]
+    pub fn finalize_128(
+        &self,
+        mut acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &Secret,
+        len: usize,
+    ) -> u128 {
+        debug_assert!(!last_block.is_empty());
+        self.last_round(&mut acc, last_block, last_stripe, secret);
+
+        let len = len.into_u64();
+
+        let low = len.wrapping_mul(PRIME64_1);
+        let low = self.final_merge(&acc, low, secret.final_secret());
+
+        let high = !len.wrapping_mul(PRIME64_2);
+        let high = self.final_merge(&acc, high, secret.for_128().final_secret());
+
+        X128 { low, high }.into()
     }
 
     #[inline]

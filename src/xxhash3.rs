@@ -204,6 +204,27 @@ pub fn stripes_with_tail(block: &[u8]) -> (&[[u8; 64]], &[u8]) {
     }
 }
 
+/// THis exists just to easily map the XXH3 algorithm to Rust as the
+/// algorithm describes 128-bit results as a pair of high and low u64
+/// values.
+#[derive(Copy, Clone)]
+pub(crate) struct X128 {
+    pub low: u64,
+    pub high: u64,
+}
+
+impl From<X128> for u128 {
+    fn from(value: X128) -> Self {
+        value.high.into_u128() << 64 | value.low.into_u128()
+    }
+}
+
+impl crate::IntoU128 for X128 {
+    fn into_u128(self) -> u128 {
+        self.into()
+    }
+}
+
 pub trait Halves {
     type Output;
 

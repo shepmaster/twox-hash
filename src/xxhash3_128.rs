@@ -27,9 +27,35 @@ impl Hasher {
     }
 }
 
+struct Finalize128;
+
+impl Finalize for Finalize128 {
+    type Output = u128;
+
+    #[inline]
+    fn small(&self, secret: &Secret, seed: u64, input: &[u8]) -> Self::Output {
+        impl_oneshot(secret, seed, input)
+    }
+
+    #[inline]
+    fn large(
+        &self,
+        vector: impl Vector,
+        acc: [u64; 8],
+        last_block: &[u8],
+        last_stripe: &[u8; 64],
+        secret: &Secret,
+        len: usize,
+    ) -> Self::Output {
+        Algorithm(vector).finalize_128(acc, last_block, last_stripe, secret, len)
+    }
+}
+
 #[inline(always)]
 fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     match input.len() {
+        241.. => impl_241_plus_bytes(secret, input),
+
         129..=240 => impl_129_to_240_bytes(secret, seed, input),
 
         17..=128 => impl_17_to_128_bytes(secret, seed, input),
@@ -41,26 +67,6 @@ fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
         1..=3 => impl_1_to_3_bytes(secret, seed, input),
 
         0 => impl_0_bytes(secret, seed),
-
-        _ => unimplemented!(),
-    }
-}
-
-#[derive(Copy, Clone)]
-struct X128 {
-    low: u64,
-    high: u64,
-}
-
-impl From<X128> for u128 {
-    fn from(value: X128) -> Self {
-        value.high.into_u128() << 64 | value.low.into_u128()
-    }
-}
-
-impl crate::IntoU128 for X128 {
-    fn into_u128(self) -> u128 {
-        self.into()
     }
 }
 
@@ -238,6 +244,20 @@ fn finalize_medium(acc: [u64; 2], input_len: u64, seed: u64) -> u128 {
     X128 { low, high }.into()
 }
 
+#[inline]
+fn impl_241_plus_bytes(secret: &Secret, input: &[u8]) -> u128 {
+    assert_input_range!(241.., input.len());
+    dispatch! {
+        fn oneshot_impl<>(secret: &Secret, input: &[u8]) -> u128
+        []
+    }
+}
+
+#[inline]
+fn oneshot_impl(vector: impl Vector, secret: &Secret, input: &[u8]) -> u128 {
+    Algorithm(vector).oneshot(secret, input, Finalize128)
+}
+
 #[cfg(test)]
 mod test {
     use crate::xxhash3::test::bytes;
@@ -389,6 +409,31 @@ mod test {
 
         for (input, expected) in inputs.zip(expected) {
             let hash = f(input);
+            assert_eq!(hash, expected, "input was {} bytes", input.len());
+        }
+    }
+
+    #[test]
+    fn oneshot_241_plus_bytes() {
+        test_241_plus_bytes(Hasher::oneshot)
+    }
+
+    #[track_caller]
+    fn test_241_plus_bytes(mut f: impl FnMut(&[u8]) -> u128) {
+        let inputs = bytes![241, 242, 243, 244, 1024, 10240];
+
+        let expected = [
+            0x1da1_cb61_bcb8_a2a1_02e8_cd95_421c_6d02,
+            0x1623_84cb_44d1_d806_ddcb_33c4_9405_1832,
+            0xbd2e_9fcf_378c_35e9_8835_f952_9193_e3dc,
+            0x3ff4_93d7_a813_7ab6_bc17_c91e_c3cf_8d7f,
+            0xd0ac_1f7b_93bf_57b9_e5d7_8baf_a45b_2aa5,
+            0x4f63_75cc_a7ec_e1e1_bcd6_3266_df6e_2244,
+        ];
+
+        for (input, expected) in inputs.iter().zip(expected) {
+            let hash = f(input);
+            eprintln!("{hash:032x}\n{expected:032x}");
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }

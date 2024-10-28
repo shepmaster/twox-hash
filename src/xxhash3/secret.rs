@@ -245,6 +245,14 @@ impl<'a> Secret128BitView<'a> {
         pairs_of_u64_bytes(&self.b()[103..]).first().unwrap()
     }
 
+    #[inline]
+    pub fn final_secret(self) -> &'a [u8; 64] {
+        self.0.reassert_preconditions();
+
+        let b = self.b();
+        b[b.len() - 75..].first_chunk().unwrap()
+    }
+
     fn b(self) -> &'a [u8] {
         &(self.0).0
     }
