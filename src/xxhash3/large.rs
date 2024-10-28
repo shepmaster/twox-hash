@@ -217,7 +217,8 @@ where
         debug_assert!(!last_block.is_empty());
         self.last_round(&mut acc, last_block, last_stripe, secret);
 
-        self.final_merge(&mut acc, len.into_u64().wrapping_mul(PRIME64_1), secret)
+        let low = len.into_u64().wrapping_mul(PRIME64_1);
+        self.final_merge(&acc, low, secret.final_secret())
     }
 
     #[inline]
@@ -247,8 +248,7 @@ where
     }
 
     #[inline]
-    fn final_merge(&self, acc: &mut [u64; 8], init_value: u64, secret: &Secret) -> u64 {
-        let secret = secret.final_secret();
+    fn final_merge(&self, acc: &[u64; 8], init_value: u64, secret: &[u8; 64]) -> u64 {
         let (secrets, _) = secret.bp_as_chunks();
         let mut result = init_value;
         for i in 0..4 {
