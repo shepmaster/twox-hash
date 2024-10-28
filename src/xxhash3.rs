@@ -1,6 +1,6 @@
 use core::slice;
 
-use crate::IntoU128 as _;
+use crate::{IntoU128 as _, IntoU32 as _};
 
 pub mod large;
 
@@ -109,6 +109,17 @@ macro_rules! assert_input_range {
     };
 }
 pub(crate) use assert_input_range;
+
+#[inline(always)]
+pub fn impl_1_to_3_bytes_combined(input: &[u8]) -> u32 {
+    assert_input_range!(1..=3, input.len());
+    let input_length = input.len() as u8; // OK as we checked that the length fits
+
+    input[input.len() - 1].into_u32()
+        | input_length.into_u32() << 8
+        | input[0].into_u32() << 16
+        | input[input.len() >> 1].into_u32() << 24
+}
 
 #[inline]
 pub fn mix_step(data: &[u8; 16], secret: &[u8; 16], seed: u64) -> u64 {

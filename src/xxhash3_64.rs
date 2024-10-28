@@ -10,7 +10,7 @@ use core::hash;
 
 use crate::{
     xxhash3::{primes::*, *},
-    IntoU128 as _, IntoU32 as _, IntoU64 as _,
+    IntoU128 as _, IntoU64 as _,
 };
 
 pub use crate::xxhash3::{
@@ -234,12 +234,7 @@ fn impl_0_bytes(secret: &Secret, seed: u64) -> u64 {
 #[inline(always)]
 fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     assert_input_range!(1..=3, input.len());
-    let input_length = input.len() as u8; // OK as we checked that the length fits
-
-    let combined = input[input.len() - 1].into_u32()
-        | input_length.into_u32() << 8
-        | input[0].into_u32() << 16
-        | input[input.len() >> 1].into_u32() << 24;
+    let combined = impl_1_to_3_bytes_combined(input);
 
     let secret_words = secret.words_for_1_to_3();
 
