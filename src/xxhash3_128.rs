@@ -11,7 +11,7 @@ use crate::{
     IntoU128 as _, IntoU64 as _,
 };
 
-pub use crate::xxhash3::{DEFAULT_SECRET_LENGTH, SECRET_MINIMUM_LENGTH};
+pub use crate::xxhash3::{OneshotWithSecretError, DEFAULT_SECRET_LENGTH, SECRET_MINIMUM_LENGTH};
 
 /// Calculates the 128-bit hash.
 #[derive(Clone)]
@@ -24,6 +24,55 @@ impl Hasher {
     #[inline]
     pub fn oneshot(input: &[u8]) -> u128 {
         impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
+    }
+
+    /// Hash all data at once using the provided seed and a secret
+    /// derived from the seed. If you can use this function, you may
+    /// see noticable speed gains for certain types of input.
+    #[must_use]
+    #[inline]
+    pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u128 {
+        let mut secret = DEFAULT_SECRET_RAW;
+
+        // We know that the secret will only be used if we have more
+        // than 240 bytes, so don't waste time computing it otherwise.
+        if input.len() > CUTOFF {
+            derive_secret(seed, &mut secret);
+        }
+
+        let secret = Secret::new(&secret).expect("The default secret length is invalid");
+
+        impl_oneshot(secret, seed, input)
+    }
+
+    /// Hash all data at once using the provided secret and the
+    /// default seed. If you can use this function, you may see
+    /// noticable speed gains for certain types of input.
+    #[inline]
+    pub fn oneshot_with_secret(
+        secret: &[u8],
+        input: &[u8],
+    ) -> Result<u128, OneshotWithSecretError> {
+        let secret = Secret::new(secret).map_err(OneshotWithSecretError)?;
+        Ok(impl_oneshot(secret, DEFAULT_SEED, input))
+    }
+
+    /// Hash all data at once using the provided seed and secret. If
+    /// you can use this function, you may see noticable speed gains
+    /// for certain types of input.
+    #[inline]
+    pub fn oneshot_with_seed_and_secret(
+        seed: u64,
+        secret: &[u8],
+        input: &[u8],
+    ) -> Result<u128, OneshotWithSecretError> {
+        let secret = if input.len() > CUTOFF {
+            Secret::new(secret).map_err(OneshotWithSecretError)?
+        } else {
+            DEFAULT_SECRET
+        };
+
+        Ok(impl_oneshot(secret, seed, input))
     }
 }
 

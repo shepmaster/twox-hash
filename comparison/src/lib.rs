@@ -363,6 +363,63 @@ mod xxhash3_64 {
     }
 }
 
+mod xxhash3_128 {
+    use proptest::{prelude::*, test_runner::TestCaseResult};
+    use twox_hash::xxhash3_128::SECRET_MINIMUM_LENGTH;
+
+    use super::*;
+
+    proptest! {
+        #[test]
+        fn oneshot(seed in seed_64(), data: Vec<u8>) {
+            oneshot_impl(seed, &data)?;
+        }
+
+        #[test]
+        fn oneshot_with_an_offset(seed in seed_64(), (data, offset) in vec_and_index()) {
+            oneshot_impl(seed, &data[offset..])?;
+        }
+
+        #[test]
+        fn oneshot_with_a_secret(secret in secret(), data: Vec<u8>) {
+            oneshot_with_secret_impl(&secret, &data)?;
+        }
+
+        #[test]
+        fn oneshot_with_a_seed_and_secret(seed in seed_64(), secret in secret(), data: Vec<u8>) {
+            oneshot_with_seed_and_secret_impl(seed, &secret, &data)?;
+        }
+    }
+
+    fn oneshot_impl(seed: u64, data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash3_128::oneshot_with_seed(seed, data);
+        let rust = rust::XxHash3_128::oneshot_with_seed(seed, data);
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn oneshot_with_secret_impl(secret: &[u8], data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash3_128::oneshot_with_secret(secret, data);
+        let rust = rust::XxHash3_128::oneshot_with_secret(secret, data).unwrap();
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn oneshot_with_seed_and_secret_impl(seed: u64, secret: &[u8], data: &[u8]) -> TestCaseResult {
+        let native = c::XxHash3_128::oneshot_with_seed_and_secret(seed, secret, data);
+        let rust = rust::XxHash3_128::oneshot_with_seed_and_secret(seed, secret, data).unwrap();
+
+        prop_assert_eq!(native, rust);
+        Ok(())
+    }
+
+    fn secret() -> impl Strategy<Value = Vec<u8>> {
+        prop::collection::vec(num::u8::ANY, SECRET_MINIMUM_LENGTH..1024)
+    }
+}
+
 fn seed_32() -> impl Strategy<Value = u32> {
     prop_oneof![Just(0), Just(u32::MAX), num::u32::ANY]
 }
