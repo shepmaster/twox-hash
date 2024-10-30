@@ -11,11 +11,19 @@ use crate::{
     IntoU128 as _, IntoU64 as _,
 };
 
-pub use crate::xxhash3::{OneshotWithSecretError, DEFAULT_SECRET_LENGTH, SECRET_MINIMUM_LENGTH};
+pub use crate::xxhash3::{
+    FixedBuffer, FixedMutBuffer, OneshotWithSecretError, SecretBuffer, SecretTooShortError,
+    SecretWithSeedError, DEFAULT_SECRET_LENGTH, SECRET_MINIMUM_LENGTH,
+};
 
 /// Calculates the 128-bit hash.
 #[derive(Clone)]
-pub struct Hasher;
+/// TODO: does not implement hash.
+pub struct Hasher {
+    #[cfg(feature = "alloc")]
+    inner: AllocRawHasher,
+    _private: (),
+}
 
 impl Hasher {
     /// Hash all data at once. If you can use this function, you may
@@ -73,6 +81,113 @@ impl Hasher {
         };
 
         Ok(impl_oneshot(secret, seed, input))
+    }
+}
+#[cfg(feature = "alloc")]
+#[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
+mod with_alloc {
+    use ::alloc::boxed::Box;
+
+    use super::*;
+
+    impl Hasher {
+        /// Constructs the hasher using the default seed and secret values.
+        pub fn new() -> Self {
+            Self {
+                inner: RawHasherCore::allocate_default(),
+                _private: (),
+            }
+        }
+
+        /// Constructs the hasher using the provided seed and a secret
+        /// derived from the seed.
+        pub fn with_seed(seed: u64) -> Self {
+            Self {
+                inner: RawHasherCore::allocate_with_seed(seed),
+                _private: (),
+            }
+        }
+
+        /// Constructs the hasher using the provided seed and secret.
+        pub fn with_seed_and_secret(
+            seed: u64,
+            secret: impl Into<Box<[u8]>>,
+        ) -> Result<Self, SecretTooShortError<Box<[u8]>>> {
+            Ok(Self {
+                inner: RawHasherCore::allocate_with_seed_and_secret(seed, secret)?,
+                _private: (),
+            })
+        }
+
+        /// Returns the secret.
+        pub fn into_secret(self) -> Box<[u8]> {
+            self.inner.into_secret()
+        }
+
+        /// Writes some data into this `Hasher`.
+        #[inline]
+        pub fn write(&mut self, input: &[u8]) {
+            self.inner.write(input);
+        }
+
+        /// Returns the hash value for the values written so
+        /// far. Unlike [`std::hash::Hasher::finish`][], this method
+        /// returns the complete 128-bit value calculated, not a
+        /// 64-bit value.
+        #[inline]
+        pub fn finish_128(&self) -> u128 {
+            self.inner.finish(Finalize128)
+        }
+    }
+
+    impl Default for Hasher {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+}
+
+#[derive(Clone)]
+/// A lower-level interface for computing a hash from streaming data.
+///
+/// The algorithm requires a secret which can be a reasonably large
+/// piece of data. [`Hasher`][] makes one concrete implementation
+/// decision that uses dynamic memory allocation, but specialized
+/// usages may desire more flexibility. This type, combined with
+/// [`SecretBuffer`][], offer that flexibility at the cost of a
+/// generic type.
+pub struct RawHasher<S>(RawHasherCore<S>);
+
+impl<S> RawHasher<S> {
+    /// Construct the hasher with the provided seed, secret, and
+    /// temporary buffer.
+    pub fn new(secret_buffer: SecretBuffer<S>) -> Self {
+        Self(RawHasherCore::new(secret_buffer))
+    }
+
+    /// Returns the secret.
+    pub fn into_secret(self) -> S {
+        self.0.into_secret()
+    }
+}
+
+impl<S> RawHasher<S>
+where
+    S: FixedBuffer,
+{
+    /// Writes some data into this `Hasher`.
+    #[inline]
+    pub fn write(&mut self, input: &[u8]) {
+        self.0.write(input);
+    }
+
+    /// Returns the hash value for the values written so
+    /// far. Unlike [`std::hash::Hasher::finish`][], this method
+    /// returns the complete 128-bit value calculated, not a
+    /// 64-bit value.
+    #[inline]
+    pub fn finish_128(&self) -> u128 {
+        self.0.finish(Finalize128)
     }
 }
 
@@ -320,6 +435,14 @@ mod test {
 
     const EMPTY_BYTES: [u8; 0] = [];
 
+    fn hash_byte_by_byte(input: &[u8]) -> u128 {
+        let mut hasher = Hasher::new();
+        for byte in input.chunks(1) {
+            hasher.write(byte)
+        }
+        hasher.finish_128()
+    }
+
     #[test]
     fn oneshot_empty() {
         let hash = Hasher::oneshot(&EMPTY_BYTES);
@@ -327,8 +450,19 @@ mod test {
     }
 
     #[test]
+    fn streaming_empty() {
+        let hash = hash_byte_by_byte(&EMPTY_BYTES);
+        assert_eq!(hash, 0x99aa_06d3_0147_98d8_6001_c324_468d_497f);
+    }
+
+    #[test]
     fn oneshot_1_to_3_bytes() {
         test_1_to_3_bytes(Hasher::oneshot)
+    }
+
+    #[test]
+    fn streaming_1_to_3_bytes() {
+        test_1_to_3_bytes(hash_byte_by_byte)
     }
 
     #[track_caller]
@@ -352,6 +486,11 @@ mod test {
         test_4_to_8_bytes(Hasher::oneshot)
     }
 
+    #[test]
+    fn streaming_4_to_8_bytes() {
+        test_4_to_8_bytes(hash_byte_by_byte)
+    }
+
     #[track_caller]
     fn test_4_to_8_bytes(mut f: impl FnMut(&[u8]) -> u128) {
         let inputs = bytes![4, 5, 6, 7, 8];
@@ -373,6 +512,11 @@ mod test {
     #[test]
     fn oneshot_9_to_16_bytes() {
         test_9_to_16_bytes(Hasher::oneshot)
+    }
+
+    #[test]
+    fn streaming_9_to_16_bytes() {
+        test_9_to_16_bytes(hash_byte_by_byte)
     }
 
     #[track_caller]
@@ -399,6 +543,11 @@ mod test {
     #[test]
     fn oneshot_17_to_128_bytes() {
         test_17_to_128_bytes(Hasher::oneshot)
+    }
+
+    #[test]
+    fn streaming_17_to_128_bytes() {
+        test_17_to_128_bytes(hash_byte_by_byte)
     }
 
     #[track_caller]
@@ -438,6 +587,11 @@ mod test {
         test_129_to_240_bytes(Hasher::oneshot)
     }
 
+    #[test]
+    fn streaming_129_to_240_bytes() {
+        test_129_to_240_bytes(hash_byte_by_byte)
+    }
+
     #[track_caller]
     fn test_129_to_240_bytes(mut f: impl FnMut(&[u8]) -> u128) {
         let lower_boundary = bytes![129, 130, 131];
@@ -465,6 +619,11 @@ mod test {
     #[test]
     fn oneshot_241_plus_bytes() {
         test_241_plus_bytes(Hasher::oneshot)
+    }
+
+    #[test]
+    fn streaming_241_plus_bytes() {
+        test_241_plus_bytes(hash_byte_by_byte)
     }
 
     #[track_caller]
