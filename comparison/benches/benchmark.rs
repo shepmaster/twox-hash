@@ -314,4 +314,201 @@ mod xxhash3_64 {
     criterion_group!(benches, tiny_data, oneshot, streaming);
 }
 
-criterion_main!(xxhash64::benches, xxhash3_64::benches);
+mod xxhash3_128 {
+    use super::*;
+
+    fn tiny_data(c: &mut Criterion) {
+        let (seed, data) = gen_data(240);
+        let mut g = c.my_benchmark_group("xxhash3_128", "tiny_data");
+
+        // let categories = 0..=data.len();
+
+        // Visual inspection of all the data points showed these as
+        // examples of thier nearby neighbors.
+        let categories = [
+            0, 2, 6, 13, 25, 50, 80, 113, 135, 150, 165, 185, 200, 215, 230,
+        ];
+
+        for size in categories {
+            let data = &data[..size];
+            g.throughput(Throughput::Bytes(data.len() as _));
+
+            let id = format!("impl-c/size-{size:03}");
+            g.bench_function(id, |b| {
+                b.iter(|| c::XxHash3_128::oneshot_with_seed(seed, data))
+            });
+
+            let id = format!("impl-c-scalar/size-{size:03}");
+            g.bench_function(id, |b| {
+                b.iter(|| c::scalar::XxHash3_128::oneshot_with_seed(seed, data))
+            });
+
+            #[cfg(target_arch = "aarch64")]
+            {
+                let id = format!("impl-c-neon/size-{size:03}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::neon::XxHash3_128::oneshot_with_seed(seed, data))
+                });
+            }
+
+            #[cfg(target_arch = "x86_64")]
+            {
+                let id = format!("impl-c-avx2/size-{size:03}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::avx2::XxHash3_128::oneshot_with_seed(seed, data))
+                });
+
+                let id = format!("impl-c-sse2/size-{size:03}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::sse2::XxHash3_128::oneshot_with_seed(seed, data))
+                });
+            }
+
+            let id = format!("impl-rust/size-{size:03}");
+            g.bench_function(id, |b| {
+                b.iter(|| rust::XxHash3_128::oneshot_with_seed(seed, data))
+            });
+        }
+
+        g.finish();
+    }
+
+    fn oneshot(c: &mut Criterion) {
+        let (seed, data) = gen_data(BIG_DATA_SIZE);
+        let mut g = c.my_benchmark_group("xxhash3_128", "oneshot");
+
+        for size in half_sizes(data.len()).take_while(|&s| s >= MIN_BIG_DATA_SIZE) {
+            let data = &data[..size];
+            g.throughput(Throughput::Bytes(data.len() as _));
+
+            let id = format!("impl-c/size-{size:07}");
+            g.bench_function(id, |b| {
+                b.iter(|| c::XxHash3_128::oneshot_with_seed(seed, data))
+            });
+
+            let id = format!("impl-c-scalar/size-{size:07}");
+            g.bench_function(id, |b| {
+                b.iter(|| c::scalar::XxHash3_128::oneshot_with_seed(seed, data))
+            });
+
+            #[cfg(target_arch = "aarch64")]
+            {
+                let id = format!("impl-c-neon/size-{size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::neon::XxHash3_128::oneshot_with_seed(seed, data))
+                });
+            }
+
+            #[cfg(target_arch = "x86_64")]
+            {
+                let id = format!("impl-c-avx2/size-{size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::avx2::XxHash3_128::oneshot_with_seed(seed, data))
+                });
+
+                let id = format!("impl-c-sse2/size-{size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| c::sse2::XxHash3_128::oneshot_with_seed(seed, data))
+                });
+            }
+
+            let id = format!("impl-rust/size-{size:07}");
+            g.bench_function(id, |b| {
+                b.iter(|| rust::XxHash3_128::oneshot_with_seed(seed, data))
+            });
+        }
+
+        g.finish();
+    }
+
+    fn streaming(c: &mut Criterion) {
+        let mut g = c.my_benchmark_group("xxhash3_128", "streaming");
+
+        let size = 1024 * 1024;
+        let (seed, data) = gen_data(size);
+
+        for chunk_size in half_sizes(size) {
+            let chunks = data.chunks(chunk_size).collect::<Vec<_>>();
+
+            g.throughput(Throughput::Bytes(size as _));
+
+            let id = format!("impl-c/size-{size:07}/chunk_size-{chunk_size:07}");
+            g.bench_function(id, |b| {
+                b.iter(|| {
+                    let mut hasher = c::XxHash3_128::with_seed(seed);
+                    for chunk in &chunks {
+                        hasher.write(chunk);
+                    }
+                    hasher.finish()
+                })
+            });
+
+            let id = format!("impl-c-scalar/size-{size:07}/chunk_size-{chunk_size:07}");
+            g.bench_function(id, |b| {
+                b.iter(|| {
+                    let mut hasher = c::scalar::XxHash3_128::with_seed(seed);
+                    for chunk in &chunks {
+                        hasher.write(chunk);
+                    }
+                    hasher.finish()
+                })
+            });
+
+            #[cfg(target_arch = "aarch64")]
+            {
+                let id = format!("impl-c-neon/size-{size:07}/chunk_size-{chunk_size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| {
+                        let mut hasher = c::neon::XxHash3_128::with_seed(seed);
+                        for chunk in &chunks {
+                            hasher.write(chunk);
+                        }
+                        hasher.finish()
+                    })
+                });
+            }
+
+            #[cfg(target_arch = "x86_64")]
+            {
+                let id = format!("impl-c-avx2/size-{size:07}/chunk_size-{chunk_size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| {
+                        let mut hasher = c::avx2::XxHash3_128::with_seed(seed);
+                        for chunk in &chunks {
+                            hasher.write(chunk);
+                        }
+                        hasher.finish()
+                    })
+                });
+
+                let id = format!("impl-c-sse2/size-{size:07}/chunk_size-{chunk_size:07}");
+                g.bench_function(id, |b| {
+                    b.iter(|| {
+                        let mut hasher = c::sse2::XxHash3_128::with_seed(seed);
+                        for chunk in &chunks {
+                            hasher.write(chunk);
+                        }
+                        hasher.finish()
+                    })
+                });
+            }
+
+            let id = format!("impl-rust/size-{size:07}/chunk_size-{chunk_size:07}");
+            g.bench_function(id, |b| {
+                b.iter(|| {
+                    let mut hasher = rust::XxHash3_128::with_seed(seed);
+                    for chunk in &chunks {
+                        hasher.write(chunk);
+                    }
+                    hasher.finish_128()
+                })
+            });
+        }
+
+        g.finish();
+    }
+
+    criterion_group!(benches, tiny_data, oneshot, streaming);
+}
+
+criterion_main!(xxhash64::benches, xxhash3_64::benches, xxhash3_128::benches);
