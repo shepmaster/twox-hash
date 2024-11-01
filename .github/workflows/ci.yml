@@ -75,7 +75,7 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
-      - run: cargo fmt --all
+      - run: cargo fmt --check --all
 
       - run: cargo clippy --all --all-targets --all-features
 
