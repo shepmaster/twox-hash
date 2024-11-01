@@ -896,7 +896,10 @@ fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 
     let secret_words = secret.words_for_1_to_3();
 
-    let value = ((secret_words[0] ^ secret_words[1]).into_u64() + seed) ^ combined.into_u64();
+    let value = {
+        let secret = (secret_words[0] ^ secret_words[1]).into_u64();
+        secret.wrapping_add(seed) ^ combined.into_u64()
+    };
 
     // FUTURE: TEST: "Note that the XXH3-64 result is the lower half of XXH3-128 result."
     avalanche_xxh64(value)

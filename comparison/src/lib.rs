@@ -13,37 +13,37 @@ mod xxhash32 {
 
     proptest! {
         #[test]
-        fn oneshot_same_as_one_chunk(seed: u32, data: Vec<u8>) {
+        fn oneshot_same_as_one_chunk(seed in seed_32(), data: Vec<u8>) {
             oneshot_same_as_one_chunk_impl(seed, &data)?;
         }
 
         #[test]
-        fn oneshot_same_as_one_chunk_with_an_offset(seed: u32, (data, offset) in vec_and_index()) {
+        fn oneshot_same_as_one_chunk_with_an_offset(seed in seed_32(), (data, offset) in vec_and_index()) {
             oneshot_same_as_one_chunk_impl(seed, &data[offset..])?;
         }
 
         #[test]
-        fn oneshot_same_as_many_chunks(seed: u32, (data, chunks) in data_and_chunks()) {
+        fn oneshot_same_as_many_chunks(seed in seed_32(), (data, chunks) in data_and_chunks()) {
             oneshot_same_as_many_chunks_impl(seed, &data, &chunks)?;
         }
 
         #[test]
-        fn oneshot(seed: u32, data: Vec<u8>) {
+        fn oneshot(seed in seed_32(), data: Vec<u8>) {
             oneshot_impl(seed, &data)?;
         }
 
         #[test]
-        fn oneshot_with_an_offset(seed: u32, (data, offset) in vec_and_index()) {
+        fn oneshot_with_an_offset(seed in seed_32(), (data, offset) in vec_and_index()) {
             oneshot_impl(seed, &data[offset..])?;
         }
 
         #[test]
-        fn streaming_one_chunk(seed: u32, data: Vec<u8>) {
+        fn streaming_one_chunk(seed in seed_32(), data: Vec<u8>) {
             streaming_one_chunk_impl(seed, &data)?;
         }
 
         #[test]
-        fn streaming_one_chunk_with_an_offset(seed: u32, (data, offset) in vec_and_index()) {
+        fn streaming_one_chunk_with_an_offset(seed in seed_32(), (data, offset) in vec_and_index()) {
             streaming_one_chunk_impl(seed, &data[offset..])?;
         }
     }
@@ -112,37 +112,37 @@ mod xxhash64 {
 
     proptest! {
         #[test]
-        fn oneshot_same_as_one_chunk(seed: u64, data: Vec<u8>) {
+        fn oneshot_same_as_one_chunk(seed in seed_64(), data: Vec<u8>) {
             oneshot_same_as_one_chunk_impl(seed, &data)?;
         }
 
         #[test]
-        fn oneshot_same_as_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        fn oneshot_same_as_one_chunk_with_an_offset(seed in seed_64(), (data, offset) in vec_and_index()) {
             oneshot_same_as_one_chunk_impl(seed, &data[offset..])?;
         }
 
         #[test]
-        fn oneshot_same_as_many_chunks(seed: u64, (data, chunks) in data_and_chunks()) {
+        fn oneshot_same_as_many_chunks(seed in seed_64(), (data, chunks) in data_and_chunks()) {
             oneshot_same_as_many_chunks_impl(seed, &data, &chunks)?;
         }
 
         #[test]
-        fn oneshot(seed: u64, data: Vec<u8>) {
+        fn oneshot(seed in seed_64(), data: Vec<u8>) {
             oneshot_impl(seed, &data)?;
         }
 
         #[test]
-        fn oneshot_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        fn oneshot_with_an_offset(seed in seed_64(), (data, offset) in vec_and_index()) {
             oneshot_impl(seed, &data[offset..])?;
         }
 
         #[test]
-        fn streaming_one_chunk(seed: u64, data: Vec<u8>) {
+        fn streaming_one_chunk(seed in seed_64(), data: Vec<u8>) {
             streaming_one_chunk_impl(seed, &data)?;
         }
 
         #[test]
-        fn streaming_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        fn streaming_one_chunk_with_an_offset(seed in seed_64(), (data, offset) in vec_and_index()) {
             streaming_one_chunk_impl(seed, &data[offset..])?;
         }
     }
@@ -212,27 +212,27 @@ mod xxhash3_64 {
 
     proptest! {
         #[test]
-        fn oneshot_same_as_one_chunk(seed: u64, data: Vec<u8>) {
+        fn oneshot_same_as_one_chunk(seed in seed_64(), data: Vec<u8>) {
             oneshot_same_as_one_chunk_impl(seed, &data)?;
         }
 
         #[test]
-        fn oneshot_same_as_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        fn oneshot_same_as_one_chunk_with_an_offset(seed in seed_64(), (data, offset) in vec_and_index()) {
             oneshot_same_as_one_chunk_impl(seed, &data[offset..])?;
         }
 
         #[test]
-        fn oneshot_same_as_many_chunks(seed: u64, (data, chunks) in data_and_chunks()) {
+        fn oneshot_same_as_many_chunks(seed in seed_64(), (data, chunks) in data_and_chunks()) {
             oneshot_same_as_many_chunks_impl(seed, &data, &chunks)?;
         }
 
         #[test]
-        fn oneshot(seed: u64, data: Vec<u8>) {
+        fn oneshot(seed in seed_64(), data: Vec<u8>) {
             oneshot_impl(seed, &data)?;
         }
 
         #[test]
-        fn oneshot_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        fn oneshot_with_an_offset(seed in seed_64(), (data, offset) in vec_and_index()) {
             oneshot_impl(seed, &data[offset..])?;
         }
 
@@ -242,22 +242,22 @@ mod xxhash3_64 {
         }
 
         #[test]
-        fn oneshot_with_a_seed_and_secret(seed: u64, secret in secret(), data: Vec<u8>) {
+        fn oneshot_with_a_seed_and_secret(seed in seed_64(), secret in secret(), data: Vec<u8>) {
             oneshot_with_seed_and_secret_impl(seed, &secret, &data)?;
         }
 
         #[test]
-        fn streaming_one_chunk(seed: u64, data: Vec<u8>) {
+        fn streaming_one_chunk(seed in seed_64(), data: Vec<u8>) {
             streaming_one_chunk_impl(seed, &data)?;
         }
 
         #[test]
-        fn streaming_one_chunk_with_an_offset(seed: u64, (data, offset) in vec_and_index()) {
+        fn streaming_one_chunk_with_an_offset(seed in seed_64(), (data, offset) in vec_and_index()) {
             streaming_one_chunk_impl(seed, &data[offset..])?;
         }
 
         #[test]
-        fn streaming_with_a_seed_and_secret(seed: u64, secret in secret(), data: Vec<u8>) {
+        fn streaming_with_a_seed_and_secret(seed in seed_64(), secret in secret(), data: Vec<u8>) {
             streaming_with_seed_and_secret_impl(seed, &secret, &data)?;
         }
     }
@@ -361,6 +361,14 @@ mod xxhash3_64 {
     fn secret() -> impl Strategy<Value = Vec<u8>> {
         prop::collection::vec(num::u8::ANY, SECRET_MINIMUM_LENGTH..1024)
     }
+}
+
+fn seed_32() -> impl Strategy<Value = u32> {
+    prop_oneof![Just(0), Just(u32::MAX), num::u32::ANY]
+}
+
+fn seed_64() -> impl Strategy<Value = u64> {
+    prop_oneof![Just(0), Just(u64::MAX), num::u64::ANY]
 }
 
 fn vec_and_index() -> impl Strategy<Value = (Vec<u8>, usize)> {
