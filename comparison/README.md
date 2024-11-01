@@ -7,7 +7,7 @@ have additional overhead for each function call.
 
 Click any graph to see it full-size.
 
-# XXHash64
+# xxHash64
 
 ## Oneshot hashing
 
@@ -40,7 +40,7 @@ various chunk sizes.
 <a href="./results/xxhash64-streaming-aarch64.svg">
   <img
     src="./results/xxhash64-streaming-aarch64.svg"
-    alt="XXHash64, streaming data, on an aarch64 processor"
+    alt="xxHash64, streaming data, on an aarch64 processor"
     />
 </a>
 
@@ -49,7 +49,7 @@ various chunk sizes.
 <a href="./results/xxhash64-streaming-x86_64.svg">
   <img
     src="./results/xxhash64-streaming-x86_64.svg"
-    alt="XXHash64, streaming data, on an x86_64 processor"
+    alt="xxHash64, streaming data, on an x86_64 processor"
     />
 </a>
 
@@ -62,7 +62,7 @@ Compares the **time taken** to hash 0 to 32 bytes of data.
 <a href="./results/xxhash64-tiny_data-aarch64.svg">
   <img
     src="./results/xxhash64-tiny_data-aarch64.svg"
-    alt="XXHash64, small data, on an aarch64 processor"
+    alt="xxHash64, small data, on an aarch64 processor"
     />
 </a>
 
@@ -71,12 +71,12 @@ Compares the **time taken** to hash 0 to 32 bytes of data.
 <a href="./results/xxhash64-tiny_data-x86_64.svg">
   <img
     src="./results/xxhash64-tiny_data-x86_64.svg"
-    alt="XXHash64, small data, on an x86_64 processor"
+    alt="xxHash64, small data, on an x86_64 processor"
     />
 </a>
 
 
-# XXHash3 (64-bit)
+# xxHash3 (64-bit)
 
 ## Oneshot hashing
 
@@ -113,7 +113,7 @@ various chunk sizes.
 <a href="./results/xxhash3_64-streaming-aarch64.svg">
   <img
     src="./results/xxhash3_64-streaming-aarch64.svg"
-    alt="XXHash3, 64-bit, streaming data, on an aarch64 processor"
+    alt="xxHash3, 64-bit, streaming data, on an aarch64 processor"
     />
 </a>
 
@@ -122,7 +122,7 @@ various chunk sizes.
 <a href="./results/xxhash3_64-streaming-x86_64.svg">
   <img
     src="./results/xxhash3_64-streaming-x86_64.svg"
-    alt="XXHash3, 64-bit, streaming data, on an x86_64 processor"
+    alt="xxHash3, 64-bit, streaming data, on an x86_64 processor"
     />
 </a>
 
@@ -137,7 +137,7 @@ cluttering the graph and wasting benchmarking time.
 <a href="./results/xxhash3_64-tiny_data-aarch64.svg">
   <img
     src="./results/xxhash3_64-tiny_data-aarch64.svg"
-    alt="XXHash3, 64-bit, small data, on an aarch64 processor"
+    alt="xxHash3, 64-bit, small data, on an aarch64 processor"
     />
 </a>
 
@@ -146,7 +146,7 @@ cluttering the graph and wasting benchmarking time.
 <a href="./results/xxhash3_64-tiny_data-x86_64.svg">
   <img
     src="./results/xxhash3_64-tiny_data-x86_64.svg"
-    alt="XXHash3, 64-bit, small data, on an x86_64 processor"
+    alt="xxHash3, 64-bit, small data, on an x86_64 processor"
     />
 </a>
 
