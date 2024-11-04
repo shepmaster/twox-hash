@@ -227,7 +227,7 @@ fn impl_oneshot(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
 
 #[inline(always)]
 fn impl_0_bytes(secret: &Secret, seed: u64) -> u64 {
-    let secret_words = secret.words_for_0();
+    let secret_words = secret.for_64().words_for_0();
     avalanche_xxh64(seed ^ secret_words[0] ^ secret_words[1])
 }
 
@@ -236,7 +236,7 @@ fn impl_1_to_3_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     assert_input_range!(1..=3, input.len());
     let combined = impl_1_to_3_bytes_combined(input);
 
-    let secret_words = secret.words_for_1_to_3();
+    let secret_words = secret.for_64().words_for_1_to_3();
 
     let value = {
         let secret = (secret_words[0] ^ secret_words[1]).into_u64();
@@ -254,7 +254,7 @@ fn impl_4_to_8_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let input_last = input.last_u32().unwrap();
 
     let modified_seed = seed ^ (seed.lower_half().swap_bytes().into_u64() << 32);
-    let secret_words = secret.words_for_4_to_8();
+    let secret_words = secret.for_64().words_for_4_to_8();
 
     let combined = input_last.into_u64() | (input_first.into_u64() << 32);
 
@@ -277,7 +277,7 @@ fn impl_9_to_16_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let input_first = input.first_u64().unwrap();
     let input_last = input.last_u64().unwrap();
 
-    let secret_words = secret.words_for_9_to_16();
+    let secret_words = secret.for_64().words_for_9_to_16();
     let low = ((secret_words[0] ^ secret_words[1]).wrapping_add(seed)) ^ input_first;
     let high = ((secret_words[2] ^ secret_words[3]).wrapping_sub(seed)) ^ input_last;
     let mul_result = low.into_u128().wrapping_mul(high.into_u128());
@@ -312,20 +312,20 @@ fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     let (head, _) = input.bp_as_chunks();
     let mut head = head.iter();
 
-    let ss = secret.words_for_127_to_240_part1();
+    let ss = secret.for_64().words_for_127_to_240_part1();
     for (chunk, secret) in head.by_ref().zip(ss).take(8) {
         acc = acc.wrapping_add(mix_step(chunk, secret, seed));
     }
 
     acc = avalanche(acc);
 
-    let ss = secret.words_for_127_to_240_part2();
+    let ss = secret.for_64().words_for_127_to_240_part2();
     for (chunk, secret) in head.zip(ss) {
         acc = acc.wrapping_add(mix_step(chunk, secret, seed));
     }
 
     let last_chunk = input.last_chunk().unwrap();
-    let ss = secret.words_for_127_to_240_part3();
+    let ss = secret.for_64().words_for_127_to_240_part3();
     acc = acc.wrapping_add(mix_step(last_chunk, ss, seed));
 
     avalanche(acc)

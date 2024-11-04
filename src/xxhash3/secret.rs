@@ -34,35 +34,9 @@ impl Secret {
     }
 
     #[inline]
-    pub fn words_for_0(&self) -> [u64; 2] {
-        self.reassert_preconditions();
-
-        let (q, _) = self.0[56..].bp_as_chunks();
-        [q[0], q[1]].map(u64::from_le_bytes)
-    }
-
-    #[inline]
-    pub fn words_for_1_to_3(&self) -> [u32; 2] {
-        self.reassert_preconditions();
-
-        let (q, _) = self.0.bp_as_chunks();
-        [q[0], q[1]].map(u32::from_le_bytes)
-    }
-
-    #[inline]
-    pub fn words_for_4_to_8(&self) -> [u64; 2] {
-        self.reassert_preconditions();
-
-        let (q, _) = self.0[8..].bp_as_chunks();
-        [q[0], q[1]].map(u64::from_le_bytes)
-    }
-
-    #[inline]
-    pub fn words_for_9_to_16(&self) -> [u64; 4] {
-        self.reassert_preconditions();
-
-        let (q, _) = self.0[24..].bp_as_chunks();
-        [q[0], q[1], q[2], q[3]].map(u64::from_le_bytes)
+    #[cfg(feature = "xxhash3_64")]
+    pub fn for_64(&self) -> Secret64BitView<'_> {
+        Secret64BitView(self)
     }
 
     #[inline]
@@ -71,29 +45,6 @@ impl Secret {
 
         let (words, _) = self.0.bp_as_chunks();
         words
-    }
-
-    #[inline]
-    pub fn words_for_127_to_240_part1(&self) -> &[[u8; 16]] {
-        self.reassert_preconditions();
-
-        let (ss, _) = self.0.bp_as_chunks();
-        ss
-    }
-
-    #[inline]
-    pub fn words_for_127_to_240_part2(&self) -> &[[u8; 16]] {
-        self.reassert_preconditions();
-
-        let (ss, _) = self.0[3..].bp_as_chunks();
-        ss
-    }
-
-    #[inline]
-    pub fn words_for_127_to_240_part3(&self) -> &[u8; 16] {
-        self.reassert_preconditions();
-
-        self.0[119..].first_chunk().unwrap()
     }
 
     /// # Safety
@@ -157,6 +108,72 @@ impl Secret {
     #[inline(always)]
     pub fn is_valid(&self) -> bool {
         self.0.len() >= SECRET_MINIMUM_LENGTH
+    }
+}
+
+#[derive(Copy, Clone)]
+#[cfg(feature = "xxhash3_64")]
+pub struct Secret64BitView<'a>(&'a Secret);
+
+#[cfg(feature = "xxhash3_64")]
+impl<'a> Secret64BitView<'a> {
+    #[inline]
+    pub fn words_for_0(self) -> [u64; 2] {
+        self.0.reassert_preconditions();
+
+        let (q, _) = self.b()[56..].bp_as_chunks();
+        [q[0], q[1]].map(u64::from_le_bytes)
+    }
+
+    #[inline]
+    pub fn words_for_1_to_3(self) -> [u32; 2] {
+        self.0.reassert_preconditions();
+
+        let (q, _) = self.b().bp_as_chunks();
+        [q[0], q[1]].map(u32::from_le_bytes)
+    }
+
+    #[inline]
+    pub fn words_for_4_to_8(self) -> [u64; 2] {
+        self.0.reassert_preconditions();
+
+        let (q, _) = self.b()[8..].bp_as_chunks();
+        [q[0], q[1]].map(u64::from_le_bytes)
+    }
+
+    #[inline]
+    pub fn words_for_9_to_16(self) -> [u64; 4] {
+        self.0.reassert_preconditions();
+
+        let (q, _) = self.b()[24..].bp_as_chunks();
+        [q[0], q[1], q[2], q[3]].map(u64::from_le_bytes)
+    }
+
+    #[inline]
+    pub fn words_for_127_to_240_part1(self) -> &'a [[u8; 16]] {
+        self.0.reassert_preconditions();
+
+        let (ss, _) = self.b().bp_as_chunks();
+        ss
+    }
+
+    #[inline]
+    pub fn words_for_127_to_240_part2(self) -> &'a [[u8; 16]] {
+        self.0.reassert_preconditions();
+
+        let (ss, _) = self.b()[3..].bp_as_chunks();
+        ss
+    }
+
+    #[inline]
+    pub fn words_for_127_to_240_part3(self) -> &'a [u8; 16] {
+        self.0.reassert_preconditions();
+
+        self.b()[119..].first_chunk().unwrap()
+    }
+
+    fn b(self) -> &'a [u8] {
+        &(self.0).0
     }
 }
 
