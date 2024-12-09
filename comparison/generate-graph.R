@@ -45,7 +45,7 @@ cpus = c(aarch64 = "Apple M1 Max", x86_64 = "AMD Ryzen 9 3950X")
 
 common_theme = theme(legend.position = "inside", legend.position.inside = c(0.8, 0.2), plot.margin = unit(c(0.1, 1, 0.1, 0.1), 'cm'))
 
-for (algo in c("xxhash64", "xxhash3_64")) {
+for (algo in c("xxhash64", "xxhash3_64", "xxhash3_128")) {
     message("# ", algo)
 
     algo_data = data[data$algo == algo,]

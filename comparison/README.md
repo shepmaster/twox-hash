@@ -19,15 +19,15 @@ graphs are boring flat lines, so a table is used instead.
 
 | Implementation | Throughput (GiB/s) |
 |----------------|--------------------|
-| Rust           | 13.5               |
-| C              | 13.5               |
+| Rust           | 13.4               |
+| C              | 13.4               |
 
 ## x86_64
 
 | Implementation | Throughput (GiB/s) |
 |----------------|--------------------|
-| Rust           | 16.5               |
-| C              | 16.5               |
+| Rust           | 16.7               |
+| C              | 16.6               |
 
 
 ## Streaming data
@@ -75,7 +75,6 @@ Compares the **time taken** to hash 0 to 32 bytes of data.
     />
 </a>
 
-
 # xxHash3 (64-bit)
 
 ## Oneshot hashing
@@ -88,20 +87,21 @@ graphs are boring flat lines, so a table is used instead.
 
 | Implementation | Throughput (GiB/s) |
 |----------------|--------------------|
-| Rust           | 35.2               |
+| Rust           | 35.0               |
 | C              | 35.0               |
 | C (scalar)     | 21.2               |
-| C (NEON)       | 35.1               |
+| C (NEON)       | 35.0               |
 
 ### x86_64
 
 | Implementation | Throughput (GiB/s) |
 |----------------|--------------------|
-| Rust           | 58.6               |
-| C              | 25.0               |
-| C (scalar)     | 7.5                |
+| Rust           | 58.9               |
+| C              | 25.1               |
+| C (scalar)     | 7.6                |
 | C (SSE2)       | 25.1               |
-| C (AVX2)       | 57.8               |
+| C (AVX2)       | 58.4               |
+
 
 ## Streaming data
 
@@ -150,6 +150,78 @@ cluttering the graph and wasting benchmarking time.
     />
 </a>
 
+# xxHash3 (128-bit)
+
+## Oneshot hashing
+
+Compares the **speed** of hashing an entire buffer of data in one
+function call. Data sizes from 256 KiB to 4 MiB are tested. These
+graphs are boring flat lines, so a table is used instead.
+
+| Implementation | Throughput (GiB/s) |
+|----------------|--------------------|
+| Rust           | 34.4               |
+| C              | 34.8               |
+| C (scalar)     | 21.3               |
+| C (NEON)       | 34.6               |
+
+### x86_64
+
+| Implementation | Throughput (GiB/s) |
+|----------------|--------------------|
+| Rust           | 58.3               |
+| C              | 25.6               |
+| C (scalar)     | 7.6                |
+| C (SSE2)       | 25.5               |
+| C (AVX2)       | 57.4               |
+
+## Streaming data
+
+Compares the **speed** of hashing a 1 MiB buffer of data split into
+various chunk sizes.
+
+### aarch64
+
+<a href="./results/xxhash3_128-streaming-aarch64.svg">
+  <img
+    src="./results/xxhash3_128-streaming-aarch64.svg"
+    alt="xxHash3, 128-bit, streaming data, on an aarch64 processor"
+    />
+</a>
+
+### x86_64
+
+<a href="./results/xxhash3_128-streaming-x86_64.svg">
+  <img
+    src="./results/xxhash3_128-streaming-x86_64.svg"
+    alt="xxHash3, 128-bit, streaming data, on an x86_64 processor"
+    />
+</a>
+
+## Small amounts of data
+
+Compares the **time taken** to hash 0 to 230 bytes of
+data. Representative samples are taken from similar times to avoid
+cluttering the graph and wasting benchmarking time.
+
+### aarch64
+
+<a href="./results/xxhash3_128-tiny_data-aarch64.svg">
+  <img
+    src="./results/xxhash3_128-tiny_data-aarch64.svg"
+    alt="xxHash3, 128-bit, small data, on an aarch64 processor"
+    />
+</a>
+
+### x86_64
+
+<a href="./results/xxhash3_128-tiny_data-x86_64.svg">
+  <img
+    src="./results/xxhash3_128-tiny_data-x86_64.svg"
+    alt="xxHash3, 128-bit, small data, on an x86_64 processor"
+    />
+</a>
+
 # Benchmark machines
 
 ## Overview
@@ -159,7 +231,7 @@ cluttering the graph and wasting benchmarking time.
 | Apple M1 Max      | 64 GiB | clang 16.0.0       |
 | AMD Ryzen 9 3950X | 32 GiB | cl.exe 19.41.34120 |
 
-Tests were run with `rustc 1.81.0 (eeb90cda1 2024-09-04)`.
+Tests were run with `rustc 1.82.0 (f6e511eec 2024-10-15)`.
 
 ## Details
 

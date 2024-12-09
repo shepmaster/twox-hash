@@ -25,7 +25,7 @@ members = [
 #END-[workspace]
 
 [features]
-default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "std"]
+default = ["random", "xxhash32", "xxhash64", "xxhash3_64", "xxhash3_128", "std"]
 
 random = ["dep:rand"]
 
@@ -34,6 +34,7 @@ serialize = ["dep:serde"]
 xxhash32 = []
 xxhash64 = []
 xxhash3_64 = []
+xxhash3_128 = []
 
 std = ["alloc"]
 alloc = []
