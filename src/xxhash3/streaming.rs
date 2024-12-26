@@ -550,11 +550,13 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn secret_buffer_allocate_default_is_valid() {
         assert!(SecretBuffer::allocate_default().is_valid())
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn secret_buffer_allocate_with_seed_is_valid() {
         assert!(SecretBuffer::allocate_with_seed(0xdead_beef).is_valid())
     }
