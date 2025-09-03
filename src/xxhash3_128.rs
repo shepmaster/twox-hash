@@ -17,8 +17,10 @@ pub use crate::xxhash3::{
 };
 
 /// Calculates the 128-bit hash.
+///
+/// This type does not implement [`std::hash::Hasher`] as that trait
+/// requires a 64-bit result while this computes a 128-bit result.
 #[derive(Clone)]
-/// TODO: does not implement hash.
 pub struct Hasher {
     #[cfg(feature = "alloc")]
     inner: AllocRawHasher,
@@ -83,6 +85,7 @@ impl Hasher {
         Ok(impl_oneshot(secret, seed, input))
     }
 }
+
 #[cfg(feature = "alloc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "alloc")))]
 mod with_alloc {
