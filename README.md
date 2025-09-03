@@ -16,7 +16,7 @@ A Rust implementation of the [xxHash] algorithm.
 # Examples
 
 These examples use [`XxHash64`][] but the same ideas can be
-used for [`XxHash32`][] or [`XxHash3_64`][].
+used for [`XxHash32`][], [`XxHash3_64`][], or [`XxHash3_128`][].
 
 ## Hashing arbitrary data
 
@@ -82,15 +82,16 @@ assert_eq!(hash.get(&42), Some(&"the answer"));
 
 # Feature Flags
 
-| name       | description                                                                                             |
-|------------|---------------------------------------------------------------------------------------------------------|
-| xxhash32   | Include the [`XxHash32`][] algorithm                                                                    |
-| xxhash64   | Include the [`XxHash64`][] algorithm                                                                    |
-| xxhash3_64 | Include the [`XxHash3_64`][] algorithm                                                                  |
-| random     | Create random instances of the hashers                                                                  |
-| serialize  | Serialize and deserialize hasher state with Serde                                                       |
-| std        | Use the Rust standard library. Enable this if you want SIMD support in [`XxHash3_64`][]                 |
-| alloc      | Use the Rust allocator library. Enable this if you want to create [`XxHash3_64`][] with dynamic secrets |
+| name        | description                                                                                                                   |
+|-------------|-------------------------------------------------------------------------------------------------------------------------------|
+| xxhash32    | Include the [`XxHash32`][] algorithm                                                                                          |
+| xxhash64    | Include the [`XxHash64`][] algorithm                                                                                          |
+| xxhash3_64  | Include the [`XxHash3_64`][] algorithm                                                                                        |
+| xxhash3_128 | Include the [`XxHash3_128`][] algorithm                                                                                       |
+| random      | Create random instances of the hashers                                                                                        |
+| serialize   | Serialize and deserialize hasher state with Serde                                                                             |
+| std         | Use the Rust standard library. Enable this if you want SIMD support in [`XxHash3_64`][] or [`XxHash3_128`][]                  |
+| alloc       | Use the Rust allocator library. Enable this if you want to create [`XxHash3_64`][] or [`XxHash3_128`][]  with dynamic secrets |
 
 # Benchmarks
 
@@ -114,3 +115,4 @@ See benchmarks in the [comparison][] README.
 [`XxHash32`]: crate::XxHash32
 [`XxHash64`]: crate::XxHash64
 [`XxHash3_64`]: crate::XxHash3_64
+[`XxHash3_128`]: crate::XxHash3_128
