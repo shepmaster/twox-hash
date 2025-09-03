@@ -11,13 +11,13 @@ use crate::{IntoU128, IntoU64};
 // SIMD implementations.
 pub mod scalar;
 
-#[cfg(target_arch = "aarch64")]
+#[cfg(all(target_arch = "aarch64", feature = "std"))]
 pub mod neon;
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "std"))]
 pub mod avx2;
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", feature = "std"))]
 pub mod sse2;
 
 macro_rules! dispatch {
