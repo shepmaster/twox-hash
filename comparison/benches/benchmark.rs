@@ -24,7 +24,7 @@ impl CriterionExt for Criterion {
 fn gen_data(length: usize) -> (u64, Vec<u8>) {
     let mut rng = rand::rngs::StdRng::seed_from_u64(SEED);
 
-    let seed = rng.gen();
+    let seed = rng.random();
 
     let mut data = vec![0; length];
     rng.fill_bytes(&mut data);
