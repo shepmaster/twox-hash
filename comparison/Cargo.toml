@@ -11,8 +11,8 @@ name = "benchmark"
 harness = false
 
 [dependencies]
-criterion = { version = "0.5.1", features = [] }
-proptest = "1.5.0"
-rand = "0.8.5"
+criterion = { version = "0.8.2", features = [] }
+proptest = "1.10.0"
+rand = "0.9.2" # Matches proptest's rand version
 twox-hash = { path = "..", default-features = false, features = ["xxhash32", "xxhash64", "xxhash3_64", "xxhash3_128", "std"] }
 xx_hash-sys = { path = "../xx_hash-sys" }
