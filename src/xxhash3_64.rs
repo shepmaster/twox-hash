@@ -360,6 +360,7 @@ mod test {
 
     const EMPTY_BYTES: [u8; 0] = [];
 
+    #[cfg(feature = "alloc")]
     fn hash_byte_by_byte(input: &[u8]) -> u64 {
         let mut hasher = Hasher::new();
         for byte in input.chunks(1) {
@@ -368,6 +369,7 @@ mod test {
         hasher.finish()
     }
 
+    #[cfg(feature = "alloc")]
     fn hash_byte_by_byte_with_seed(seed: u64, input: &[u8]) -> u64 {
         let mut hasher = Hasher::with_seed(seed);
         for byte in input.chunks(1) {
@@ -383,6 +385,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_empty() {
         let hash = hash_byte_by_byte(&EMPTY_BYTES);
         assert_eq!(hash, 0x2d06_8005_38d3_94c2);
@@ -394,6 +397,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_1_to_3_bytes() {
         test_1_to_3_bytes(hash_byte_by_byte)
     }
@@ -420,6 +424,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_4_to_8_bytes() {
         test_4_to_8_bytes(hash_byte_by_byte)
     }
@@ -448,6 +453,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_9_to_16_bytes() {
         test_9_to_16_bytes(hash_byte_by_byte)
     }
@@ -479,6 +485,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_17_to_128_bytes() {
         test_17_to_128_bytes(hash_byte_by_byte)
     }
@@ -521,6 +528,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_129_to_240_bytes() {
         test_129_to_240_bytes(hash_byte_by_byte)
     }
@@ -555,6 +563,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_241_plus_bytes() {
         test_241_plus_bytes(hash_byte_by_byte)
     }
@@ -584,6 +593,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_with_seed() {
         test_with_seed(hash_byte_by_byte_with_seed)
     }
