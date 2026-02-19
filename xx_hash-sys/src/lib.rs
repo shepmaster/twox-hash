@@ -254,6 +254,7 @@ macro_rules! xxh3_64b_template {
                 }
 
                 #[inline]
+                #[expect(clippy::new_without_default, reason = "Just testing code")]
                 pub fn new() -> Self {
                     let state = unsafe {
                         let state = [<$prefix _createState>]();
@@ -398,6 +399,7 @@ macro_rules! xxh3_128b_template {
                     }.into()
                 }
 
+                #[expect(clippy::new_without_default, reason = "Just testing code")]
                 #[inline]
                 pub fn new() -> Self {
                     let state = unsafe {
