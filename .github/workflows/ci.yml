@@ -37,6 +37,12 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
+      - name: Downgrade dependencies to 1.81 compatible versions
+        run: |
+          cargo update -p getrandom@0.4 --precise 0.4.0
+          cargo update -p proptest --precise 1.5.0
+        if: ${{ matrix.rust == '1.81.0' }}
+
       - name: Unit Tests
         run: cargo test --all-features
 
