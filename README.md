@@ -23,16 +23,21 @@ used for [`XxHash32`][], [`XxHash3_64`][], or [`XxHash3_128`][].
 ### When all the data is available at once
 
 ```rust
+# #[cfg(feature = "xxhash64")]
+# {
 use twox_hash::XxHash64;
 
 let seed = 1234;
 let hash = XxHash64::oneshot(seed, b"some bytes");
 assert_eq!(0xeab5_5659_a496_d78b, hash);
+# }
 ```
 
 ### When the data is streaming
 
 ```rust
+# #[cfg(feature = "xxhash64")]
+# {
 use std::hash::Hasher as _;
 use twox_hash::XxHash64;
 
@@ -43,6 +48,7 @@ hasher.write(b" ");
 hasher.write(b"bytes");
 let hash = hasher.finish();
 assert_eq!(0xeab5_5659_a496_d78b, hash);
+# }
 ```
 
 ## In a [`HashMap`][]
@@ -50,34 +56,43 @@ assert_eq!(0xeab5_5659_a496_d78b, hash);
 ### With a default seed
 
 ```rust
+# #[cfg(feature = "xxhash64")]
+# {
 use std::{collections::HashMap, hash::BuildHasherDefault};
 use twox_hash::XxHash64;
 
 let mut hash = HashMap::<_, _, BuildHasherDefault<XxHash64>>::default();
 hash.insert(42, "the answer");
 assert_eq!(hash.get(&42), Some(&"the answer"));
+# }
 ```
 
 ### With a random seed
 
 ```rust
+# #[cfg(all(feature = "xxhash64", feature = "random"))]
+# {
 use std::collections::HashMap;
 use twox_hash::xxhash64;
 
 let mut hash = HashMap::<_, _, xxhash64::RandomState>::default();
 hash.insert(42, "the answer");
 assert_eq!(hash.get(&42), Some(&"the answer"));
+# }
 ```
 
 ### With a fixed seed
 
 ```rust
+# #[cfg(feature = "xxhash64")]
+# {
 use std::collections::HashMap;
 use twox_hash::xxhash64;
 
 let mut hash = HashMap::with_hasher(xxhash64::State::with_seed(0xdead_cafe));
 hash.insert(42, "the answer");
 assert_eq!(hash.get(&42), Some(&"the answer"));
+# }
 ```
 
 # Feature Flags

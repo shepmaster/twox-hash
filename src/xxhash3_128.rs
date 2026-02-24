@@ -438,6 +438,7 @@ mod test {
 
     const EMPTY_BYTES: [u8; 0] = [];
 
+    #[cfg(feature = "alloc")]
     fn hash_byte_by_byte(input: &[u8]) -> u128 {
         let mut hasher = Hasher::new();
         for byte in input.chunks(1) {
@@ -453,6 +454,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_empty() {
         let hash = hash_byte_by_byte(&EMPTY_BYTES);
         assert_eq!(hash, 0x99aa_06d3_0147_98d8_6001_c324_468d_497f);
@@ -464,6 +466,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_1_to_3_bytes() {
         test_1_to_3_bytes(hash_byte_by_byte)
     }
@@ -490,6 +493,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_4_to_8_bytes() {
         test_4_to_8_bytes(hash_byte_by_byte)
     }
@@ -518,6 +522,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_9_to_16_bytes() {
         test_9_to_16_bytes(hash_byte_by_byte)
     }
@@ -549,6 +554,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_17_to_128_bytes() {
         test_17_to_128_bytes(hash_byte_by_byte)
     }
@@ -591,6 +597,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_129_to_240_bytes() {
         test_129_to_240_bytes(hash_byte_by_byte)
     }
@@ -625,6 +632,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn streaming_241_plus_bytes() {
         test_241_plus_bytes(hash_byte_by_byte)
     }
@@ -644,7 +652,7 @@ mod test {
 
         for (input, expected) in inputs.iter().zip(expected) {
             let hash = f(input);
-            eprintln!("{hash:032x}\n{expected:032x}");
+            std::eprintln!("{hash:032x}\n{expected:032x}");
             assert_eq!(hash, expected, "input was {} bytes", input.len());
         }
     }
