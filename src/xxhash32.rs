@@ -295,7 +295,7 @@ impl Hasher {
         // "Note that, if input length is so large that it requires
         // more than 32-bits, only the lower 32-bits are added to the
         // accumulator."
-        acc += len as u32;
+        acc = acc.wrapping_add(len as u32);
 
         // Step 5. Consume remaining input
         while let Some((chunk, rest)) = remaining.split_first_chunk() {
@@ -495,6 +495,18 @@ mod test {
 
         // compared against the C implementation
         assert_eq!(hasher.finish(), 0x1522_4ca7);
+    }
+
+    #[test]
+    fn adding_the_length_overflows_the_accumulator() {
+        // For inputs under 16 bytes, the accumulator is `seed +
+        // PRIME32_5`. To set the accumulator to `u32::MAX`, work
+        // backwards:
+        let seed = u32::MAX - PRIME32_5;
+
+        // Hashing one or more bytes causes cause the accumulator
+        // to overflow
+        assert_eq!(0x9010_bbab, Hasher::oneshot(seed, b"x"));
     }
 
     #[test]
