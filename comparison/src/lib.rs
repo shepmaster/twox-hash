@@ -6,7 +6,7 @@ use twox_hash as rust;
 use xx_hash_sys as c;
 
 mod xxhash32 {
-    use proptest::{prelude::*, test_runner::TestCaseResult};
+    use proptest::test_runner::TestCaseResult;
     use std::hash::Hasher as _;
 
     use super::*;
@@ -105,7 +105,7 @@ mod xxhash32 {
 }
 
 mod xxhash64 {
-    use proptest::{prelude::*, test_runner::TestCaseResult};
+    use proptest::test_runner::TestCaseResult;
     use std::hash::Hasher as _;
 
     use super::*;
@@ -204,7 +204,7 @@ mod xxhash64 {
 }
 
 mod xxhash3_64 {
-    use proptest::{prelude::*, test_runner::TestCaseResult};
+    use proptest::test_runner::TestCaseResult;
     use std::hash::Hasher as _;
     use twox_hash::xxhash3_64::SECRET_MINIMUM_LENGTH;
 
@@ -364,7 +364,7 @@ mod xxhash3_64 {
 }
 
 mod xxhash3_128 {
-    use proptest::{prelude::*, test_runner::TestCaseResult};
+    use proptest::test_runner::TestCaseResult;
     use twox_hash::xxhash3_128::SECRET_MINIMUM_LENGTH;
 
     use super::*;
