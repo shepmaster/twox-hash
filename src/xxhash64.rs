@@ -292,7 +292,7 @@ impl Hasher {
         };
 
         // Step 4. Add input length
-        acc += len;
+        acc = acc.wrapping_add(len);
 
         // Step 5. Consume remaining input
         while let Some((chunk, rest)) = remaining.split_first_chunk() {
@@ -484,6 +484,18 @@ mod test {
             })
             .all(|h| h == expected);
         assert!(the_same);
+    }
+
+    #[test]
+    fn adding_the_length_overflows_the_accumulator() {
+        // For inputs under 32 bytes, the accumulator is `seed +
+        // PRIME64_5`. To set the accumulator to `u64::MAX`, work
+        // backwards:
+        let seed = u64::MAX - PRIME64_5;
+
+        // Hashing one or more bytes causes cause the accumulator
+        // to overflow
+        assert_eq!(0xf953_d52c_12a9_f5fb, Hasher::oneshot(seed, b"x"));
     }
 
     #[test]
