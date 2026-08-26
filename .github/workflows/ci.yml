@@ -65,6 +65,9 @@ jobs:
       - name: Unsafe Code
         run: cargo miri test --all-features
 
+      - name: 32-Bit Platform
+        run: cargo miri test --all-features --target i686-unknown-linux-gnu
+
       - name: Big Endian Platform
         run: cargo miri test --all-features --target s390x-unknown-linux-gnu
 
