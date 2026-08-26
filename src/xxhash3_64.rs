@@ -133,7 +133,7 @@ mod with_alloc {
     impl hash::Hasher for Hasher {
         #[inline]
         fn write(&mut self, input: &[u8]) {
-            self.inner.write(input)
+            self.inner.write(input);
         }
 
         #[inline]
@@ -363,7 +363,7 @@ mod test {
     fn hash_byte_by_byte(input: &[u8]) -> u64 {
         let mut hasher = Hasher::new();
         for byte in input.chunks(1) {
-            hasher.write(byte)
+            hasher.write(byte);
         }
         hasher.finish()
     }
@@ -371,7 +371,7 @@ mod test {
     fn hash_byte_by_byte_with_seed(seed: u64, input: &[u8]) -> u64 {
         let mut hasher = Hasher::with_seed(seed);
         for byte in input.chunks(1) {
-            hasher.write(byte)
+            hasher.write(byte);
         }
         hasher.finish()
     }
@@ -390,12 +390,12 @@ mod test {
 
     #[test]
     fn oneshot_1_to_3_bytes() {
-        test_1_to_3_bytes(Hasher::oneshot)
+        test_1_to_3_bytes(Hasher::oneshot);
     }
 
     #[test]
     fn streaming_1_to_3_bytes() {
-        test_1_to_3_bytes(hash_byte_by_byte)
+        test_1_to_3_bytes(hash_byte_by_byte);
     }
 
     #[track_caller]
@@ -416,12 +416,12 @@ mod test {
 
     #[test]
     fn oneshot_4_to_8_bytes() {
-        test_4_to_8_bytes(Hasher::oneshot)
+        test_4_to_8_bytes(Hasher::oneshot);
     }
 
     #[test]
     fn streaming_4_to_8_bytes() {
-        test_4_to_8_bytes(hash_byte_by_byte)
+        test_4_to_8_bytes(hash_byte_by_byte);
     }
 
     #[track_caller]
@@ -444,12 +444,12 @@ mod test {
 
     #[test]
     fn oneshot_9_to_16_bytes() {
-        test_9_to_16_bytes(Hasher::oneshot)
+        test_9_to_16_bytes(Hasher::oneshot);
     }
 
     #[test]
     fn streaming_9_to_16_bytes() {
-        test_9_to_16_bytes(hash_byte_by_byte)
+        test_9_to_16_bytes(hash_byte_by_byte);
     }
 
     #[track_caller]
@@ -475,12 +475,12 @@ mod test {
 
     #[test]
     fn oneshot_17_to_128_bytes() {
-        test_17_to_128_bytes(Hasher::oneshot)
+        test_17_to_128_bytes(Hasher::oneshot);
     }
 
     #[test]
     fn streaming_17_to_128_bytes() {
-        test_17_to_128_bytes(hash_byte_by_byte)
+        test_17_to_128_bytes(hash_byte_by_byte);
     }
 
     #[track_caller]
@@ -517,12 +517,12 @@ mod test {
 
     #[test]
     fn oneshot_129_to_240_bytes() {
-        test_129_to_240_bytes(Hasher::oneshot)
+        test_129_to_240_bytes(Hasher::oneshot);
     }
 
     #[test]
     fn streaming_129_to_240_bytes() {
-        test_129_to_240_bytes(hash_byte_by_byte)
+        test_129_to_240_bytes(hash_byte_by_byte);
     }
 
     #[track_caller]
@@ -551,12 +551,12 @@ mod test {
 
     #[test]
     fn oneshot_241_plus_bytes() {
-        test_241_plus_bytes(Hasher::oneshot)
+        test_241_plus_bytes(Hasher::oneshot);
     }
 
     #[test]
     fn streaming_241_plus_bytes() {
-        test_241_plus_bytes(hash_byte_by_byte)
+        test_241_plus_bytes(hash_byte_by_byte);
     }
 
     #[track_caller]
@@ -580,12 +580,12 @@ mod test {
 
     #[test]
     fn oneshot_with_seed() {
-        test_with_seed(Hasher::oneshot_with_seed)
+        test_with_seed(Hasher::oneshot_with_seed);
     }
 
     #[test]
     fn streaming_with_seed() {
-        test_with_seed(hash_byte_by_byte_with_seed)
+        test_with_seed(hash_byte_by_byte_with_seed);
     }
 
     #[track_caller]
