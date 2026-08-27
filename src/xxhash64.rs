@@ -6,7 +6,7 @@ use core::{
     mem,
 };
 
-use crate::IntoU64;
+use crate::IntoU64 as _;
 
 // Keeping these constants in this form to match the C code.
 const PRIME64_1: u64 = 0x9E3779B185EBCA87;
@@ -76,7 +76,7 @@ impl Buffer {
 
         if self.offset == 0 {
             return (None, data);
-        };
+        }
 
         let bytes = self.data.bytes_mut();
         debug_assert!(self.offset <= bytes.len());
@@ -586,7 +586,7 @@ mod serialize_impl {
             let mut buffer_data = BufferData::new();
             buffer_data.bytes_mut().copy_from_slice(&buffer);
 
-            Ok(Hasher {
+            Ok(Self {
                 seed,
                 accumulators: Accumulators([v1, v2, v3, v4]),
                 buffer: Buffer {
@@ -603,7 +603,7 @@ mod serialize_impl {
         where
             S: serde::Serializer,
         {
-            let Hasher {
+            let Self {
                 seed,
                 ref accumulators,
                 ref buffer,

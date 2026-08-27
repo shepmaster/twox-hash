@@ -204,7 +204,7 @@ pub fn stripes_with_tail(block: &[u8]) -> (&[[u8; 64]], &[u8]) {
     }
 }
 
-/// THis exists just to easily map the XXH3 algorithm to Rust as the
+/// This exists just to easily map the XXH3 algorithm to Rust as the
 /// algorithm describes 128-bit results as a pair of high and low u64
 /// values.
 #[derive(Copy, Clone)]
@@ -362,7 +362,7 @@ pub mod test {
 
     #[test]
     fn default_secret_is_valid() {
-        assert!(DEFAULT_SECRET.is_valid())
+        assert!(DEFAULT_SECRET.is_valid());
     }
 
     #[test]

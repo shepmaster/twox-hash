@@ -6,7 +6,7 @@ use core::{
     mem,
 };
 
-use crate::{IntoU32, IntoU64};
+use crate::{IntoU32 as _, IntoU64 as _};
 
 // Keeping these constants in this form to match the C code.
 const PRIME32_1: u32 = 0x9E3779B1;
@@ -76,7 +76,7 @@ impl Buffer {
 
         if self.offset == 0 {
             return (None, data);
-        };
+        }
 
         let bytes = self.data.bytes_mut();
         debug_assert!(self.offset <= bytes.len());
@@ -348,7 +348,7 @@ impl hash::Hasher for Hasher {
     // RATIONALE: See RATIONALE[inline]
     #[inline]
     fn finish(&self) -> u64 {
-        Hasher::finish_32(self).into()
+        Self::finish_32(self).into()
     }
 }
 
@@ -598,7 +598,7 @@ mod serialize_impl {
             let mut buffer_data = BufferData::new();
             buffer_data.bytes_mut().copy_from_slice(&buffer);
 
-            Ok(Hasher {
+            Ok(Self {
                 seed,
                 accumulators: Accumulators([v1, v2, v3, v4]),
                 buffer: Buffer {
@@ -615,7 +615,7 @@ mod serialize_impl {
         where
             S: serde::Serializer,
         {
-            let Hasher {
+            let Self {
                 seed,
                 ref accumulators,
                 ref buffer,
