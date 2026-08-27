@@ -486,7 +486,12 @@ mod test {
         let bytes200: [u8; 200] = array::from_fn(|i| i as _);
 
         let mut hasher = Hasher::with_seed(0);
-        for _ in 0..(4_300_000_000 / bytes200.len()) {
+
+        let a_large_amount = 4_300_000_000_u64;
+        let chunk_len = bytes200.len().into_u64();
+        let n_writes = a_large_amount / chunk_len;
+
+        for _ in 0..n_writes {
             hasher.write(&bytes200);
         }
 
