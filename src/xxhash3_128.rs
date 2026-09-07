@@ -42,17 +42,21 @@ impl Hasher {
     #[must_use]
     #[inline]
     pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u128 {
-        let mut secret = DEFAULT_SECRET_RAW;
-
-        // We know that the secret will only be used if we have more
-        // than 240 bytes, so don't waste time computing it otherwise.
-        if input.len() > CUTOFF {
-            derive_secret(seed, &mut secret);
+        // Short inputs use the default secret directly, without copying it.
+        if input.len() <= CUTOFF {
+            return impl_oneshot(DEFAULT_SECRET, seed, input);
         }
 
-        let secret = Secret::new(&secret).expect("The default secret length is invalid");
+        let mut derived_secret;
+        let secret = if seed != DEFAULT_SEED {
+            derived_secret = DEFAULT_SECRET_RAW;
+            derive_secret(seed, &mut derived_secret);
+            Secret::new(&derived_secret).expect("The default secret length is invalid")
+        } else {
+            DEFAULT_SECRET
+        };
 
-        impl_oneshot(secret, seed, input)
+        impl_241_plus_bytes(secret, input)
     }
 
     /// Hash all data at once using the provided secret and the
