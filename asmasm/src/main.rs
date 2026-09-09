@@ -1,4 +1,4 @@
-use std::{hash::Hasher as _, time::Instant};
+use std::{hash::Hasher as _, hint, time::Instant};
 use twox_hash::XxHash3_64;
 use xx_hash_sys::XxHash3_64 as C;
 
@@ -9,11 +9,14 @@ fn main() {
     let file = std::fs::read(filename).expect("read");
     let chunk_size = file.len() / 100;
     let chunk_size = usize::max(chunk_size, 1);
+    let seed = hint::black_box(42);
 
     let start = Instant::now();
     let hash = match mode {
         "rust-oneshot" => rust_oneshot(&file),
         "c-oneshot" => c_oneshot(&file),
+        "rust-oneshot-with-seed" => rust_oneshot_with_seed(&file, seed),
+        "c-oneshot-with-seed" => c_oneshot_with_seed(&file, seed),
         "rust-chunked" => rust_chunked(&file, chunk_size),
         "c-chunked" => c_chunked(&file, chunk_size),
         other => panic!("Unknown mode {other}"),
@@ -31,6 +34,16 @@ fn rust_oneshot(file: &[u8]) -> u64 {
 #[inline(never)]
 fn c_oneshot(file: &[u8]) -> u64 {
     C::oneshot(file)
+}
+
+#[inline(never)]
+fn rust_oneshot_with_seed(file: &[u8], seed: u64) -> u64 {
+    XxHash3_64::oneshot_with_seed(seed, file)
+}
+
+#[inline(never)]
+fn c_oneshot_with_seed(file: &[u8], seed: u64) -> u64 {
+    C::oneshot_with_seed(seed, file)
 }
 
 #[inline(never)]
