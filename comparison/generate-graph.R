@@ -1,5 +1,16 @@
 #!/usr/bin/env Rscript
 
+## install.packages("forcats")
+## install.packages("ggplot2")
+## install.packages("hms")
+## install.packages("jsonlite")
+## install.packages("lubridate")
+## install.packages("nlme")
+## install.packages("rlang")
+## install.packages("rlng")
+## install.packages("scales")
+## install.packages("svglite")
+
 library(forcats)
 library(ggplot2)
 library(nlme)
