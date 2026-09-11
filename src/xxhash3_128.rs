@@ -399,18 +399,22 @@ fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     let input_len = input.len().into_u64();
     let mut acc = [input_len.wrapping_mul(PRIME64_1), 0];
 
-    let head = pairs_of_u64_bytes(input);
-    let mut head = head.iter();
+    let (head, tail) = input.split_first_chunk::<128>().unwrap();
+    assert_input_range!(1..=112, tail.len());
+
+    let head = pairs_of_u64_bytes(head);
+    let tail = pairs_of_u64_bytes(tail);
 
     let ss = secret.for_128().words_for_129_to_240_part1();
-    for (input, secret) in head.by_ref().zip(ss).take(4) {
+    for (input, secret) in head.iter().zip(ss) {
         mix_two_chunks(&mut acc, &input[0], &input[1], secret, seed);
     }
 
     let mut acc = acc.map(avalanche);
 
     let ss = secret.for_128().words_for_129_to_240_part2();
-    for (input, secret) in head.zip(ss) {
+    // `take` allows the loop to be unrolled
+    for (input, secret) in tail.iter().zip(ss).take(4) {
         mix_two_chunks(&mut acc, &input[0], &input[1], secret, seed);
     }
 
