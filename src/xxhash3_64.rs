@@ -52,7 +52,7 @@ impl Hasher {
                 unsafe {
                     hint::assert_unchecked(!optimize_for_latency(input));
                 }
-                impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
+                impl_oneshot(opaque_default_secret!(), DEFAULT_SEED, input)
             }
 
             outline(input)
@@ -74,7 +74,7 @@ impl Hasher {
         }
 
         if simple_case(seed, input) {
-            impl_oneshot(DEFAULT_SECRET, seed, input)
+            impl_oneshot(opaque_default_secret!(), seed, input)
         } else {
             // Deriving the secret from the seed takes a good chunk of
             // stack space. Moving that work to a separate function

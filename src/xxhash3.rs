@@ -61,6 +61,22 @@ pub const DEFAULT_SECRET_RAW: DefaultSecret = [
 // Safety: The default secret is long enough
 pub const DEFAULT_SECRET: &Secret = unsafe { Secret::new_unchecked(&DEFAULT_SECRET_RAW) };
 
+// This is a bit of magic... Without the `black_box`, the compiler can
+// and has constant-folded the `DEFAULT_SECRET` and then manifests it
+// as a bunch of immediate loads. Those immediate loads appear to make
+// some functions 1.5x the size (e.g. 800 to 1200 bytes).
+//
+// However, while I'm writing this comment, that no longer happens,
+// but the `black_box` *still* makes the code faster! I can't explain
+// why the current state is faster, but the code now clearly beats the
+// C performance.
+macro_rules! opaque_default_secret {
+    () => {
+        hint::black_box(DEFAULT_SECRET)
+    };
+}
+pub(crate) use opaque_default_secret;
+
 /// # Correctness
 ///
 /// This function assumes that the incoming buffer has been populated
