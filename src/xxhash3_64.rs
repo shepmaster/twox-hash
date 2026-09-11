@@ -26,6 +26,28 @@ pub struct Hasher {
     _private: (),
 }
 
+// This is a bit of magic... Without the `black_box`, the compiler can
+// and has constant-folded the `DEFAULT_SECRET` and then manifests it
+// as a bunch of immediate loads. Those immediate loads appear to make
+// some functions 1.5x the size (e.g. 800 to 1200 bytes).
+//
+// However, while I'm writing this comment, that no longer happens,
+// but the `black_box` *still* makes the code faster! I can't explain
+// why the current state is faster, but the code now clearly beats the
+// C performance.
+//
+// On x86_64 this has a neutral or negative impact, so only use it on
+// aarch64.
+macro_rules! opaque_default_secret {
+    () => {
+        if cfg!(target_arch = "aarch64") {
+            hint::black_box(DEFAULT_SECRET)
+        } else {
+            DEFAULT_SECRET
+        }
+    };
+}
+
 impl Hasher {
     /// Hash all data at once. If you can use this function, you may
     /// see noticable speed gains for certain types of input.
@@ -50,7 +72,7 @@ impl Hasher {
                 // SAFETY: this nested function is defined and called
                 // only once in the corresponding `else` branch.
                 unsafe { hint::assert_unchecked(!optimize_for_latency(input)) };
-                impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
+                impl_oneshot(opaque_default_secret!(), DEFAULT_SEED, input)
             }
 
             outline(input)
@@ -72,7 +94,7 @@ impl Hasher {
         }
 
         if simple_case(seed, input) {
-            impl_oneshot(DEFAULT_SECRET, seed, input)
+            impl_oneshot(opaque_default_secret!(), seed, input)
         } else {
             // Deriving the secret from the seed takes a good chunk of
             // stack space. Moving that work to a separate function
