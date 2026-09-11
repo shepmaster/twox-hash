@@ -6,7 +6,7 @@
     unsafe_op_in_unsafe_fn
 )]
 
-use core::hash;
+use core::{hash, hint};
 
 use crate::{
     xxhash3::{primes::*, *},
@@ -32,7 +32,29 @@ impl Hasher {
     #[must_use]
     #[inline]
     pub fn oneshot(input: &[u8]) -> u64 {
-        impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
+        // Hashing a short input is latency sensitive, so the
+        // bulkier code for long inputs is kept in a separate
+        // function.
+        fn optimize_for_latency(input: &[u8]) -> bool {
+            input.len() <= 16
+        }
+
+        if optimize_for_latency(input) {
+            impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
+        } else {
+            #[inline(never)]
+            fn outline(input: &[u8]) -> u64 {
+                // Re-establish information from our `if` statement
+                // that is lost because we use `inline(never)`.
+                //
+                // SAFETY: this nested function is defined and called
+                // only once in the corresponding `else` branch.
+                unsafe { hint::assert_unchecked(!optimize_for_latency(input)) };
+                impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
+            }
+
+            outline(input)
+        }
     }
 
     /// Hash all data at once using the provided seed and a secret
@@ -41,21 +63,39 @@ impl Hasher {
     #[must_use]
     #[inline]
     pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u64 {
-        // Short inputs use the default secret directly, without copying it.
-        if input.len() <= CUTOFF {
-            return impl_oneshot(DEFAULT_SECRET, seed, input);
+        // Below the cutoff, the secret derived from the seed goes
+        // unread. Above the cutoff, deriving the secret with the
+        // default seed is a no-op. In both cases, we can use the
+        // default secret instead of doing the work to derive another.
+        fn simple_case(seed: u64, input: &[u8]) -> bool {
+            input.len() <= CUTOFF || seed == DEFAULT_SEED
         }
 
-        let mut derived_secret;
-        let secret = if seed != DEFAULT_SEED {
-            derived_secret = DEFAULT_SECRET_RAW;
-            derive_secret(seed, &mut derived_secret);
-            Secret::new(&derived_secret).expect("The default secret length is invalid")
+        if simple_case(seed, input) {
+            impl_oneshot(DEFAULT_SECRET, seed, input)
         } else {
-            DEFAULT_SECRET
-        };
+            // Deriving the secret from the seed takes a good chunk of
+            // stack space. Moving that work to a separate function
+            // drastically improves speed for the cases <= 128 bytes.
+            #[inline(never)]
+            fn outline(seed: u64, input: &[u8]) -> u64 {
+                // Re-establish information from our `if` statement
+                // that is lost because we use `inline(never)`.
+                //
+                // SAFETY: this nested function is defined and called
+                // only once in the corresponding `else` branch.
+                unsafe { hint::assert_unchecked(!simple_case(seed, input)) };
 
-        impl_241_plus_bytes(secret, input)
+                let mut derived_secret = DEFAULT_SECRET_RAW;
+                derive_secret(seed, &mut derived_secret);
+                let secret =
+                    Secret::new(&derived_secret).expect("The default secret length is invalid");
+
+                impl_oneshot(secret, seed, input)
+            }
+
+            outline(seed, input)
+        }
     }
 
     /// Hash all data at once using the provided secret and the
