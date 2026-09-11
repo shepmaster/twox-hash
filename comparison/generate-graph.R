@@ -97,7 +97,7 @@ for (algo in c("xxhash64", "xxhash3_64", "xxhash3_128")) {
                 geom_point(alpha = 0.7) +
                 geom_line(alpha = 0.3) +
                 scale_x_continuous(labels = byte_labels) +
-                scale_y_time(labels = label_timespan(), limits = tiny_data_y_limits) +
+                scale_y_time(labels = label_timespan(), limits = tiny_data_y_limits, breaks = seq(0, 100) * 1e-9) +
                 scale_colour_brewer(labels = impl_name, palette = "Set1") +
                 labs(title = title, subtitle = subtitle, x = "Size", y = "Time", colour = "Implementation") +
                 common_theme
