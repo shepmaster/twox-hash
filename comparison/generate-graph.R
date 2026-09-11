@@ -74,7 +74,7 @@ for (algo in c("xxhash64", "xxhash3_64", "xxhash3_128")) {
     ## Get bytes per second; the time estimate is in nanoseconds
     all_streaming$throughput = all_streaming$size / (all_streaming$mean_estimate / 1e9)
 
-    tiny_data_y_limits = c(min(all_tiny_data$mean_estimate), max(all_tiny_data$mean_estimate))
+    tiny_data_y_limits = c(0, max(all_tiny_data$mean_estimate))
     oneshot_y_limits = c(log2min(all_oneshot$throughput), log2max(all_oneshot$throughput))
     streaming_y_limits = c(log2min(all_streaming$throughput), log2max(all_streaming$throughput))
 
