@@ -11,9 +11,12 @@ fn main() {
     let chunk_size = usize::max(chunk_size, 1);
     let seed = hint::black_box(42);
     let secret: [u8; 256] = hint::black_box(array::from_fn(|i| i as u8 % 253));
+    let iterations = (|| {
+        let v = std::env::var("N_ITERATIONS").ok()?;
+        v.parse().ok()
+    })();
 
-    let start = Instant::now();
-    let hash = match mode {
+    let run_once = || match mode {
         "rust-oneshot" => rust_oneshot(&file),
         "c-oneshot" => c_oneshot(&file),
         "rust-oneshot-with-seed" => rust_oneshot_with_seed(&file, seed),
@@ -24,6 +27,16 @@ fn main() {
         "c-chunked" => c_chunked(&file, chunk_size),
         other => panic!("Unknown mode {other}"),
     };
+
+    if let Some(iterations) = iterations {
+        let hash_sum = (0..iterations)
+            .map(|_| run_once())
+            .fold(0u64, |acc, v| acc.wrapping_add(v));
+        eprintln!("{hash_sum}");
+    }
+
+    let start = Instant::now();
+    let hash = run_once();
     let elapsed = start.elapsed();
 
     eprintln!("{mode}\t{elapsed:?}\t{hash:016X}");
