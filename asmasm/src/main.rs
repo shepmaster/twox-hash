@@ -1,4 +1,4 @@
-use std::{hash::Hasher as _, hint, time::Instant};
+use std::{array, hash::Hasher as _, hint, time::Instant};
 use twox_hash::XxHash3_64;
 use xx_hash_sys::XxHash3_64 as C;
 
@@ -10,6 +10,7 @@ fn main() {
     let chunk_size = file.len() / 100;
     let chunk_size = usize::max(chunk_size, 1);
     let seed = hint::black_box(42);
+    let secret: [u8; 256] = hint::black_box(array::from_fn(|i| i as u8 % 253));
 
     let start = Instant::now();
     let hash = match mode {
@@ -17,6 +18,8 @@ fn main() {
         "c-oneshot" => c_oneshot(&file),
         "rust-oneshot-with-seed" => rust_oneshot_with_seed(&file, seed),
         "c-oneshot-with-seed" => c_oneshot_with_seed(&file, seed),
+        "rust-oneshot-with-secret" => rust_oneshot_with_secret(&file, &secret),
+        "c-oneshot-with-secret" => c_oneshot_with_secret(&file, &secret),
         "rust-chunked" => rust_chunked(&file, chunk_size),
         "c-chunked" => c_chunked(&file, chunk_size),
         other => panic!("Unknown mode {other}"),
@@ -44,6 +47,16 @@ fn rust_oneshot_with_seed(file: &[u8], seed: u64) -> u64 {
 #[inline(never)]
 fn c_oneshot_with_seed(file: &[u8], seed: u64) -> u64 {
     C::oneshot_with_seed(seed, file)
+}
+
+#[inline(never)]
+fn rust_oneshot_with_secret(file: &[u8], secret: &[u8]) -> u64 {
+    XxHash3_64::oneshot_with_secret(secret, file).unwrap()
+}
+
+#[inline(never)]
+fn c_oneshot_with_secret(file: &[u8], secret: &[u8]) -> u64 {
+    C::oneshot_with_secret(secret, file)
 }
 
 #[inline(never)]
