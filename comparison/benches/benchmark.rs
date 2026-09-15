@@ -117,119 +117,34 @@ mod xxhash64 {
     criterion_group!(benches, tiny_data, oneshot, streaming);
 }
 
-mod xxhash3_64 {
+mod xxhash3 {
     use std::time::Duration;
 
     use super::*;
 
-    trait OneshotFamily {
+    pub trait OneshotFamily {
+        type Output;
+
         fn name(&self) -> &'static str;
 
-        fn c_oneshot(&self, seed: u64, data: &[u8]) -> u64;
+        fn c_oneshot(&self, seed: u64, data: &[u8]) -> Self::Output;
 
-        fn c_scalar_oneshot(&self, seed: u64, data: &[u8]) -> u64;
-
-        #[cfg(target_arch = "aarch64")]
-        fn c_neon_oneshot(&self, seed: u64, data: &[u8]) -> u64;
-
-        #[cfg(target_arch = "x86_64")]
-        fn c_avx2_oneshot(&self, seed: u64, data: &[u8]) -> u64;
-
-        #[cfg(target_arch = "x86_64")]
-        fn c_sse2_oneshot(&self, seed: u64, data: &[u8]) -> u64;
-
-        fn rust_oneshot(&self, seed: u64, data: &[u8]) -> u64;
-    }
-
-    struct Oneshot;
-
-    impl OneshotFamily for Oneshot {
-        fn name(&self) -> &'static str {
-            "oneshot"
-        }
-
-        #[inline(always)]
-        fn c_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
-            c::XxHash3_64::oneshot(data)
-        }
-
-        #[inline(always)]
-        fn c_scalar_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
-            c::scalar::XxHash3_64::oneshot(data)
-        }
+        fn c_scalar_oneshot(&self, seed: u64, data: &[u8]) -> Self::Output;
 
         #[cfg(target_arch = "aarch64")]
-        #[inline(always)]
-        fn c_neon_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
-            c::neon::XxHash3_64::oneshot(data)
-        }
+        fn c_neon_oneshot(&self, seed: u64, data: &[u8]) -> Self::Output;
 
         #[cfg(target_arch = "x86_64")]
-        #[inline(always)]
-        fn c_avx2_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
-            c::avx2::XxHash3_64::oneshot(data)
-        }
+        fn c_avx2_oneshot(&self, seed: u64, data: &[u8]) -> Self::Output;
 
         #[cfg(target_arch = "x86_64")]
-        #[inline(always)]
-        fn c_sse2_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
-            c::sse2::XxHash3_64::oneshot(data)
-        }
+        fn c_sse2_oneshot(&self, seed: u64, data: &[u8]) -> Self::Output;
 
-        #[inline(always)]
-        fn rust_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
-            rust::XxHash3_64::oneshot(data)
-        }
+        fn rust_oneshot(&self, seed: u64, data: &[u8]) -> Self::Output;
     }
 
-    struct OneshotWithSeed;
-
-    impl OneshotFamily for OneshotWithSeed {
-        fn name(&self) -> &'static str {
-            "oneshot_with_seed"
-        }
-
-        #[inline(always)]
-        fn c_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
-            c::XxHash3_64::oneshot_with_seed(seed, data)
-        }
-
-        #[inline(always)]
-        fn c_scalar_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
-            c::scalar::XxHash3_64::oneshot_with_seed(seed, data)
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        #[inline(always)]
-        fn c_neon_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
-            c::neon::XxHash3_64::oneshot_with_seed(seed, data)
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        #[inline(always)]
-        fn c_avx2_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
-            c::avx2::XxHash3_64::oneshot_with_seed(seed, data)
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        #[inline(always)]
-        fn c_sse2_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
-            c::sse2::XxHash3_64::oneshot_with_seed(seed, data)
-        }
-
-        #[inline(always)]
-        fn rust_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
-            rust::XxHash3_64::oneshot_with_seed(seed, data)
-        }
-    }
-
-    fn tiny_data(c: &mut Criterion) {
-        tiny_data_gen(c, Oneshot);
-        tiny_data_gen(c, OneshotWithSeed);
-    }
-
-    fn tiny_data_gen(c: &mut Criterion, family: impl OneshotFamily) {
-        let mut g = c.my_benchmark_group("xxhash3_64", "tiny_data");
+    pub fn tiny_data(c: &mut Criterion, algo: &str, family: impl OneshotFamily) {
+        let mut g = c.my_benchmark_group(algo, "tiny_data");
         let name = family.name();
         let (seed, data) = gen_data(240);
 
@@ -276,6 +191,101 @@ mod xxhash3_64 {
         }
 
         g.finish();
+    }
+}
+
+mod xxhash3_64 {
+    use super::*;
+
+    struct Oneshot;
+
+    impl xxhash3::OneshotFamily for Oneshot {
+        type Output = u64;
+
+        fn name(&self) -> &'static str {
+            "oneshot"
+        }
+
+        #[inline(always)]
+        fn c_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::XxHash3_64::oneshot(data)
+        }
+
+        #[inline(always)]
+        fn c_scalar_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::scalar::XxHash3_64::oneshot(data)
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        #[inline(always)]
+        fn c_neon_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::neon::XxHash3_64::oneshot(data)
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        #[inline(always)]
+        fn c_avx2_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::avx2::XxHash3_64::oneshot(data)
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        #[inline(always)]
+        fn c_sse2_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::sse2::XxHash3_64::oneshot(data)
+        }
+
+        #[inline(always)]
+        fn rust_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            rust::XxHash3_64::oneshot(data)
+        }
+    }
+
+    struct OneshotWithSeed;
+
+    impl xxhash3::OneshotFamily for OneshotWithSeed {
+        type Output = u64;
+
+        fn name(&self) -> &'static str {
+            "oneshot_with_seed"
+        }
+
+        #[inline(always)]
+        fn c_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[inline(always)]
+        fn c_scalar_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::scalar::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        #[inline(always)]
+        fn c_neon_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::neon::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        #[inline(always)]
+        fn c_avx2_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::avx2::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        #[inline(always)]
+        fn c_sse2_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::sse2::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[inline(always)]
+        fn rust_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            rust::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+    }
+
+    fn tiny_data(c: &mut Criterion) {
+        xxhash3::tiny_data(c, "xxhash3_64", Oneshot);
+        xxhash3::tiny_data(c, "xxhash3_64", OneshotWithSeed);
     }
 
     fn oneshot(c: &mut Criterion) {
