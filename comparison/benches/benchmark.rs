@@ -122,9 +122,74 @@ mod xxhash3_64 {
 
     use super::*;
 
+    trait OneshotFamily {
+        fn name(&self) -> &'static str;
+
+        fn c_oneshot(&self, seed: u64, data: &[u8]) -> u64;
+
+        fn c_scalar_oneshot(&self, seed: u64, data: &[u8]) -> u64;
+
+        #[cfg(target_arch = "aarch64")]
+        fn c_neon_oneshot(&self, seed: u64, data: &[u8]) -> u64;
+
+        #[cfg(target_arch = "x86_64")]
+        fn c_avx2_oneshot(&self, seed: u64, data: &[u8]) -> u64;
+
+        #[cfg(target_arch = "x86_64")]
+        fn c_sse2_oneshot(&self, seed: u64, data: &[u8]) -> u64;
+
+        fn rust_oneshot(&self, seed: u64, data: &[u8]) -> u64;
+    }
+
+    struct OneshotWithSeed;
+
+    impl OneshotFamily for OneshotWithSeed {
+        fn name(&self) -> &'static str {
+            "oneshot_with_seed"
+        }
+
+        #[inline(always)]
+        fn c_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[inline(always)]
+        fn c_scalar_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::scalar::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        #[inline(always)]
+        fn c_neon_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::neon::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        #[inline(always)]
+        fn c_avx2_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::avx2::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        #[inline(always)]
+        fn c_sse2_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            c::sse2::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+
+        #[inline(always)]
+        fn rust_oneshot(&self, seed: u64, data: &[u8]) -> u64 {
+            rust::XxHash3_64::oneshot_with_seed(seed, data)
+        }
+    }
+
     fn tiny_data(c: &mut Criterion) {
-        let (seed, data) = gen_data(240);
+        tiny_data_gen(c, OneshotWithSeed);
+    }
+
+    fn tiny_data_gen(c: &mut Criterion, family: impl OneshotFamily) {
         let mut g = c.my_benchmark_group("xxhash3_64", "tiny_data");
+        let name = family.name();
+        let (seed, data) = gen_data(240);
 
         // These tests take ~15ns, so reducing the testing times
         // doesn't affect accuracy but does improve code iteration
@@ -143,41 +208,29 @@ mod xxhash3_64 {
             let data = &data[..size];
             g.throughput(Throughput::Bytes(data.len() as _));
 
-            let id = format!("impl-c/size-{size:03}");
-            g.bench_function(id, |b| {
-                b.iter(|| c::XxHash3_64::oneshot_with_seed(seed, data))
-            });
+            let id = format!("impl-c/function-{name}/size-{size:03}");
+            g.bench_function(id, |b| b.iter(|| family.c_oneshot(seed, data)));
 
-            let id = format!("impl-c-scalar/size-{size:03}");
-            g.bench_function(id, |b| {
-                b.iter(|| c::scalar::XxHash3_64::oneshot_with_seed(seed, data))
-            });
+            let id = format!("impl-c-scalar/function-{name}/size-{size:03}");
+            g.bench_function(id, |b| b.iter(|| family.c_scalar_oneshot(seed, data)));
 
             #[cfg(target_arch = "aarch64")]
             {
-                let id = format!("impl-c-neon/size-{size:03}");
-                g.bench_function(id, |b| {
-                    b.iter(|| c::neon::XxHash3_64::oneshot_with_seed(seed, data))
-                });
+                let id = format!("impl-c-neon/function-{name}/size-{size:03}");
+                g.bench_function(id, |b| b.iter(|| family.c_neon_oneshot(seed, data)));
             }
 
             #[cfg(target_arch = "x86_64")]
             {
-                let id = format!("impl-c-avx2/size-{size:03}");
-                g.bench_function(id, |b| {
-                    b.iter(|| c::avx2::XxHash3_64::oneshot_with_seed(seed, data))
-                });
+                let id = format!("impl-c-avx2/function-{name}/size-{size:03}");
+                g.bench_function(id, |b| b.iter(|| family.c_avx2_oneshot(seed, data)));
 
-                let id = format!("impl-c-sse2/size-{size:03}");
-                g.bench_function(id, |b| {
-                    b.iter(|| c::sse2::XxHash3_64::oneshot_with_seed(seed, data))
-                });
+                let id = format!("impl-c-sse2/function-{name}/size-{size:03}");
+                g.bench_function(id, |b| b.iter(|| family.c_sse2_oneshot(seed, data)));
             }
 
-            let id = format!("impl-rust/size-{size:03}");
-            g.bench_function(id, |b| {
-                b.iter(|| rust::XxHash3_64::oneshot_with_seed(seed, data))
-            });
+            let id = format!("impl-rust/function-{name}/size-{size:03}");
+            g.bench_function(id, |b| b.iter(|| family.rust_oneshot(seed, data)));
         }
 
         g.finish();
