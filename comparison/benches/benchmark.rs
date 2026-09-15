@@ -118,14 +118,21 @@ mod xxhash64 {
 }
 
 mod xxhash3_64 {
+    use std::time::Duration;
+
     use super::*;
 
     fn tiny_data(c: &mut Criterion) {
         let (seed, data) = gen_data(240);
         let mut g = c.my_benchmark_group("xxhash3_64", "tiny_data");
 
-        // let categories = 0..=data.len();
+        // These tests take ~15ns, so reducing the testing times
+        // doesn't affect accuracy but does improve code iteration
+        // time.
+        g.warm_up_time(Duration::from_millis(10))
+            .measurement_time(Duration::from_millis(100));
 
+        // let categories = 0..=data.len();
         // Visual inspection of all the data points showed these as
         // examples of thier nearby neighbors.
         let categories = [
