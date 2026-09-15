@@ -429,7 +429,7 @@ fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     finalize_medium(acc, input_len, seed)
 }
 
-#[inline]
+#[inline(always)]
 fn mix_two_chunks(
     acc: &mut [u64; 2],
     data1: &[u8; 16],
