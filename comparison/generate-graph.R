@@ -82,28 +82,34 @@ for (algo in c("xxhash64", "xxhash3_64", "xxhash3_128")) {
         message("## ", arch)
 
         oneshot = all_oneshot[all_oneshot$arch == arch,]
-        tiny_data = all_tiny_data[all_tiny_data$arch == arch,]
+        arch_tiny_data = all_tiny_data[all_tiny_data$arch == arch,]
         streaming = all_streaming[all_streaming$arch == arch,]
 
         cpu = cpus[arch]
         subtitle = paste0(arch, " (", cpu, ")")
 
-        if (nrow(tiny_data) != 0) {
-            message("### Tiny data")
+        for (fn_name in unique(arch_tiny_data$`function`)) {
+            tiny_data = arch_tiny_data[arch_tiny_data$`function` == fn_name,]
 
-            title = paste0("[", algo, "] Hashing small amounts of bytes (lower is better)")
+            if (nrow(tiny_data) != 0) {
+                message(paste0("### Tiny data (`", fn_name ,"`)"))
 
-            p = ggplot(tiny_data, aes(x = size, y = mean_estimate, colour = impl)) +
-                geom_point(alpha = 0.7) +
-                geom_line(alpha = 0.3) +
-                scale_x_continuous(labels = byte_labels) +
-                scale_y_time(labels = label_timespan(), limits = tiny_data_y_limits, breaks = seq(0, 100) * 1e-9) +
-                scale_colour_brewer(labels = impl_name, palette = "Set1") +
-                labs(title = title, subtitle = subtitle, x = "Size", y = "Time", colour = "Implementation") +
-                common_theme
 
-            output_filename = make_filename(algo = algo, bench = "tiny_data", arch = arch)
-            ggsave(output_filename, width = 3000, height = 2000, units = "px", scale = 1.5)
+                title = paste0("[", algo, "] Hashing small amounts of bytes using `", fn_name, "` (lower is better)")
+
+                p = ggplot(tiny_data, aes(x = size, y = mean_estimate, colour = impl)) +
+                    geom_point(alpha = 0.7) +
+                    geom_line(alpha = 0.3) +
+                    scale_x_continuous(labels = byte_labels) +
+                    scale_y_time(labels = label_timespan(), limits = tiny_data_y_limits, breaks = seq(0, 100) * 1e-9) +
+                    scale_colour_brewer(labels = impl_name, palette = "Set1") +
+                    labs(title = title, subtitle = subtitle, x = "Size", y = "Time", colour = "Implementation") +
+                    common_theme
+
+                bench = paste0("tiny_data_", fn_name)
+                output_filename = make_filename(algo = algo, bench = bench, arch = arch)
+                ggsave(output_filename, width = 3000, height = 2000, units = "px", scale = 1.5)
+            }
         }
 
         if (nrow(oneshot) != 0) {
