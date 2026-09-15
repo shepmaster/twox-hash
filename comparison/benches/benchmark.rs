@@ -141,6 +141,47 @@ mod xxhash3_64 {
         fn rust_oneshot(&self, seed: u64, data: &[u8]) -> u64;
     }
 
+    struct Oneshot;
+
+    impl OneshotFamily for Oneshot {
+        fn name(&self) -> &'static str {
+            "oneshot"
+        }
+
+        #[inline(always)]
+        fn c_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::XxHash3_64::oneshot(data)
+        }
+
+        #[inline(always)]
+        fn c_scalar_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::scalar::XxHash3_64::oneshot(data)
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        #[inline(always)]
+        fn c_neon_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::neon::XxHash3_64::oneshot(data)
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        #[inline(always)]
+        fn c_avx2_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::avx2::XxHash3_64::oneshot(data)
+        }
+
+        #[cfg(target_arch = "x86_64")]
+        #[inline(always)]
+        fn c_sse2_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            c::sse2::XxHash3_64::oneshot(data)
+        }
+
+        #[inline(always)]
+        fn rust_oneshot(&self, _seed: u64, data: &[u8]) -> u64 {
+            rust::XxHash3_64::oneshot(data)
+        }
+    }
+
     struct OneshotWithSeed;
 
     impl OneshotFamily for OneshotWithSeed {
@@ -183,6 +224,7 @@ mod xxhash3_64 {
     }
 
     fn tiny_data(c: &mut Criterion) {
+        tiny_data_gen(c, Oneshot);
         tiny_data_gen(c, OneshotWithSeed);
     }
 
