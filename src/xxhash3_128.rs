@@ -418,9 +418,8 @@ fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
         mix_two_chunks(&mut acc, &input[0], &input[1], secret, seed);
     }
 
-    let (_, tail) = input.bp_as_rchunks::<16>();
-    let (_, tail) = tail.bp_as_rchunks::<2>();
-    let tail = tail.last().unwrap();
+    let tail = input.last_chunk::<32>().unwrap();
+    let (tail, _) = tail.bp_as_chunks();
     let ss = secret.for_128().words_for_129_to_240_part3();
 
     // note that the half-chunk order and the seed is different here
