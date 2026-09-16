@@ -1,6 +1,4 @@
 use std::{array, hash::Hasher as _, hint, time::Instant};
-use twox_hash::XxHash3_64;
-use xx_hash_sys::XxHash3_64 as C;
 
 fn main() {
     let filename = std::env::args().nth(1).expect("filename");
@@ -31,7 +29,7 @@ fn main() {
     if let Some(iterations) = iterations {
         let hash_sum = (0..iterations)
             .map(|_| run_once())
-            .fold(0u64, |acc, v| acc.wrapping_add(v));
+            .fold(Hash::default(), |acc, v| acc.wrapping_add(v));
         eprintln!("{hash_sum}");
     }
 
@@ -42,47 +40,61 @@ fn main() {
     eprintln!("{mode}\t{elapsed:?}\t{hash:016X}");
 }
 
+type Rust = twox_hash::XxHash3_64;
+type C = xx_hash_sys::XxHash3_64;
+type Hash = u64;
+fn finish(r: Rust) -> Hash {
+    std::hash::Hasher::finish(&r)
+}
+
+// type Rust = twox_hash::XxHash3_128;
+// type C = xx_hash_sys::XxHash3_128;
+// type Hash = u128;
+// fn finish(r: Rust) -> Hash {
+//     r.finish_128()
+// }
+
 #[inline(never)]
-fn rust_oneshot(file: &[u8]) -> u64 {
-    XxHash3_64::oneshot(file)
+fn rust_oneshot(file: &[u8]) -> Hash {
+    Rust::oneshot(file)
 }
 
 #[inline(never)]
-fn c_oneshot(file: &[u8]) -> u64 {
+fn c_oneshot(file: &[u8]) -> Hash {
     C::oneshot(file)
 }
 
 #[inline(never)]
-fn rust_oneshot_with_seed(file: &[u8], seed: u64) -> u64 {
-    XxHash3_64::oneshot_with_seed(seed, file)
+fn rust_oneshot_with_seed(file: &[u8], seed: u64) -> Hash {
+    Rust::oneshot_with_seed(seed, file)
 }
 
 #[inline(never)]
-fn c_oneshot_with_seed(file: &[u8], seed: u64) -> u64 {
+fn c_oneshot_with_seed(file: &[u8], seed: u64) -> Hash {
     C::oneshot_with_seed(seed, file)
 }
 
 #[inline(never)]
-fn rust_oneshot_with_secret(file: &[u8], secret: &[u8]) -> u64 {
-    XxHash3_64::oneshot_with_secret(secret, file).unwrap()
+fn rust_oneshot_with_secret(file: &[u8], secret: &[u8]) -> Hash {
+    Rust::oneshot_with_secret(secret, file).unwrap()
 }
 
 #[inline(never)]
-fn c_oneshot_with_secret(file: &[u8], secret: &[u8]) -> u64 {
+fn c_oneshot_with_secret(file: &[u8], secret: &[u8]) -> Hash {
     C::oneshot_with_secret(secret, file)
 }
 
 #[inline(never)]
-fn rust_chunked(file: &[u8], chunk_size: usize) -> u64 {
-    let mut hasher = XxHash3_64::new();
+fn rust_chunked(file: &[u8], chunk_size: usize) -> Hash {
+    let mut hasher = Rust::new();
     for chunk in file.chunks(chunk_size) {
         hasher.write(chunk);
     }
-    hasher.finish()
+    finish(hasher)
 }
 
 #[inline(never)]
-fn c_chunked(file: &[u8], chunk_size: usize) -> u64 {
+fn c_chunked(file: &[u8], chunk_size: usize) -> Hash {
     let mut hasher = C::new();
     for chunk in file.chunks(chunk_size) {
         hasher.write(chunk);
