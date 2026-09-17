@@ -118,7 +118,7 @@ mod xxhash64 {
 }
 
 mod xxhash3 {
-    use std::time::Duration;
+    use std::{collections::BTreeSet, time::Duration};
 
     use super::*;
 
@@ -154,12 +154,40 @@ mod xxhash3 {
         g.warm_up_time(Duration::from_millis(10))
             .measurement_time(Duration::from_millis(100));
 
+        // Every datapoint before we get to
         // let categories = 0..=data.len();
-        // Visual inspection of all the data points showed these as
-        // examples of thier nearby neighbors.
-        let categories = [
-            0, 2, 6, 13, 25, 50, 80, 113, 135, 150, 165, 185, 200, 215, 230,
+
+        // Inspection of the code as well as visual inspection of all
+        // the datapoints showed these as examples of thier nearby
+        // neighbors.
+        let category_ranges = [
+            0..=0_usize,
+            1..=3,
+            4..=8,
+            9..=16,
+            17..=32,
+            33..=64,
+            65..=96,
+            97..=128,
+            129..=143,
+            144..=159,
+            160..=175,
+            176..=191,
+            192..=207,
+            208..=223,
+            224..=239,
+            240..=240,
         ];
+        // let categories = category_ranges
+        //     .iter()
+        //     .flat_map(|r| [*r.start(), *r.end()])
+        //     .collect::<BTreeSet<_>>();
+
+        // Midpoints of those levels, useful for faster iteration
+        let categories = category_ranges
+            .iter()
+            .map(|r| r.start() + (r.end() - r.start()) / 2)
+            .collect::<Vec<_>>();
 
         for size in categories {
             let data = &data[..size];
