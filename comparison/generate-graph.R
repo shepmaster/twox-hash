@@ -1,9 +1,11 @@
 #!/usr/bin/env Rscript
 
+## install.packages("dplyr")
 ## install.packages("forcats")
 ## install.packages("ggplot2")
 ## install.packages("hms")
 ## install.packages("jsonlite")
+## install.packages("knitr")
 ## install.packages("lubridate")
 ## install.packages("nlme")
 ## install.packages("rlang")
@@ -16,6 +18,8 @@ library(ggplot2)
 library(nlme)
 library(rlang)
 library(scales)
+library(knitr)
+library(dplyr)
 
 args = commandArgs(trailingOnly = TRUE)
 
@@ -109,6 +113,13 @@ for (algo in c("xxhash64", "xxhash3_64", "xxhash3_128")) {
                 bench = paste0("tiny_data_", fn_name)
                 output_filename = make_filename(algo = algo, bench = bench, arch = arch)
                 ggsave(output_filename, width = 3000, height = 2000, units = "px", scale = 1.5)
+
+                changes = tiny_data |>
+                    filter(impl == "rust") |>
+                    select(size, change) |>
+                    rename(factor = change) |>
+                    mutate(factor = round(factor + 1, digits = 3))
+                print(kable(changes, row.names = FALSE))
             }
         }
 

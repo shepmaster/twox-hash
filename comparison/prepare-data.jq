@@ -18,4 +18,5 @@ select(.reason == "benchmark-complete") |
   {
     throughput: .throughput[0].per_iteration,
     mean_estimate: .mean.estimate,
+    change: .change.mean.estimate,
   }
