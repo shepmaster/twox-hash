@@ -159,7 +159,7 @@ impl<'a> Secret64BitView<'a> {
     }
 
     #[inline]
-    pub fn words_for_127_to_240_part1(self) -> &'a [[u8; 16]] {
+    pub fn words_for_129_to_240_part1(self) -> &'a [[u8; 16]] {
         self.0.reassert_preconditions();
 
         let (ss, _) = self.b().bp_as_chunks();
@@ -167,7 +167,7 @@ impl<'a> Secret64BitView<'a> {
     }
 
     #[inline]
-    pub fn words_for_127_to_240_part2(self) -> &'a [[u8; 16]] {
+    pub fn words_for_129_to_240_part2(self) -> &'a [[u8; 16]] {
         self.0.reassert_preconditions();
 
         let (ss, _) = self.b()[3..].bp_as_chunks();
@@ -175,7 +175,7 @@ impl<'a> Secret64BitView<'a> {
     }
 
     #[inline]
-    pub fn words_for_127_to_240_part3(self) -> &'a [u8; 16] {
+    pub fn words_for_129_to_240_part3(self) -> &'a [u8; 16] {
         self.0.reassert_preconditions();
 
         self.b()[119..].first_chunk().unwrap()
@@ -225,21 +225,21 @@ impl<'a> Secret128BitView<'a> {
     }
 
     #[inline]
-    pub fn words_for_127_to_240_part1(self) -> &'a [[[u8; 16]; 2]] {
+    pub fn words_for_129_to_240_part1(self) -> &'a [[[u8; 16]; 2]] {
         self.0.reassert_preconditions();
 
         pairs_of_u64_bytes(self.b())
     }
 
     #[inline]
-    pub fn words_for_127_to_240_part2(self) -> &'a [[[u8; 16]; 2]] {
+    pub fn words_for_129_to_240_part2(self) -> &'a [[[u8; 16]; 2]] {
         self.0.reassert_preconditions();
 
         pairs_of_u64_bytes(&self.b()[3..])
     }
 
     #[inline]
-    pub fn words_for_127_to_240_part3(self) -> &'a [[u8; 16]; 2] {
+    pub fn words_for_129_to_240_part3(self) -> &'a [[u8; 16]; 2] {
         self.0.reassert_preconditions();
 
         pairs_of_u64_bytes(&self.b()[103..]).first().unwrap()

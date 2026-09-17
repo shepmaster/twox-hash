@@ -357,14 +357,14 @@ fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     let head = pairs_of_u64_bytes(input);
     let mut head = head.iter();
 
-    let ss = secret.for_128().words_for_127_to_240_part1();
+    let ss = secret.for_128().words_for_129_to_240_part1();
     for (input, secret) in head.by_ref().zip(ss).take(4) {
         mix_two_chunks(&mut acc, &input[0], &input[1], secret, seed);
     }
 
     let mut acc = acc.map(avalanche);
 
-    let ss = secret.for_128().words_for_127_to_240_part2();
+    let ss = secret.for_128().words_for_129_to_240_part2();
     for (input, secret) in head.zip(ss) {
         mix_two_chunks(&mut acc, &input[0], &input[1], secret, seed);
     }
@@ -372,7 +372,7 @@ fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u128 {
     let (_, tail) = input.bp_as_rchunks::<16>();
     let (_, tail) = tail.bp_as_rchunks::<2>();
     let tail = tail.last().unwrap();
-    let ss = secret.for_128().words_for_127_to_240_part3();
+    let ss = secret.for_128().words_for_129_to_240_part3();
 
     // note that the half-chunk order and the seed is different here
     mix_two_chunks(&mut acc, &tail[1], &tail[0], ss, seed.wrapping_neg());
