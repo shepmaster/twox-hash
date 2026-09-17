@@ -6,7 +6,6 @@ edition = "2021"
 rust-version = "1.81"
 
 description = "A Rust implementation of the XXHash and XXH3 algorithms"
-readme = "README.md"
 keywords = ["hash", "hasher", "xxhash", "xxh3"]
 categories = ["algorithms"]
 
