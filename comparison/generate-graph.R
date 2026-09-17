@@ -1,5 +1,16 @@
 #!/usr/bin/env Rscript
 
+## install.packages("forcats")
+## install.packages("ggplot2")
+## install.packages("hms")
+## install.packages("jsonlite")
+## install.packages("lubridate")
+## install.packages("nlme")
+## install.packages("rlang")
+## install.packages("rlng")
+## install.packages("scales")
+## install.packages("svglite")
+
 library(forcats)
 library(ggplot2)
 library(nlme)
@@ -63,7 +74,7 @@ for (algo in c("xxhash64", "xxhash3_64", "xxhash3_128")) {
     ## Get bytes per second; the time estimate is in nanoseconds
     all_streaming$throughput = all_streaming$size / (all_streaming$mean_estimate / 1e9)
 
-    tiny_data_y_limits = c(min(all_tiny_data$mean_estimate), max(all_tiny_data$mean_estimate))
+    tiny_data_y_limits = c(0, max(all_tiny_data$mean_estimate))
     oneshot_y_limits = c(log2min(all_oneshot$throughput), log2max(all_oneshot$throughput))
     streaming_y_limits = c(log2min(all_streaming$throughput), log2max(all_streaming$throughput))
 
@@ -86,7 +97,7 @@ for (algo in c("xxhash64", "xxhash3_64", "xxhash3_128")) {
                 geom_point(alpha = 0.7) +
                 geom_line(alpha = 0.3) +
                 scale_x_continuous(labels = byte_labels) +
-                scale_y_time(labels = label_timespan(), limits = tiny_data_y_limits) +
+                scale_y_time(labels = label_timespan(), limits = tiny_data_y_limits, breaks = seq(0, 100) * 1e-9) +
                 scale_colour_brewer(labels = impl_name, palette = "Set1") +
                 labs(title = title, subtitle = subtitle, x = "Size", y = "Time", colour = "Implementation") +
                 common_theme
