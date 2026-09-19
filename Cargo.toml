@@ -18,6 +18,7 @@ license = "MIT"
 members = [
     "asmasm",
     "comparison",
+    "comparison/harness",
     "twox-hash-sum",
     "xx_hash-sys",
 ]
