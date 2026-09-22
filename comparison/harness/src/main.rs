@@ -54,7 +54,7 @@ struct CaptureArgs {
     /// include the parent commit to provide comparisons against
     include_parents: bool,
     #[argh(positional)]
-    hashes: String,
+    hashes: Vec<String>,
 }
 
 #[derive(Debug, FromArgs)]
@@ -167,15 +167,16 @@ mod capture {
 
     pub fn main(args: CaptureArgs) -> Result<(), Error> {
         let mut cache = Cache::default();
-
-        for hash in git::rev_list(&args.hashes)? {
-            capture_one(
-                &mut cache,
-                &hash,
-                args.include_parents,
-                args.subset.as_deref(),
-                args.force,
-            )?;
+        for hashes in &args.hashes {
+            for hash in git::rev_list(hashes)? {
+                capture_one(
+                    &mut cache,
+                    &hash,
+                    args.include_parents,
+                    args.subset.as_deref(),
+                    args.force,
+                )?;
+            }
         }
 
         Ok(())
@@ -196,7 +197,12 @@ mod capture {
         Ok(())
     }
 
-    fn capture_hash(cache: &mut Cache, hash: &str, subset: Option<&str>, force: bool) -> Result<(), Error> {
+    fn capture_hash(
+        cache: &mut Cache,
+        hash: &str,
+        subset: Option<&str>,
+        force: bool,
+    ) -> Result<(), Error> {
         let paths = Paths::new();
         let hash_path = paths.for_hash(cache, hash)?;
 
@@ -206,20 +212,19 @@ mod capture {
         let clean_file = if force {
             File::create(&clean_path).whatever_context("create clean file")?
         } else {
-
             match File::create_new(&clean_path) {
-            Ok(f) => f,
+                Ok(f) => f,
 
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                // Already created, use cached version
-                return Ok(());
-            }
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => {
+                    // Already created, use cached version
+                    return Ok(());
+                }
 
-            Err(e) => {
-                return Err(e).with_whatever_context(|_| {
-                    format!("create clean file {}", clean_path.display())
-                });
-            }
+                Err(e) => {
+                    return Err(e).with_whatever_context(|_| {
+                        format!("create clean file {}", clean_path.display())
+                    });
+                }
             }
         };
 
@@ -440,7 +445,6 @@ mod report {
 
         Ok(())
     }
-
 
     pub fn comparison(args: ReportComparisonArgs) -> Result<(), Error> {
         let mut cache = Cache::default();
