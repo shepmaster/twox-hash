@@ -24,6 +24,11 @@ pretty_arch = function(arch) {
     str_glue("{arch} ({cpus[arch]})")
 }
 
+MiB = 2^20
+GiB = 2^30
+TiB = 2^40
+powers_of_two = 2^(0:40)
+
 byte_labels_raw = label_bytes(units = "auto_binary")
 byte_labels = function(x) {
     l = byte_labels_raw(x)
@@ -50,6 +55,33 @@ load_benchmark_data = function(filename) {
             mean_estimate = lubridate::dnanoseconds(mean_estimate)
         )
 }
+
+scale_x_continuous_log2 = scale_x_continuous(
+    transform = transform_log2(),
+    labels = byte_labels,
+    breaks = powers_of_two,
+    minor_breaks = NULL
+)
+
+## Round down / up to the nearest power of 2
+log2_limits = function(limits) {
+    if (is.null(limits)) {
+        NULL
+    } else {
+        c(
+            2^floor(log2(limits[1])),
+            2^ceiling(log2(limits[2]))
+        )
+    }
+}
+
+scale_y_continuous_log2_bytes_per_second = scale_y_continuous(
+    transform = transform_log2(),
+    labels = bytes_per_second_labels,
+    breaks = powers_of_two,
+    minor_breaks = NULL,
+    limits = log2_limits
+)
 
 common_theme = theme(
     legend.position = "inside",
@@ -78,43 +110,39 @@ save_svg = function(plot, directory, prefix = NA, algo, bench, fn_name = NA, arc
 ## ====================
 ## Rust vs C specific code
 
-MiB = 2^20
-GiB = 2^30
-TiB = 2^40
-powers_of_two = 2^(0:40)
+point_and_line = function() {
+    list(
+        geom_point(alpha = 0.7),
+        geom_line(alpha = 0.3)
+    )
+}
 
-## Round down / up to the nearest power of 2
-log2_limits = function(limits) {
-    if (is.null(limits)) {
-        NULL
-    } else {
-        c(
-            2^floor(log2(limits[1])),
-            2^ceiling(log2(limits[2]))
-        )
-    }
+colour_by_impl = function(labels = impl_name) {
+    list(
+        aes(colour = impl),
+        scale_colour_brewer(labels = labels, palette = "Set1"),
+        labs(colour = "Implementation")
+    )
 }
 
 tiny_data_plot = function(data, algo, arch, fn_name, y_limits = NULL) {
     using = if (is.na(fn_name)) "" else str_glue(" using `{fn_name}`")
 
     data |>
-        ggplot(aes(x = size, y = mean_estimate, colour = impl)) +
-        geom_point(alpha = 0.7) +
-        geom_line(alpha = 0.3) +
+        ggplot(aes(x = size, y = mean_estimate)) +
+        point_and_line() +
+        colour_by_impl() +
         scale_x_continuous(labels = byte_labels) +
         scale_y_time(
             labels = label_timespan(),
             limits = y_limits,
             breaks = seq(0, 100) * 1e-9
         ) +
-        scale_colour_brewer(labels = impl_name, palette = "Set1") +
         labs(
             title = str_glue("[{algo}] Hashing small amounts of bytes{using} (lower is better)"),
             subtitle = pretty_arch(arch),
             x = "Size",
-            y = "Time",
-            colour = "Implementation"
+            y = "Time"
         ) +
         common_theme
 }
@@ -138,29 +166,16 @@ oneshot_plot = function(data, algo, arch, y_limits = NULL) {
     }
 
     data |>
-        ggplot(aes(x = size, y = throughput, colour = impl)) +
-        geom_point(alpha = 0.7) +
-        geom_line(alpha = 0.3) +
-        scale_x_continuous(
-            transform = transform_log2(),
-            labels = byte_labels,
-            breaks = powers_of_two,
-            minor_breaks = NULL
-        ) +
-        scale_y_continuous(
-            transform = transform_log2(),
-            labels = bytes_per_second_labels,
-            breaks = powers_of_two,
-            minor_breaks = NULL,
-            limits = log2_limits(y_limits)
-        ) +
-        scale_colour_brewer(labels = impl_name_and_speed, palette = "Set1") +
+        ggplot(aes(x = size, y = throughput)) +
+        point_and_line() +
+        colour_by_impl(labels = impl_name_and_speed) +
+        scale_x_continuous_log2 +
+        scale_y_continuous_log2_bytes_per_second +
         labs(
             title = str_glue("[{algo}] Throughput to hash a buffer (higher is better)"),
             subtitle = pretty_arch(arch),
             x = "Buffer Size",
-            y = "Throughput",
-            colour = "Implementation"
+            y = "Throughput"
         ) +
         common_theme
 }
@@ -177,29 +192,16 @@ oneshot_table = function(data) {
 
 streaming_plot = function(data, algo, arch, y_limits = NULL) {
     data |>
-        ggplot(aes(x = chunk_size, y = throughput, colour = impl)) +
-        geom_point(alpha = 0.7) +
-        geom_line(alpha = 0.3) +
-        scale_x_continuous(
-            transform = transform_log2(),
-            labels = byte_labels,
-            breaks = powers_of_two,
-            minor_breaks = NULL
-        ) +
-        scale_y_continuous(
-            transform = transform_log2(),
-            labels = bytes_per_second_labels,
-            breaks = powers_of_two,
-            minor_breaks = NULL,
-            limits = log2_limits(y_limits)
-        ) +
-        scale_colour_brewer(labels = impl_name, palette = "Set1") +
+        ggplot(aes(x = chunk_size, y = throughput)) +
+        point_and_line() +
+        colour_by_impl() +
+        scale_x_continuous_log2 +
+        scale_y_continuous_log2_bytes_per_second +
         labs(
             title = str_glue("[{algo}] Throughput of a 1 MiB buffer by chunk size (higher is better)"),
             subtitle = pretty_arch(arch),
             x = "Chunk Size",
-            y = "Throughput",
-            colour = "Implementation"
+            y = "Throughput"
         ) +
         common_theme
 }
@@ -207,30 +209,63 @@ streaming_plot = function(data, algo, arch, y_limits = NULL) {
 ## ====================
 ## Delta-specific code
 
+lollipop_factor = function() {
+    list(
+        geom_hline(yintercept = 1, linetype = "dashed", colour = "darkgrey"),
+        geom_point(),
+        geom_linerange(aes(ymin = 1, ymax = factor)),
+        labs(y = "Factor"),
+        scale_y_continuous(
+            minor_breaks = seq(0, 10, by = 0.1),
+            limits = ~ range(0, .x, 2)
+        )
+    )
+}
+
 tiny_data_delta_plot = function(data, algo, arch, fn_name) {
-    max_factor = max(2, data$factor)
+    using = if (is.na(fn_name)) "" else str_glue(" using `{fn_name}`")
 
     data |>
         ggplot(aes(x = size, y = factor)) +
-        geom_hline(yintercept = 1, linetype = "dashed", colour = "darkgrey") +
-        geom_point() +
-        geom_linerange(aes(ymin = 1, ymax = factor)) +
-        labs(
-            title = str_glue("[{algo}] Time factor vs previous code; comparing hashing small amounts of bytes using `{fn_name}` (lower is better)"),
-            subtitle = pretty_arch(arch),
-            x = "Size",
-            y = "Factor"
-        ) +
-        coord_cartesian(ylim = c(0, max_factor)) +
+        lollipop_factor() +
         scale_x_continuous(labels = byte_labels) +
-        scale_y_continuous(minor_breaks = seq(0, 10, by = 0.1)) +
+        labs(
+            title = str_glue("[{algo}] Time factor vs previous code; Hashing small amounts of bytes{using} (lower is better)"),
+            subtitle = pretty_arch(arch),
+            x = "Size"
+        ) +
         common_theme
 }
 
 tiny_data_delta_table = function(data) {
     data |>
-        ungroup() |>
         select(size, factor) |>
         mutate(factor = round(factor, digits = 3)) |>
         kable()
+}
+
+oneshot_delta_plot = function(data, algo, arch) {
+    data |>
+        ggplot(aes(x = size, y = factor)) +
+        lollipop_factor() +
+        scale_x_continuous_log2 +
+        labs(
+            title = str_glue("[{algo}] Time factor vs previous code; Throughput to hash a buffer (higher is better)"),
+            subtitle = pretty_arch(arch),
+            x = "Size"
+        ) +
+        common_theme
+}
+
+streaming_delta_plot = function(data, algo, arch) {
+    data |>
+        ggplot(aes(x = chunk_size, y = factor)) +
+        lollipop_factor() +
+        scale_x_continuous_log2 +
+        labs(
+            title = str_glue("[{algo}] Time factor vs previous code; Throughput of a 1 MiB buffer by chunk size (higher is better)"),
+            subtitle = pretty_arch(arch),
+            x = "Chunk Size"
+        ) +
+        common_theme
 }
