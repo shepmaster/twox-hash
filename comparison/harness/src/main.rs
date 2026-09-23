@@ -236,17 +236,13 @@ mod capture {
         let raw_path = hash_path.raw_path();
         let raw_file = File::create(&raw_path).whatever_context("create raw file")?;
 
-        Command::new("git")
-            .arg("checkout")
-            .arg(hash)
-            .status()
-            .whatever_context("checkout status")?
-            .exit_ok()
-            .whatever_context("checkout retval")?;
+        let _branch_guard = DropGuard::new((), |_| git::checkout("-").unwrap());
+        git::checkout(hash)?;
 
         let mut c = Command::new("cargo");
 
-        c.arg("criterion")
+        c.env("RUSTUP_TOOLCHAIN", "stable")
+            .arg("criterion")
             .args(["-p", "comparison"])
             .arg("--message-format=json");
 
@@ -526,6 +522,16 @@ mod git {
     };
 
     use crate::Error;
+
+    pub fn checkout(branch: &str) -> Result<(), Error> {
+        Command::new("git")
+            .arg("checkout")
+            .arg(branch)
+            .status()
+            .whatever_context("checkout status")?
+            .exit_ok()
+            .whatever_context("checkout retval")
+    }
 
     pub fn rev_list(hashes: &str) -> Result<Vec<String>, Error> {
         let hashes = hashes.trim();
