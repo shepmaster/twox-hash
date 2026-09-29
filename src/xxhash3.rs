@@ -128,7 +128,7 @@ pub fn impl_17_to_128_bytes_iter(
     mut f: impl FnMut(&[u8; 16], &[u8; 16], &[[u8; 16]; 2]),
 ) {
     let secret = secret.words_for_17_to_128();
-    let (secret, _) = secret.bp_as_chunks::<2>();
+    let (secret, _) = secret.bp_as_chunks();
     let (fwd, _) = input.bp_as_chunks();
     let (_, bwd) = input.bp_as_rchunks();
 
@@ -166,15 +166,15 @@ pub fn mix_step(data: &[u8; 16], secret: &[u8; 16], seed: u64) -> u64 {
 
 #[inline]
 pub fn to_u64s(bytes: &[u8; 16]) -> [u64; 2] {
-    let (pair, _) = bytes.bp_as_chunks::<8>();
+    let (pair, _) = bytes.bp_as_chunks();
     [pair[0], pair[1]].map(u64::from_le_bytes)
 }
 
 #[inline]
 #[cfg(feature = "xxhash3_128")]
 pub fn pairs_of_u64_bytes(bytes: &[u8]) -> &[[[u8; 16]; 2]] {
-    let (u64_bytes, _) = bytes.bp_as_chunks::<16>();
-    let (pairs, _) = u64_bytes.bp_as_chunks::<2>();
+    let (u64_bytes, _) = bytes.bp_as_chunks();
+    let (pairs, _) = u64_bytes.bp_as_chunks();
     pairs
 }
 
