@@ -37,6 +37,8 @@ fn half_sizes(max: usize) -> impl Iterator<Item = usize> {
 }
 
 mod xxhash64 {
+    use std::time::Duration;
+
     use super::*;
 
     const TINY_DATA_SIZE: usize = 32;
@@ -44,6 +46,12 @@ mod xxhash64 {
     fn tiny_data(c: &mut Criterion) {
         let (seed, data) = gen_data(TINY_DATA_SIZE);
         let mut g = c.my_benchmark_group("xxhash64", "tiny_data");
+
+        // These tests take ~5ns, so reducing the testing times
+        // doesn't affect accuracy but does improve code iteration
+        // time.
+        g.warm_up_time(Duration::from_millis(10))
+            .measurement_time(Duration::from_millis(100));
 
         for size in 0..=data.len() {
             let data = &data[..size];
