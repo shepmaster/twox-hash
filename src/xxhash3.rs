@@ -146,23 +146,28 @@ pub fn impl_17_to_128_bytes_iter(
     let secret = secret.words_for_17_to_128();
     let (secret, _) = secret.bp_as_chunks();
     let (fwd, _) = input.bp_as_chunks();
-    let (_, bwd) = input.bp_as_rchunks();
 
-    let q = bwd.len();
+    // The `n`th 16-byte chunk of `input`, counting backwards from the
+    // end.
+    //
+    // Using `slice::as_rchunks` yields the same chunks, but the
+    // generated assembly on x86_64 is worse. This form appears to
+    // allow the compiler to reuse some registers.
+    let bwd_chunk = |n: usize| input[input.len() - 16 * (n + 1)..].first_chunk().unwrap();
 
     if input.len() > 32 {
         if input.len() > 64 {
             if input.len() > 96 {
-                f(&fwd[3], &bwd[q - 4], &secret[3]);
+                f(&fwd[3], bwd_chunk(3), &secret[3]);
             }
 
-            f(&fwd[2], &bwd[q - 3], &secret[2]);
+            f(&fwd[2], bwd_chunk(2), &secret[2]);
         }
 
-        f(&fwd[1], &bwd[q - 2], &secret[1]);
+        f(&fwd[1], bwd_chunk(1), &secret[1]);
     }
 
-    f(&fwd[0], &bwd[q - 1], &secret[0]);
+    f(&fwd[0], bwd_chunk(0), &secret[0]);
 }
 
 #[inline]
@@ -312,8 +317,6 @@ pub trait SliceBackport<T> {
     fn bp_as_chunks<const N: usize>(&self) -> (&[[T; N]], &[T]);
 
     fn bp_as_chunks_mut<const N: usize>(&mut self) -> (&mut [[T; N]], &mut [T]);
-
-    fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]);
 }
 
 impl<T> SliceBackport<T> for [T] {
@@ -340,19 +343,6 @@ impl<T> SliceBackport<T> for [T] {
         // valid elements are less-than-or-equal to the original
         // slice.
         let head = unsafe { slice::from_raw_parts_mut(head.as_mut_ptr().cast(), len) };
-        (head, tail)
-    }
-
-    fn bp_as_rchunks<const N: usize>(&self) -> (&[T], &[[T; N]]) {
-        assert_ne!(N, 0);
-        let len = self.len() / N;
-        // Safety: `(len / N) * N` has to be less than or equal to `len`
-        let (head, tail) = unsafe { self.split_at_unchecked(self.len() - len * N) };
-        // Safety: (1) `tail` points to valid data, (2) the alignment
-        // of an array and the individual type are the same, (3) the
-        // valid elements are less-than-or-equal to the original
-        // slice.
-        let tail = unsafe { slice::from_raw_parts(tail.as_ptr().cast(), len) };
         (head, tail)
     }
 }
@@ -408,34 +398,5 @@ pub mod test {
         let (a, b) = x.bp_as_chunks::<6>();
         assert_eq!(a, &[] as &[[i32; 6]]);
         assert_eq!(b, &[1, 2, 3, 4, 5]);
-    }
-
-    #[test]
-    fn backported_as_rchunks() {
-        let x = [1, 2, 3, 4, 5];
-
-        let (a, b) = x.bp_as_rchunks::<1>();
-        assert_eq!(a, &[] as &[i32]);
-        assert_eq!(b, &[[1], [2], [3], [4], [5]]);
-
-        let (a, b) = x.bp_as_rchunks::<2>();
-        assert_eq!(a, &[1]);
-        assert_eq!(b, &[[2, 3], [4, 5]]);
-
-        let (a, b) = x.bp_as_rchunks::<3>();
-        assert_eq!(a, &[1, 2]);
-        assert_eq!(b, &[[3, 4, 5]]);
-
-        let (a, b) = x.bp_as_rchunks::<4>();
-        assert_eq!(a, &[1]);
-        assert_eq!(b, &[[2, 3, 4, 5]]);
-
-        let (a, b) = x.bp_as_rchunks::<5>();
-        assert_eq!(a, &[] as &[i32]);
-        assert_eq!(b, &[[1, 2, 3, 4, 5]]);
-
-        let (a, b) = x.bp_as_rchunks::<6>();
-        assert_eq!(a, &[1, 2, 3, 4, 5]);
-        assert_eq!(b, &[] as &[[i32; 6]]);
     }
 }
