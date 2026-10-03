@@ -88,6 +88,15 @@ load_single_trial = function(filename) {
         massage_data()
 }
 
+trials_from_tree_hash = function(tree_hash) {
+    data_path = fs::path("captures", tree_hash, "data")
+    data_path |>
+        list.dirs(full.names = F, recursive = F) |>
+        as.numeric() |>
+        sort() |>
+        map(\(n) fs::path(data_path, n, "clean.json"))
+}
+
 load_benchmark_trials = function(filenames) {
     all_data = filenames |>
         map(load_json_lines_as_tibble) |>
