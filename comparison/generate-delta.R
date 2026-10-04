@@ -59,4 +59,24 @@ deltas |> group_by(algo) |> group_walk(function(data, key) {
     })
 })
 
+overview = deltas |>
+    filter(bench == "tiny_data") |>
+    group_by(algo, fn_name, arch) |>
+    summarize(
+        min = min(factor.time),
+        max = max(factor.time)
+    )|>
+    rename(algorithm = algo, entrypoint = fn_name) |>
+    mutate(
+        algorithm = str_glue("`{algorithm}`"),
+        entrypoint = str_glue("`{entrypoint}`"),
+        arch = str_glue("`{arch}`"),
+        min = percent(min, accuracy = 1),
+        max = percent(max, accuracy = 1)
+    ) |>
+    kable()
+
+message("An overview of changes for the tiny_data benchmark:")
+print(overview)
+
 warnings()

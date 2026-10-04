@@ -233,7 +233,7 @@ mod capture {
     use crate::{
         CaptureArgs, Error, clean,
         git::{self, Cache},
-        paths::Paths,
+        paths::{self, Paths},
     };
 
     pub fn main(args: CaptureArgs) -> Result<(), Error> {
@@ -300,7 +300,8 @@ mod capture {
 
         let mut c = Command::new("cargo");
 
-        c.env("RUSTUP_TOOLCHAIN", "stable")
+        c.current_dir(paths::comparison_dir())
+            .env("RUSTUP_TOOLCHAIN", "stable")
             .arg("criterion")
             .args(["-p", "comparison"])
             .arg("--message-format=json");
