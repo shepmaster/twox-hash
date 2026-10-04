@@ -86,22 +86,21 @@ graphs are boring flat lines, so a table is used instead.
 ### aarch64
 
 | Implementation | Throughput (GiB/s) |
-|----------------|--------------------|
-| Rust           | 35.0               |
-| C              | 35.0               |
-| C (scalar)     | 21.2               |
-| C (NEON)       | 35.0               |
+|:---------------|-------------------:|
+| Rust           |               35.2 |
+| C              |               35.3 |
+| C (scalar)     |               21.9 |
+| C (NEON)       |               35.2 |
 
 ### x86_64
 
 | Implementation | Throughput (GiB/s) |
-|----------------|--------------------|
-| Rust           | 58.9               |
-| C              | 25.1               |
-| C (scalar)     | 7.6                |
-| C (SSE2)       | 25.1               |
-| C (AVX2)       | 58.4               |
-
+|:---------------|-------------------:|
+| Rust           |               57.7 |
+| C              |               25.8 |
+| C (scalar)     |               14.4 |
+| C (SSE2)       |               26.0 |
+| C (AVX2)       |               57.2 |
 
 ## Streaming data
 
@@ -128,24 +127,24 @@ various chunk sizes.
 
 ## Small amounts of data
 
-Compares the **time taken** to hash 0 to 230 bytes of
-data. Representative samples are taken from similar times to avoid
-cluttering the graph and wasting benchmarking time.
+Compares the **time taken** to hash 0 to 230 bytes of data using
+`oneshot_with_seed`. Representative samples are taken from similar
+times to avoid cluttering the graph and wasting benchmarking time.
 
 ### aarch64
 
-<a href="./results/xxhash3_64-tiny_data-aarch64.svg">
+<a href="./results/xxhash3_64-tiny_data-oneshot_with_seed-aarch64.svg">
   <img
-    src="./results/xxhash3_64-tiny_data-aarch64.svg"
+    src="./results/xxhash3_64-tiny_data-oneshot_with_seed-aarch64.svg"
     alt="xxHash3, 64-bit, small data, on an aarch64 processor"
     />
 </a>
 
 ### x86_64
 
-<a href="./results/xxhash3_64-tiny_data-x86_64.svg">
+<a href="./results/xxhash3_64-tiny_data-oneshot_with_seed-x86_64.svg">
   <img
-    src="./results/xxhash3_64-tiny_data-x86_64.svg"
+    src="./results/xxhash3_64-tiny_data-oneshot_with_seed-x86_64.svg"
     alt="xxHash3, 64-bit, small data, on an x86_64 processor"
     />
 </a>
@@ -159,21 +158,21 @@ function call. Data sizes from 256 KiB to 4 MiB are tested. These
 graphs are boring flat lines, so a table is used instead.
 
 | Implementation | Throughput (GiB/s) |
-|----------------|--------------------|
-| Rust           | 34.4               |
-| C              | 34.8               |
-| C (scalar)     | 21.3               |
-| C (NEON)       | 34.6               |
+|:---------------|-------------------:|
+| Rust           |               34.9 |
+| C              |               34.7 |
+| C (scalar)     |               21.6 |
+| C (NEON)       |               34.6 |
 
 ### x86_64
 
 | Implementation | Throughput (GiB/s) |
-|----------------|--------------------|
-| Rust           | 58.3               |
-| C              | 25.6               |
-| C (scalar)     | 7.6                |
-| C (SSE2)       | 25.5               |
-| C (AVX2)       | 57.4               |
+|:---------------|-------------------:|
+| Rust           |               57.8 |
+| C              |               28.0 |
+| C (scalar)     |               13.1 |
+| C (SSE2)       |               28.0 |
+| C (AVX2)       |               57.4 |
 
 ## Streaming data
 
@@ -200,24 +199,24 @@ various chunk sizes.
 
 ## Small amounts of data
 
-Compares the **time taken** to hash 0 to 230 bytes of
-data. Representative samples are taken from similar times to avoid
-cluttering the graph and wasting benchmarking time.
+Compares the **time taken** to hash 0 to 230 bytes of data using
+`oneshot_with_seed`. Representative samples are taken from similar
+times to avoid cluttering the graph and wasting benchmarking time.
 
 ### aarch64
 
-<a href="./results/xxhash3_128-tiny_data-aarch64.svg">
+<a href="./results/xxhash3_128-tiny_data-oneshot_with_seed-aarch64.svg">
   <img
-    src="./results/xxhash3_128-tiny_data-aarch64.svg"
+    src="./results/xxhash3_128-tiny_data-oneshot_with_seed-aarch64.svg"
     alt="xxHash3, 128-bit, small data, on an aarch64 processor"
     />
 </a>
 
 ### x86_64
 
-<a href="./results/xxhash3_128-tiny_data-x86_64.svg">
+<a href="./results/xxhash3_128-tiny_data-oneshot_with_seed-x86_64.svg">
   <img
-    src="./results/xxhash3_128-tiny_data-x86_64.svg"
+    src="./results/xxhash3_128-tiny_data-oneshot_with_seed-x86_64.svg"
     alt="xxHash3, 128-bit, small data, on an x86_64 processor"
     />
 </a>
@@ -228,10 +227,10 @@ cluttering the graph and wasting benchmarking time.
 
 | CPU               | Memory | C compiler         |
 |-------------------|--------|--------------------|
-| Apple M1 Max      | 64 GiB | clang 16.0.0       |
-| AMD Ryzen 9 3950X | 32 GiB | cl.exe 19.41.34120 |
+| Apple M1 Max      | 64 GiB | clang 21.0.0       |
+| AMD Ryzen 9 3950X | 32 GiB | cl.exe 19.51.36260 |
 
-Tests were run with `rustc 1.82.0 (f6e511eec 2024-10-15)`.
+Tests were run with `rustc 1.99.0 (b940084d7 2026-09-28)`.
 
 ## Details
 
@@ -250,7 +249,7 @@ Tests were run with `rustc 1.82.0 (f6e511eec 2024-10-15)`.
 
   <tr>
     <th>C compiler</th>
-    <td>Apple clang version 16.0.0 (clang-1600.0.26.3)</td>
+    <td>Apple clang version 21.0.0 (clang-2100.3.34.2)</td>
   </tr>
 </table>
 
@@ -269,6 +268,6 @@ Tests were run with `rustc 1.82.0 (f6e511eec 2024-10-15)`.
 
   <tr>
     <th>C compiler</th>
-    <td>Microsoft (R) C/C++ Optimizing Compiler Version 19.41.34120 for x86</td>
+    <td>Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36260 for x64</td>
   </tr>
 </table>
