@@ -6,7 +6,7 @@
     unsafe_op_in_unsafe_fn
 )]
 
-use core::hash;
+use core::{hash, hint};
 
 use crate::{
     xxhash3::{primes::*, *},
@@ -32,7 +32,31 @@ impl Hasher {
     #[must_use]
     #[inline]
     pub fn oneshot(input: &[u8]) -> u64 {
-        impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
+        // Hashing a short input is latency sensitive, so the
+        // bulkier code for long inputs is kept in a separate
+        // function.
+        fn optimize_for_latency(input: &[u8]) -> bool {
+            input.len() <= CUTOFF
+        }
+
+        if optimize_for_latency(input) {
+            impl_oneshot(DEFAULT_SECRET, DEFAULT_SEED, input)
+        } else {
+            #[inline(never)]
+            fn outline(input: &[u8]) -> u64 {
+                // Re-establish information from our `if` statement
+                // that is lost because we use `inline(never)`.
+                //
+                // SAFETY: this nested function is defined and called
+                // only once in the corresponding `else` branch.
+                unsafe {
+                    hint::assert_unchecked(!optimize_for_latency(input));
+                }
+                impl_oneshot(opaque_default_secret!(), DEFAULT_SEED, input)
+            }
+
+            outline(input)
+        }
     }
 
     /// Hash all data at once using the provided seed and a secret
@@ -41,21 +65,41 @@ impl Hasher {
     #[must_use]
     #[inline]
     pub fn oneshot_with_seed(seed: u64, input: &[u8]) -> u64 {
-        // Short inputs use the default secret directly, without copying it.
-        if input.len() <= CUTOFF {
-            return impl_oneshot(DEFAULT_SECRET, seed, input);
+        // Below the cutoff, the secret derived from the seed goes
+        // unread. Above the cutoff, deriving the secret with the
+        // default seed is a no-op. In both cases, we can use the
+        // default secret instead of doing the work to derive another.
+        fn simple_case(seed: u64, input: &[u8]) -> bool {
+            input.len() <= CUTOFF || seed == DEFAULT_SEED
         }
 
-        let mut derived_secret;
-        let secret = if seed != DEFAULT_SEED {
-            derived_secret = DEFAULT_SECRET_RAW;
-            derive_secret(seed, &mut derived_secret);
-            Secret::new(&derived_secret).expect("The default secret length is invalid")
+        if simple_case(seed, input) {
+            impl_oneshot(opaque_default_secret!(), seed, input)
         } else {
-            DEFAULT_SECRET
-        };
+            // Deriving the secret from the seed takes a good chunk of
+            // stack space. Moving that work to a separate function
+            // drastically improves speed for the cases <= 128 bytes.
+            #[inline(never)]
+            fn outline(seed: u64, input: &[u8]) -> u64 {
+                // Re-establish information from our `if` statement
+                // that is lost because we use `inline(never)`.
+                //
+                // SAFETY: this nested function is defined and called
+                // only once in the corresponding `else` branch.
+                unsafe {
+                    hint::assert_unchecked(!simple_case(seed, input));
+                }
 
-        impl_241_plus_bytes(secret, input)
+                let mut derived_secret = DEFAULT_SECRET_RAW;
+                derive_secret(seed, &mut derived_secret);
+                let secret =
+                    Secret::new(&derived_secret).expect("The default secret length is invalid");
+
+                impl_oneshot(secret, seed, input)
+            }
+
+            outline(seed, input)
+        }
     }
 
     /// Hash all data at once using the provided secret and the
@@ -308,24 +352,56 @@ fn impl_17_to_128_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     avalanche(acc)
 }
 
+/// Keeps `acc` in a regular register, which blocks the compiler from
+/// auto-vectorizing.
+#[inline(always)]
+fn prevent_autovectorization(acc: u64) -> u64 {
+    #[cfg(all(target_arch = "x86_64", not(miri)))]
+    {
+        let mut acc = acc;
+        // This mirrors `XXH_COMPILER_GUARD(var)`. Unlike
+        // `hint::black_box`, the value is not forced to the stack, so
+        // no load or store is added.
+        //
+        // SAFETY: This assembly doesn't *do* anything, other than add
+        // a constraint that the argument should be in a register.
+        unsafe {
+            core::arch::asm!(
+                "/* {0} */",
+                inout(reg) acc,
+                options(nomem, nostack, preserves_flags)
+            );
+        }
+        acc
+    }
+
+    #[cfg(not(all(target_arch = "x86_64", not(miri))))]
+    acc
+}
+
 #[inline]
 fn impl_129_to_240_bytes(secret: &Secret, seed: u64, input: &[u8]) -> u64 {
     assert_input_range!(129..=240, input.len());
     let mut acc = input.len().into_u64().wrapping_mul(PRIME64_1);
 
-    let (head, _) = input.bp_as_chunks();
-    let mut head = head.iter();
+    let (head, tail) = input.split_first_chunk::<128>().unwrap();
+    assert_input_range!(1..=112, tail.len());
+
+    let (head, _) = head.bp_as_chunks();
+    let (tail, _) = tail.bp_as_chunks();
 
     let ss = secret.for_64().words_for_129_to_240_part1();
-    for (chunk, secret) in head.by_ref().zip(ss).take(8) {
+    for (chunk, secret) in head.iter().zip(ss) {
         acc = acc.wrapping_add(mix_step(chunk, secret, seed));
+        acc = prevent_autovectorization(acc);
     }
 
     acc = avalanche(acc);
 
     let ss = secret.for_64().words_for_129_to_240_part2();
-    for (chunk, secret) in head.zip(ss) {
+    for (chunk, secret) in tail.iter().zip(ss) {
         acc = acc.wrapping_add(mix_step(chunk, secret, seed));
+        acc = prevent_autovectorization(acc);
     }
 
     let last_chunk = input.last_chunk().unwrap();
